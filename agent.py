@@ -55,7 +55,7 @@ class LocalSemanticEngine:
     def parse_and_generate(prompt: str, history: List[Dict[str, str]] = None) -> Tuple[str, str]:
         prompt_lower = prompt.lower()
         
-        # 1. 尝试匹配上下文微调（例如：“把孔改成10”、“厚度改为20”）
+        # 1. 尝试匹配上下文多轮修改与特征累加
         last_code = ""
         if history:
             for msg in reversed(history):
@@ -63,30 +63,51 @@ class LocalSemanticEngine:
                     last_code = msg.get("code", "")
                     break
         
-        if last_code and any(k in prompt_lower for k in ["改成", "修改为", "变为", "设为", "调大", "变小", "把", "调整"]):
-            num_match = re.findall(r'(\d+(?:\.\d+)?)', prompt)
-            if num_match:
-                new_val = float(num_match[0])
-                if any(k in prompt_lower for k in ["孔", "直径", "孔径", "半径"]):
-                    # 替换孔径（检查是半径还是直径）
-                    r_val = new_val / 2 if any(k in prompt_lower for k in ["直径", "d"]) else new_val
-                    mod_code = re.sub(r'(center_bore\s*=\s*Cylinder\()(\d+(?:\.\d+)?)', rf'\g<1>{r_val}', last_code)
-                    if mod_code == last_code:
-                        mod_code = re.sub(r'(hole\s*=\s*Cylinder\()(\d+(?:\.\d+)?)', rf'\g<1>{r_val}', last_code)
-                    if mod_code != last_code:
-                        return f"已将孔的尺寸调整为 {new_val}mm 并重新生成几何。", mod_code
-                
-                if any(k in prompt_lower for k in ["厚度", "高度", "高", "厚"]):
-                    mod_code = re.sub(r'Box\(([^,]+),([^,]+),\s*(\d+(?:\.\d+)?)\)', rf'Box(\1,\2, {new_val})', last_code)
-                    if mod_code == last_code:
-                        mod_code = re.sub(r'(Cylinder\([^,]+,\s*)(\d+(?:\.\d+)?)', rf'\g<1>{new_val}', last_code, count=1)
-                    if mod_code != last_code:
-                        return f"已将高度/厚度修改为 {new_val}mm 并重新生成几何。", mod_code
-                
-                if any(k in prompt_lower for k in ["圆角", "倒角"]):
-                    mod_code = re.sub(r'\.fillet\(([^,]+),\s*(\d+(?:\.\d+)?)\)', rf'.fillet(\1, {new_val})', last_code)
-                    if mod_code != last_code:
-                        return f"已将圆角半径调整为 R{new_val} 并重新生成几何。", mod_code
+        is_explicit_new = any(k in prompt_lower for k in ["新建", "重新", "另外", "换一个", "从头", "做一个新的"])
+
+        if last_code and not is_explicit_new:
+            ev = LocalSemanticEngine.extract_val
+
+            # 1.1 参数微调 (例如：“把孔改成10”、“厚度改为20”、“圆角调成8”)
+            if any(k in prompt_lower for k in ["改成", "修改为", "变为", "设为", "调大", "变小", "把", "调整"]):
+                num_match = re.findall(r'(\d+(?:\.\d+)?)', prompt)
+                if num_match:
+                    new_val = float(num_match[0])
+                    if any(k in prompt_lower for k in ["孔", "直径", "孔径", "半径"]):
+                        r_val = new_val / 2 if any(k in prompt_lower for k in ["直径", "d", "孔径"]) else new_val
+                        mod_code = re.sub(r'(Cylinder\()(\d+(?:\.\d+)?)', rf'\g<1>{r_val}', last_code, count=1)
+                        if mod_code != last_code:
+                            return f"已将孔的尺寸调整为 Ø{r_val*2:.1f}mm (半径 R{r_val}mm) 并重新生成几何。", mod_code
+                    
+                    if any(k in prompt_lower for k in ["厚度", "高度", "高", "厚"]):
+                        mod_code = re.sub(r'Box\(([^,]+),([^,]+),\s*(\d+(?:\.\d+)?)\)', rf'Box(\1,\2, {new_val})', last_code)
+                        if mod_code == last_code:
+                            mod_code = re.sub(r'(Cylinder\([^,]+,\s*)(\d+(?:\.\d+)?)', rf'\g<1>{new_val}', last_code, count=1)
+                        if mod_code != last_code:
+                            return f"已将高度/厚度修改为 {new_val}mm 并重新生成几何。", mod_code
+                    
+                    if any(k in prompt_lower for k in ["圆角", "倒角"]):
+                        mod_code = re.sub(r'\.fillet\(([^,]+),\s*(\d+(?:\.\d+)?)\)', rf'.fillet(\1, {new_val})', last_code)
+                        if mod_code != last_code:
+                            return f"已将圆角半径调整为 R{new_val} 并重新生成几何。", mod_code
+
+            # 1.2 在已有模型上累加特征 (例如：“打一个直径20的孔”、“再给垂直边加个R5圆角”)
+            if any(k in prompt_lower for k in ["孔", "打孔", "开孔", "挖孔", "通孔"]):
+                d_hole = ev(prompt, ["直径", "孔径", "内孔", "孔"], 20)
+                r_hole = d_hole / 2 if any(k in prompt_lower for k in ["直径", "孔径", "d"]) else d_hole
+                new_code = last_code.rstrip() + f"\n# [多轮特征追加] 贯穿通孔切削\nhole_add = Cylinder({r_hole}, 100)\npart = part - hole_add\n"
+                return f"已在现有模型基础上，追加切削了直径 Ø{r_hole*2:.1f}mm 贯穿通孔。", new_code
+
+            if any(k in prompt_lower for k in ["圆角", "倒圆", "fillet"]):
+                r_fillet = ev(prompt, ["圆角", "r", "半径"], 5)
+                new_code = last_code.rstrip() + f"\n# [多轮特征追加] 垂直边追加 R{r_fillet} 倒圆角\npart = part.fillet(part.edges().parallel_to(Z), {r_fillet})\n"
+                return f"已在现有模型基础上，为垂直边追加了 R{r_fillet}mm 圆角。", new_code
+
+            if any(k in prompt_lower for k in ["凸台", "凸缘", "凸起", "立柱"]):
+                r_boss = ev(prompt, ["半径", "外径", "直径"], 15)
+                h_boss = ev(prompt, ["高度", "高", "厚"], 15)
+                new_code = last_code.rstrip() + f"\n# [多轮特征追加] 顶部追加圆柱凸台\nboss = Cylinder({r_boss}, {h_boss})\npart = part + boss\n"
+                return f"已在现有模型基础上，追加了半径 R{r_boss}mm、高度 {h_boss}mm 的圆柱凸台。", new_code
 
         # 2. 意图分支匹配与精准参数提取
         ev = LocalSemanticEngine.extract_val
@@ -316,9 +337,13 @@ class CADAgent:
         endpoint, model = self.resolve_endpoint(base_url, model_req, api_key)
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for h in (history or [])[-6:]:
+        for h in (history or [])[-8:]:
             role = h.get("role", "user")
             content = h.get("content", "")
+            code = h.get("code", "")
+            # 保证大模型在多轮对话中能够看见助手之前编写的具体 smlibpy 代码
+            if role == "assistant" and code and "```" not in content:
+                content = f"{content}\n\n```python\n{code}\n```"
             if role in ["user", "assistant"]:
                 messages.append({"role": role, "content": content})
 
