@@ -607,6 +607,33 @@ body, html {
   color: var(--text-bright);
 }
 
+.setting-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.preset-pill {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.preset-pill:hover {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.llm-test-msg {
+  font-size: 11px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
 .setting-field {
   display: flex;
   flex-direction: column;

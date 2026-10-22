@@ -1,8 +1,10 @@
 import re
 import os
+import ssl
 import json
 import time
 import urllib.request
+import urllib.error
 import traceback
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -266,19 +268,54 @@ class CADAgent:
     def __init__(self):
         pass
 
-    def call_external_llm(self, prompt: str, history: List[Dict[str, str]], config: Dict[str, Any]) -> str:
-        """调用用户配置的兼容 OpenAI 接口的大模型。"""
-        api_key = config.get("apiKey", "").strip()
-        base_url = config.get("baseUrl", "https://api.openai.com/v1").strip().rstrip("/")
-        model = config.get("model", "gpt-4o-mini").strip()
+    @staticmethod
+    def resolve_endpoint(base_url: str, model: str, api_key: str) -> Tuple[str, str]:
+        """智能解析并规范化 API Endpoint 与默认 Model。"""
+        base_url = (base_url or "").strip()
+        model = (model or "").strip()
+        api_key = (api_key or "").strip()
 
-        if not base_url.endswith("/chat/completions"):
-            endpoint = f"{base_url}/chat/completions"
+        # 若未填 Base URL，根据 Model 或 Key 自动推断
+        if not base_url:
+            if "deepseek" in model.lower() or (api_key.startswith("sk-") and len(api_key) == 35):
+                base_url = "https://api.deepseek.com/v1"
+                if not model: model = "deepseek-chat"
+            else:
+                base_url = "https://api.openai.com/v1"
+                if not model: model = "gpt-4o-mini"
         else:
+            if not model:
+                if "deepseek" in base_url.lower():
+                    model = "deepseek-chat"
+                else:
+                    model = "gpt-4o-mini"
+
+        # 补齐协议
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            base_url = "https://" + base_url
+
+        base_url = base_url.rstrip("/")
+
+        # 规范化路径结尾
+        if base_url.endswith("/chat/completions"):
             endpoint = base_url
+        else:
+            # 常见情况：用户填 https://api.deepseek.com，需补齐 /v1
+            if not base_url.endswith("/v1") and not re.search(r'/v\d+$', base_url):
+                base_url = base_url + "/v1"
+            endpoint = f"{base_url}/chat/completions"
+
+        return endpoint, model
+
+    def call_external_llm(self, prompt: str, history: List[Dict[str, str]], config: Dict[str, Any]) -> str:
+        """调用用户配置的兼容 OpenAI 接口的大模型，支持 SSL 与多代理环境。"""
+        api_key = config.get("apiKey", "").strip()
+        base_url = config.get("baseUrl", "").strip()
+        model_req = config.get("model", "").strip()
+
+        endpoint, model = self.resolve_endpoint(base_url, model_req, api_key)
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        # 添加最近 6 轮历史
         for h in (history or [])[-6:]:
             role = h.get("role", "user")
             content = h.get("content", "")
@@ -291,21 +328,105 @@ class CADAgent:
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": 1200
+            "max_tokens": 1500
         }
+
+        # 创建兼容系统代理与自签名证书的 SSL Context
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
 
         req = urllib.request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
             }
         )
 
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"]
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=90) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"]
+        except urllib.error.HTTPError as e:
+            raw_body = e.read().decode("utf-8", errors="ignore")
+            detail = ""
+            try:
+                err_json = json.loads(raw_body)
+                if "error" in err_json:
+                    err_info = err_json["error"]
+                    detail = err_info.get("message") or str(err_info)
+            except Exception:
+                detail = raw_body[:300]
+            err_msg = f"HTTP {e.code} ({e.reason}) - 接口地址: {endpoint}"
+            if detail:
+                err_msg += f" | 服务端信息: {detail}"
+            raise RuntimeError(err_msg)
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"网络连接失败 ({str(e.reason)}) - 请检查地址: {endpoint}")
+        except Exception as e:
+            raise RuntimeError(f"大模型调用失败: {str(e)}")
+
+    def test_connection(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """测试用户配置的大模型连通性。"""
+        api_key = config.get("apiKey", "").strip()
+        base_url = config.get("baseUrl", "").strip()
+        model_req = config.get("model", "").strip()
+
+        if not api_key:
+            return {"ok": False, "error": "请先填写 API Key"}
+
+        endpoint, model = self.resolve_endpoint(base_url, model_req, api_key)
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 5
+        }
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+        )
+
+        try:
+            t0 = time.perf_counter()
+            with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                elapsed = round((time.perf_counter() - t0) * 1000)
+                reply = data["choices"][0]["message"]["content"].strip()
+                return {
+                    "ok": True,
+                    "endpoint": endpoint,
+                    "model": model,
+                    "latency_ms": elapsed,
+                    "sample": reply
+                }
+        except urllib.error.HTTPError as e:
+            raw_body = e.read().decode("utf-8", errors="ignore")
+            detail = ""
+            try:
+                err_json = json.loads(raw_body)
+                if "error" in err_json:
+                    detail = err_json["error"].get("message") or str(err_json["error"])
+            except Exception:
+                detail = raw_body[:300]
+            msg = f"HTTP {e.code} ({e.reason})"
+            if detail: msg += f": {detail}"
+            return {"ok": False, "endpoint": endpoint, "model": model, "error": msg}
+        except Exception as e:
+            return {"ok": False, "endpoint": endpoint, "model": model, "error": str(e)}
 
     def extract_code_block(self, text: str) -> Optional[str]:
         """从模型回复中提取 ```python 代码块。"""

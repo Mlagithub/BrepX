@@ -92,9 +92,14 @@
               </div>
               <div id="llm-settings-panel" class="llm-settings-card hidden">
                 <div class="settings-title">自定义大模型接入 (可选)</div>
+                <div class="setting-presets">
+                  <span class="preset-pill" data-base="https://api.deepseek.com/v1" data-model="deepseek-chat">DeepSeek 官方</span>
+                  <span class="preset-pill" data-base="https://api.openai.com/v1" data-model="gpt-4o-mini">OpenAI 官方</span>
+                  <span class="preset-pill" data-base="http://localhost:11434/v1" data-model="qwen2.5-coder">本地 Ollama</span>
+                </div>
                 <div class="setting-field">
                   <label>Base URL:</label>
-                  <input type="text" id="setting-base-url" class="form-input" placeholder="https://api.openai.com/v1">
+                  <input type="text" id="setting-base-url" class="form-input" placeholder="例如 https://api.deepseek.com/v1">
                 </div>
                 <div class="setting-field">
                   <label>API Key:</label>
@@ -102,7 +107,11 @@
                 </div>
                 <div class="setting-field">
                   <label>模型名称:</label>
-                  <input type="text" id="setting-model" class="form-input" placeholder="deepseek-chat 或 gpt-4o-mini">
+                  <input type="text" id="setting-model" class="form-input" placeholder="例如 deepseek-chat 或 gpt-4o-mini">
+                </div>
+                <div class="settings-actions">
+                  <button id="btn-test-llm" class="btn btn-secondary btn-sm" style="width:100%">🧪 测试 API 连通性</button>
+                  <div id="llm-test-result" class="llm-test-msg"></div>
                 </div>
                 <div class="settings-hint">未填写 API Key 时，将自动启用高精度内置本地 CAD 语义引擎，秒级即开即用。</div>
               </div>

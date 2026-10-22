@@ -616,9 +616,46 @@ function saveLlmConfig() {
   if (input) input.onchange = saveLlmConfig;
 });
 
-if (btnToggleLlm && llmSettingsCard) {
-  btnToggleLlm.onclick = () => {
-    llmSettingsCard.classList.toggle('hidden');
+// 预设切换药丸
+document.querySelectorAll('.preset-pill').forEach(pill => {
+  pill.onclick = () => {
+    if (settingBaseUrl) settingBaseUrl.value = pill.dataset.base || '';
+    if (settingModel) settingModel.value = pill.dataset.model || '';
+    saveLlmConfig();
+  };
+});
+
+// 测试大模型连通性
+const btnTestLlm = document.getElementById('btn-test-llm');
+const llmTestResult = document.getElementById('llm-test-result');
+if (btnTestLlm) {
+  btnTestLlm.onclick = async () => {
+    const cfg = saveLlmConfig();
+    if (!cfg.apiKey) {
+      llmTestResult.innerHTML = '<span style="color:#e5c07b">⚠️ 请先输入 API Key</span>';
+      return;
+    }
+    btnTestLlm.disabled = true;
+    btnTestLlm.textContent = '正在测试连接…';
+    llmTestResult.innerHTML = '<span style="color:#abb2bf">正在向大模型接口发送心跳握手…</span>';
+    try {
+      const res = await fetch('/api/agent/test_llm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        llmTestResult.innerHTML = `<span style="color:#98c379">✅ 连通成功！模型: ${data.model} · 延时: ${data.latency_ms} ms</span>`;
+      } else {
+        llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 握手失败: ${escapeHtml(data.error || '未知错误')}</span><br><span style="color:#7f848e;font-size:10px;">目标端点: ${escapeHtml(data.endpoint)}</span>`;
+      }
+    } catch (err) {
+      llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 网络异常: ${escapeHtml(err.message)}</span>`;
+    } finally {
+      btnTestLlm.disabled = false;
+      btnTestLlm.textContent = '🧪 测试 API 连通性';
+    }
   };
 }
 

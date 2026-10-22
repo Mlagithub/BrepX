@@ -316,6 +316,11 @@ def api_agent_chat(req: AgentChatRequest):
     }
 
 
+@app.post("/api/agent/test_llm")
+def api_agent_test_llm(req: Dict[str, Any]):
+    return cad_agent.test_connection(req)
+
+
 @app.get("/api/export/{fmt}")
 def api_export(fmt: str):
     part = CURRENT_MODEL["part"]
