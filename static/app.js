@@ -613,8 +613,19 @@ function saveLlmConfig() {
 }
 
 [settingBaseUrl, settingApiKey, settingModel].forEach(input => {
-  if (input) input.onchange = saveLlmConfig;
+  if (input) {
+    input.onchange = saveLlmConfig;
+    input.oninput = saveLlmConfig;
+  }
 });
+
+// 切换设置面板显示/隐藏
+if (btnToggleLlm && llmSettingsCard) {
+  btnToggleLlm.onclick = (e) => {
+    e.preventDefault();
+    llmSettingsCard.classList.toggle('hidden');
+  };
+}
 
 // 预设切换药丸
 document.querySelectorAll('.preset-pill').forEach(pill => {
