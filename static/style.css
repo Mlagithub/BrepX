@@ -558,3 +558,211 @@ body, html {
 .text-success {
   color: var(--success-color);
 }
+
+/* --- AI 建模 Agent 样式 --- */
+.agent-topbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.agent-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-text-sm {
+  background: transparent;
+  border: none;
+  color: var(--accent-color);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.btn-text-sm:hover {
+  text-decoration: underline;
+}
+
+.llm-settings-card {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.llm-settings-card.hidden {
+  display: none;
+}
+
+.settings-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.setting-field label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.form-input {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-bright);
+  padding: 5px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  outline: none;
+}
+
+.form-input:focus {
+  border-color: var(--accent-color);
+}
+
+.settings-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-bottom: 10px;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.chat-bubble.assistant {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  align-self: flex-start;
+  width: 95%;
+}
+
+.chat-bubble.user {
+  background-color: rgba(97, 175, 239, 0.2);
+  border: 1px solid rgba(97, 175, 239, 0.4);
+  color: #e5efff;
+  align-self: flex-end;
+  max-width: 88%;
+}
+
+.bubble-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-color);
+  display: flex;
+  justify-content: space-between;
+}
+
+.bubble-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.bubble-code {
+  background-color: #121417;
+  border: 1px solid #2e3440;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 6px;
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: #98c379;
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.bubble-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.prompt-pill {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.prompt-pill:hover {
+  background-color: var(--bg-hover);
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.chat-input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-input {
+  width: 100%;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px;
+  color: var(--text-bright);
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+  outline: none;
+}
+
+.chat-input:focus {
+  border-color: var(--accent-color);
+}
+
+.chat-input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.btn-sm {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+

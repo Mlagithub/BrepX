@@ -76,14 +76,71 @@
       <aside class="sidebar">
         <!-- 面板切换 Tab -->
         <div class="tab-header">
-          <button class="tab-btn active" data-tab="parametric">参数化零件</button>
+          <button class="tab-btn active" data-tab="agent">🤖 建模 Agent</button>
+          <button class="tab-btn" data-tab="parametric">参数化零件</button>
           <button class="tab-btn" data-tab="script">Python 脚本</button>
           <button class="tab-btn" data-tab="presets">模型库</button>
         </div>
 
         <div class="tab-content-container">
+          <!-- 0. AI 对话建模 Agent 面板 -->
+          <div class="tab-pane active" id="tab-agent">
+            <div class="agent-topbar">
+              <div class="agent-title-row">
+                <span class="section-title" style="margin:0">对话式几何设计</span>
+                <button id="btn-toggle-llm-settings" class="btn-text-sm" title="大模型 API 设置">⚙️ 设置</button>
+              </div>
+              <div id="llm-settings-panel" class="llm-settings-card hidden">
+                <div class="settings-title">自定义大模型接入 (可选)</div>
+                <div class="setting-field">
+                  <label>Base URL:</label>
+                  <input type="text" id="setting-base-url" class="form-input" placeholder="https://api.openai.com/v1">
+                </div>
+                <div class="setting-field">
+                  <label>API Key:</label>
+                  <input type="password" id="setting-api-key" class="form-input" placeholder="sk-...">
+                </div>
+                <div class="setting-field">
+                  <label>模型名称:</label>
+                  <input type="text" id="setting-model" class="form-input" placeholder="deepseek-chat 或 gpt-4o-mini">
+                </div>
+                <div class="settings-hint">未填写 API Key 时，将自动启用高精度内置本地 CAD 语义引擎，秒级即开即用。</div>
+              </div>
+            </div>
+
+            <!-- 对话历史记录 -->
+            <div class="chat-container" id="chat-messages">
+              <div class="chat-bubble assistant">
+                <div class="bubble-header">🤖 SMLib 建模 Agent</div>
+                <div class="bubble-body">
+                  你好！我是你的三维几何建模助手。告诉我你想要的机械零部件或几何特征，我将编写标准 <code>smlibpy</code> Python 脚本并为你即时生成 3D 实体与工业 CAD 交换格式。
+                </div>
+              </div>
+            </div>
+
+            <!-- 快捷 Prompt 推荐 -->
+            <div class="quick-prompts">
+              <span class="prompt-pill" data-prompt="帮我建一个带4个对称螺栓孔的管道连接法兰，外径80，内孔30，厚度12">管道法兰</span>
+              <span class="prompt-pill" data-prompt="做一个L型结构安装支架，长80宽50高60壁厚10，底部开一个固定孔">L型支架</span>
+              <span class="prompt-pill" data-prompt="建一个长方体底板100x70x12，四周垂直边倒圆角R8，中间开一个R14通孔">开孔圆角板</span>
+              <span class="prompt-pill" data-prompt="创建一个外径40内径20长60的阶梯轴套，带一个外径60的法兰凸缘">阶梯轴套</span>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="chat-input-area">
+              <textarea id="agent-input" class="chat-input" placeholder="描述你想要设计的零件（Enter 发送，Shift+Enter 换行）…" rows="2"></textarea>
+              <div class="chat-input-actions">
+                <button id="btn-clear-chat" class="btn-text-sm">清空对话</button>
+                <button id="btn-send-agent" class="btn btn-primary btn-sm">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                  发送建模指令
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- 1. 参数化建模面板 -->
-          <div class="tab-pane active" id="tab-parametric">
+          <div class="tab-pane" id="tab-parametric">
             <div class="section-title">零件类型选择</div>
             <select id="template-select" class="form-select">
               <option value="flange">带孔圆角板 / 机械法兰 (Flange Plate)</option>

@@ -584,6 +584,186 @@ document.getElementById('btn-export-py').onclick = () => {
   showStatus('正在下载 Python 独立建模脚本…');
 };
 
+// --- AI 对话建模 Agent 前端控制器 ---
+const chatMessages = document.getElementById('chat-messages');
+const agentInput = document.getElementById('agent-input');
+const btnSendAgent = document.getElementById('btn-send-agent');
+const btnClearChat = document.getElementById('btn-clear-chat');
+const btnToggleLlm = document.getElementById('btn-toggle-llm-settings');
+const llmSettingsCard = document.getElementById('llm-settings-panel');
+
+const settingBaseUrl = document.getElementById('setting-base-url');
+const settingApiKey = document.getElementById('setting-api-key');
+const settingModel = document.getElementById('setting-model');
+
+// 加载持久化的 LLM 设置
+const savedLlmConfig = JSON.parse(localStorage.getItem('smlib_llm_config') || '{}');
+if (settingBaseUrl) settingBaseUrl.value = savedLlmConfig.baseUrl || '';
+if (settingApiKey) settingApiKey.value = savedLlmConfig.apiKey || '';
+if (settingModel) settingModel.value = savedLlmConfig.model || '';
+
+function saveLlmConfig() {
+  const cfg = {
+    baseUrl: settingBaseUrl ? settingBaseUrl.value.trim() : '',
+    apiKey: settingApiKey ? settingApiKey.value.trim() : '',
+    model: settingModel ? settingModel.value.trim() : '',
+  };
+  localStorage.setItem('smlib_llm_config', JSON.stringify(cfg));
+  return cfg;
+}
+
+[settingBaseUrl, settingApiKey, settingModel].forEach(input => {
+  if (input) input.onchange = saveLlmConfig;
+});
+
+if (btnToggleLlm && llmSettingsCard) {
+  btnToggleLlm.onclick = () => {
+    llmSettingsCard.classList.toggle('hidden');
+  };
+}
+
+let agentChatHistory = [];
+
+function appendChatBubble(role, content, meta = {}) {
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${role}`;
+
+  if (role === 'user') {
+    bubble.innerHTML = `<div class="bubble-body">${escapeHtml(content)}</div>`;
+  } else {
+    let html = `
+      <div class="bubble-header">
+        <span>🤖 SMLib 建模 Agent</span>
+        ${meta.compute_ms ? `<span class="bubble-meta">${meta.compute_ms} ms</span>` : ''}
+      </div>
+      <div class="bubble-body">${escapeHtml(content).replace(/\n/g, '<br>')}</div>
+    `;
+
+    if (meta.code) {
+      html += `
+        <pre class="bubble-code"><code>${escapeHtml(meta.code)}</code></pre>
+        <div class="bubble-actions">
+          <button class="btn-text-sm btn-load-editor">在脚本编辑器中查看</button>
+        </div>
+      `;
+    }
+
+    if (meta.error) {
+      html += `<div style="color:#e06c75;margin-top:4px;font-size:11px;">⚠️ 执行提示: ${escapeHtml(meta.error)}</div>`;
+    }
+
+    bubble.innerHTML = html;
+
+    const btnLoad = bubble.querySelector('.btn-load-editor');
+    if (btnLoad) {
+      btnLoad.onclick = () => {
+        scriptEditor.value = meta.code;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        document.querySelector('[data-tab="script"]').classList.add('active');
+        document.getElementById('tab-script').classList.add('active');
+      };
+    }
+  }
+
+  chatMessages.appendChild(bubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function sendAgentMessage(userPrompt) {
+  const text = (userPrompt || (agentInput ? agentInput.value : '')).trim();
+  if (!text) return;
+
+  if (agentInput) agentInput.value = '';
+
+  // 渲染用户输入
+  appendChatBubble('user', text);
+  showLoading('SMLib 智能 Agent 正在分析几何特征并编写代码…');
+
+  const cfg = saveLlmConfig();
+
+  try {
+    const res = await fetch('/api/agent/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: text,
+        history: agentChatHistory,
+        config: cfg
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '请求 Agent 异常');
+
+    // 渲染 Agent 回复
+    appendChatBubble('assistant', data.reply, {
+      code: data.code,
+      compute_ms: data.stats ? data.stats.compute_ms : null,
+      error: data.error
+    });
+
+    // 记录历史
+    agentChatHistory.push({ role: 'user', content: text });
+    agentChatHistory.push({ role: 'assistant', content: data.reply, code: data.code });
+
+    // 成功生成模型后立即渲染 3D 几何
+    if (data.ok && data.gltf) {
+      renderModelGLTF(data.gltf);
+      scriptEditor.value = data.code;
+      if (data.stats) {
+        document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
+        document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
+        showStatus(`Agent 建模完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
+      }
+    } else if (data.error) {
+      showStatus(`Agent 建模失败: ${data.error}`, true);
+    }
+  } catch (err) {
+    appendChatBubble('assistant', '抱歉，建模过程遇到网络或执行异常：' + err.message);
+    showStatus(`Agent 失败: ${err.message}`, true);
+  } finally {
+    hideLoading();
+  }
+}
+
+if (btnSendAgent) {
+  btnSendAgent.onclick = () => sendAgentMessage();
+}
+
+if (agentInput) {
+  agentInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAgentMessage();
+    }
+  });
+}
+
+if (btnClearChat) {
+  btnClearChat.onclick = () => {
+    agentChatHistory = [];
+    chatMessages.innerHTML = `
+      <div class="chat-bubble assistant">
+        <div class="bubble-header">🤖 SMLib 建模 Agent</div>
+        <div class="bubble-body">对话历史已重置。请输入你希望生成的零件或几何特征！</div>
+      </div>
+    `;
+  };
+}
+
+// 快捷 Prompt 胶囊点击
+document.querySelectorAll('.prompt-pill').forEach(pill => {
+  pill.onclick = () => {
+    const prompt = pill.dataset.prompt;
+    if (prompt) sendAgentMessage(prompt);
+  };
+});
+
 // 获取系统内核信息
 async function fetchInfo() {
   try {

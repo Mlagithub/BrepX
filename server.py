@@ -4,7 +4,7 @@ import time
 import uuid
 import tempfile
 import traceback
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 import smlibpy
 from smlibpy import *
+from agent import cad_agent
 
 app = FastAPI(title="SMLib Web Studio", description="smlibpy x cax-viewer integration")
 
@@ -174,14 +175,20 @@ def build_parametric_part(template: str, params: Dict[str, Any]):
 def export_part_to_gltf(part, name="model"):
     """Export part to glTF string."""
     gltf_path = os.path.join(TEMP_DIR, f"{name}_{uuid.uuid4().hex[:8]}.gltf")
-    part.export(gltf_path)
-    with open(gltf_path, "r", encoding="utf-8") as f:
-        content = f.read()
     try:
-        os.remove(gltf_path)
-    except Exception:
-        pass
-    return content
+        part.export(gltf_path)
+        with open(gltf_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return content
+    except Exception as e:
+        traceback.print_exc()
+        raise ValueError(f"三维几何网格三角化或导出失败: {str(e)}。请检查模型尺寸是否重合或退化。")
+    finally:
+        try:
+            if os.path.exists(gltf_path):
+                os.remove(gltf_path)
+        except Exception:
+            pass
 
 
 @app.get("/api/info")
@@ -270,6 +277,45 @@ def api_build_script(req: ScriptRequest):
         raise HTTPException(status_code=400, detail=error_msg)
 
 
+class AgentChatRequest(BaseModel):
+    prompt: str
+    history: Optional[List[Dict[str, Any]]] = []
+    config: Optional[Dict[str, Any]] = {}
+
+
+@app.post("/api/agent/chat")
+def api_agent_chat(req: AgentChatRequest):
+    t0 = time.perf_counter()
+    res = cad_agent.chat(req.prompt, req.history, req.config)
+    compute_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    part = res.get("part")
+    gltf_data = None
+    export_err = None
+    if part is not None:
+        try:
+            gltf_data = export_part_to_gltf(part, "ai_model")
+            CURRENT_MODEL["part"] = part
+            CURRENT_MODEL["script"] = res.get("code", "")
+            CURRENT_MODEL["name"] = "ai_model"
+            CURRENT_MODEL["stats"] = {
+                "volume": round(getattr(part, "volume", 0), 2),
+                "compute_ms": compute_ms,
+            }
+        except Exception as e:
+            export_err = str(e)
+            part = None
+
+    return {
+        "ok": part is not None,
+        "reply": res.get("explanation", ""),
+        "code": res.get("code", ""),
+        "gltf": gltf_data,
+        "stats": CURRENT_MODEL["stats"] if part is not None else {"volume": 0, "compute_ms": compute_ms},
+        "error": export_err or res.get("error")
+    }
+
+
 @app.get("/api/export/{fmt}")
 def api_export(fmt: str):
     part = CURRENT_MODEL["part"]
@@ -327,4 +373,4 @@ if os.path.exists(STATIC_DIR):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8080, reload=True)
+    uvicorn.run("server:app", host="127.0.0.1", port=8080, reload=False)

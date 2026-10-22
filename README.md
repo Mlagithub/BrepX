@@ -44,14 +44,19 @@
 
 我们将 **smlibpy (Python 后端计算)** 与 **cax-viewer (Three.js 前端交互视觉体系)** 深度融合，打造了完整的 Web CAD 工作台：
 
-1. **前后端双向联动工作流**：
-   - **参数化调节模式**：左侧提供直观的滑动条与数值输入（机械法兰、L型角码、衬套、CSG体），实时生成 3D 模型；
-   - **Python 脚本工作台**：参数调节时自动同步生成规范的 Python `smlibpy` 代码；用户亦可在右侧直接编写/修改任意复杂的 Python 建模脚本，按 `Ctrl+Enter` 立即由后端 `smlibpy` 运算并实时三维渲染。
-2. **Three.js 高精度工业 CAD 视口**：
+1. **🤖 AI 智能建模 Agent（自然语言对话式 CAD）**：
+   - **自然语言输入**：支持用户用中文自然语言描述意图（如“帮我建一个带4个对称螺栓孔的管道连接法兰，外径80，内孔30，厚度12”）；
+   - **双模架构 (Dual-Engine)**：
+     - **内置本地精准语义 CAD 引擎**：无需配置任何 API Key，开箱即用支持多类常见机械特征与多轮微调；
+     - **外部大模型 (LLM) 接入**：支持用户在界面设置自定义 Base URL / API Key / Model（兼容 OpenAI、DeepSeek、Qwen、Ollama 等），具备代码自愈重试纠错能力；
+   - **3D 视口与代码编辑器全贯通**：Agent 生成代码后自动在后端的 SMLib 内核中执行，即时刷新 3D 渲染，并将生成的 Python 源码同步至编辑器。
+2. **参数化调节模式**：
+   - 左侧提供直观的滑动条与数值输入（机械法兰、L型角码、衬套、CSG体），实时生成 3D 模型；
+3. **Three.js 高精度工业 CAD 视口**：
    - 支持等轴测 (ISO)、正视 (Front)、俯视 (Top)、右视 (Right)、自适应居中 (Fit)；
    - 支持正交投影 (Orthographic) 与透视投影 (Perspective) 无缝平滑切换；
    - 双向光源、地面网格标尺、三维基准坐标轴、高对比度特征轮廓边线。
-3. **全格式工业交付中心**：
+4. **全格式工业交付中心**：
    - 实时生成并下载工业标准 **STEP 文件** (可直接导入 SolidWorks / Fusion 360 / NX / AutoCAD 等专业 CAD 软件)；
    - 导出 **STL 文件** (直接对接 3D 打印切片机)；
    - 导出 **glTF 3D 场景文件**；
@@ -83,17 +88,16 @@ python server.py
 ## 五、 项目结构清单
 ```text
 C:\Users\keep_\work\smlib\
-├── server.py              # FastAPI 后端服务 (参数化解析、脚本沙盒执行、STEP/STL导出)
+├── agent.py               # CAD Agent 核心 (支持外部大模型接入与本地语义解析引擎)
+├── server.py              # FastAPI 后端服务 (参数化解析、Agent 对话接口、STEP/STL导出)
 ├── requirements.txt       # Python 依赖清单
 ├── start.bat              # Windows 一键启动脚本
 ├── static/                # 前端静态 Web 资产
-│   ├── index.html         # CAD 工作台主界面 (cax-viewer 风格布局)
-│   ├── style.css          # 工程灰/暗黑主题样式表
-│   ├── app.js             # Three.js 视口控制、GLTF渲染管线、参数同步交互
+│   ├── index.html         # CAD 工作台主界面 (包含 Agent 对话与 CAD 视口布局)
+│   ├── style.css          # 工程灰/暗黑主题样式表与对话气泡组件
+│   ├── app.js             # Three.js 视口控制、GLTF渲染管线、Agent 交互控制器
+│   ├── utils/             # Three.js 几何工具库 (BufferGeometryUtils, SkeletonUtils)
 │   └── vendor/            # 本地离线 Three.js 及其扩展库 (r186)
-│       ├── three.module.js
-│       ├── OrbitControls.js
-│       └── GLTFLoader.js
 ├── cax_reverse/           # cax-viewer.com 逆向源码与分析文件
 ├── test_templates.py      # 参数化模板单元测试
 └── test_e2e.py            # 端到端 API 接口与导出测试
