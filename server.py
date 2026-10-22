@@ -14,6 +14,7 @@ from pydantic import BaseModel
 import smlibpy
 from smlibpy import *
 from agent import cad_agent
+from tools_handler import execute_right_tool
 
 app = FastAPI(title="SMLib Web Studio", description="smlibpy x cax-viewer integration")
 
@@ -319,6 +320,43 @@ def api_agent_chat(req: AgentChatRequest):
 @app.post("/api/agent/test_llm")
 def api_agent_test_llm(req: Dict[str, Any]):
     return cad_agent.test_connection(req)
+
+
+class ToolExecuteRequest(BaseModel):
+    tool: str
+    params: Optional[Dict[str, Any]] = {}
+    base_on_current: Optional[bool] = False
+
+
+@app.post("/api/tools/execute")
+def api_tools_execute(req: ToolExecuteRequest):
+    t0 = time.perf_counter()
+    try:
+        current_part = CURRENT_MODEL.get("part") if req.base_on_current else None
+        current_script = CURRENT_MODEL.get("script", "") if req.base_on_current else ""
+
+        part, script, explanation = execute_right_tool(req.tool, req.params, current_part, current_script)
+        compute_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+        gltf_data = export_part_to_gltf(part, req.tool)
+        CURRENT_MODEL["part"] = part
+        CURRENT_MODEL["script"] = script
+        CURRENT_MODEL["name"] = req.tool
+        CURRENT_MODEL["stats"] = {
+            "volume": round(getattr(part, "volume", 0), 2),
+            "compute_ms": compute_ms,
+        }
+
+        return {
+            "ok": True,
+            "explanation": explanation,
+            "code": script,
+            "gltf": gltf_data,
+            "stats": CURRENT_MODEL["stats"],
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/api/export/{fmt}")

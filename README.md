@@ -50,13 +50,22 @@
      - **内置本地精准语义 CAD 引擎**：无需配置任何 API Key，开箱即用支持多类常见机械特征与多轮微调；
      - **外部大模型 (LLM) 接入**：支持用户在界面设置自定义 Base URL / API Key / Model（兼容 OpenAI、DeepSeek、Qwen、Ollama 等），具备代码自愈重试纠错能力；
    - **3D 视口与代码编辑器全贯通**：Agent 生成代码后自动在后端的 SMLib 内核中执行，即时刷新 3D 渲染，并将生成的 Python 源码同步至编辑器。
-2. **参数化调节模式**：
+2. **🛠️ 完整复刻 cax-viewer 右列几何造型工具栏 (32+ 工具全功能可用)**：
+   - **三维图元与经典构件**：草图驱动零件、带孔圆角板、长方体 (`Box`)、圆柱 (`Cylinder`)、球体 (`Sphere`)、圆锥 (`Cone`)、圆环 (`Torus`)、定位孔 (`Hole`)；
+   - **布尔运算体系**：布尔并集 (`+`)、布尔差集 (`-`)、布尔交集 (`&`)、高级布尔运算参数设置；
+   - **平面轮廓与草图**：直线、矩形、圆、圆弧、折线、样条曲线 (`B-Spline`)；
+   - **高级构造特征（激活原网页未实现的功能）**：
+     - 拉伸 (`Extrude`)、旋转体 (`Revolve`)、空间扫掠 (`Sweep`)、多截面放样 (`Loft`)；
+     - 倒角 (`Chamfer`)、倒圆角 (`Fillet`)、薄壁抽壳 (`Shell`)、法向偏移 (`Offset`)；
+     - 对称镜像 (`Mirror`)、网格阵列 (`Grid Array`)、圆周环阵列 (`Circular Array`)、平面切分 (`Slice`)、轴旋转 (`Rotate3D`)、平移复制 (`Copy`)；
+   - 每个工具点击均弹出专业参数配置弹窗，支持独立创建或在当前实体上累加特征，并同步生成 Python 源码！
+3. **参数化调节模式**：
    - 左侧提供直观的滑动条与数值输入（机械法兰、L型角码、衬套、CSG体），实时生成 3D 模型；
-3. **Three.js 高精度工业 CAD 视口**：
+4. **Three.js 高精度工业 CAD 视口**：
    - 支持等轴测 (ISO)、正视 (Front)、俯视 (Top)、右视 (Right)、自适应居中 (Fit)；
    - 支持正交投影 (Orthographic) 与透视投影 (Perspective) 无缝平滑切换；
    - 双向光源、地面网格标尺、三维基准坐标轴、高对比度特征轮廓边线。
-4. **全格式工业交付中心**：
+5. **全格式工业交付中心**：
    - 实时生成并下载工业标准 **STEP 文件** (可直接导入 SolidWorks / Fusion 360 / NX / AutoCAD 等专业 CAD 软件)；
    - 导出 **STL 文件** (直接对接 3D 打印切片机)；
    - 导出 **glTF 3D 场景文件**；
@@ -88,14 +97,15 @@ python server.py
 ## 五、 项目结构清单
 ```text
 C:\Users\keep_\work\smlib\
+├── tools_handler.py       # 右侧 32 项几何工具执行引擎 (Box, Cylinder, Torus, Loft, Sweep...)
 ├── agent.py               # CAD Agent 核心 (支持外部大模型接入与本地语义解析引擎)
-├── server.py              # FastAPI 后端服务 (参数化解析、Agent 对话接口、STEP/STL导出)
+├── server.py              # FastAPI 后端服务 (参数化解析、Agent 对话接口、工具调用、STEP导出)
 ├── requirements.txt       # Python 依赖清单
 ├── start.bat              # Windows 一键启动脚本
 ├── static/                # 前端静态 Web 资产
-│   ├── index.html         # CAD 工作台主界面 (包含 Agent 对话与 CAD 视口布局)
-│   ├── style.css          # 工程灰/暗黑主题样式表与对话气泡组件
-│   ├── app.js             # Three.js 视口控制、GLTF渲染管线、Agent 交互控制器
+│   ├── index.html         # CAD 工作台主界面 (包含 Agent、CAD 视口与右侧工具栏)
+│   ├── style.css          # 工程灰/暗黑主题样式表与右侧工具栏组件
+│   ├── app.js             # Three.js 视口控制、GLTF渲染管线、右侧工具弹窗交互
 │   ├── utils/             # Three.js 几何工具库 (BufferGeometryUtils, SkeletonUtils)
 │   └── vendor/            # 本地离线 Three.js 及其扩展库 (r186)
 ├── cax_reverse/           # cax-viewer.com 逆向源码与分析文件

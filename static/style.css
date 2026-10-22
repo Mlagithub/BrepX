@@ -793,3 +793,191 @@ body, html {
   font-size: 12px;
 }
 
+/* --- 右侧几何工具栏 (复刻 cax-viewer) --- */
+.right-tools {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 146px;
+  background-color: rgba(33, 37, 43, 0.95);
+  border-left: 1px solid var(--border-color);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 10;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.tool-caption {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 6px 2px 6px;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 2px;
+}
+
+.right-tools button {
+  background-color: #2c313a;
+  border: 1px solid #3b4048;
+  color: #abb2bf;
+  padding: 6px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.right-tools button:hover {
+  background-color: #3e4451;
+  color: #ffffff;
+  border-color: var(--accent-color);
+  transform: translateX(-1px);
+}
+
+.right-tools button:active {
+  background-color: var(--accent-hover);
+  color: #1e2227;
+}
+
+/* 模态对话框 */
+.tool-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  transition: opacity 0.2s ease;
+}
+
+.tool-modal-backdrop.hidden {
+  display: none;
+}
+
+.tool-modal-card {
+  width: 360px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tool-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.tool-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.tool-modal-close:hover {
+  color: #ffffff;
+  background-color: var(--bg-hover);
+}
+
+.tool-modal-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.tool-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tool-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-modal-field label {
+  font-size: 11px;
+  color: var(--text-main);
+}
+
+.tool-modal-field input, .tool-modal-field select {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-bright);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+}
+
+.tool-modal-field input:focus, .tool-modal-field select:focus {
+  border-color: var(--accent-color);
+}
+
+.tool-modal-option {
+  font-size: 11px;
+  color: var(--accent-color);
+  background-color: rgba(97, 175, 239, 0.1);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px dashed rgba(97, 175, 239, 0.3);
+}
+
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.tool-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.tool-modal-actions button {
+  flex: 1;
+}
+

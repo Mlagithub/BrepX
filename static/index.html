@@ -240,6 +240,73 @@
           <div class="hud-mode">左键：旋转 | 中键：平移 | 滚轮：缩放</div>
         </div>
 
+        <!-- 右侧经典 CAD 几何工具栏 (复刻自 cax-viewer) -->
+        <div aria-label="三维几何与视图工具" class="right-tools" role="toolbar">
+          <span class="tool-caption">三维</span>
+          <button data-tool="new-feature-graph" type="button" title="矩形草图的长度和宽度驱动拉伸、可选贯穿孔及圆角">草图驱动零件</button>
+          <button data-tool="new-parametric-part" type="button" title="矩形尺寸驱动拉伸、定位贯穿孔和外角圆角">带孔圆角板</button>
+          <button data-tool="box" title="长方体：长度 × 宽度 × 高度">长方体</button>
+          <button data-tool="cylinder" title="圆柱：半径 × 高度">圆柱</button>
+          <button data-tool="sphere" title="球体：球心与半径">球体</button>
+          <button data-tool="cone" title="圆锥 / 圆台：底面半径 × 顶面半径 × 高度">圆锥</button>
+          <button data-tool="torus" title="圆环：主环半径 × 截面半径">圆环</button>
+          <button data-tool="hole" title="定位长方体或当前实体上的贯穿孔">定位孔</button>
+
+          <span class="tool-caption">布尔运算</span>
+          <button data-tool="boolean-union" title="将当前模型与工具体合并为一个新实体">布尔并</button>
+          <button data-tool="boolean-subtract" title="从当前主体中减去工具体切削">布尔减</button>
+          <button data-tool="boolean-intersection" title="求两体公共重合相交区域">布尔交</button>
+          <button data-tool="boolean" title="高级布尔运算参数设置">布尔设置</button>
+
+          <span class="tool-caption">轮廓</span>
+          <button data-tool="line" title="直线：按参数创建直线并拉伸">直线</button>
+          <button data-tool="rectangle" title="矩形：按长宽创建闭合矩形轮廓">矩形</button>
+          <button data-tool="circle" title="圆：按半径创建圆形轮廓">圆</button>
+          <button data-tool="arc" title="圆弧：创建圆弧轮廓">圆弧</button>
+          <button data-tool="polyline" title="折线：按顶点创建多边形轮廓">折线</button>
+          <button data-tool="bspline" title="样条：创建平滑样条曲线">样条</button>
+
+          <span class="tool-caption">构造</span>
+          <button data-tool="extrude" title="拉伸：二维草图轮廓拉伸成体">拉伸</button>
+          <button data-tool="revolve" title="旋转体：轮廓绕轴旋转扫描成体">旋转体</button>
+          <button data-tool="sweep" title="扫掠：截面沿空间螺旋路径扫掠成体">扫掠</button>
+          <button data-tool="loft" title="放样：多截面平滑放样成体">放样</button>
+          <button data-tool="chamfer" title="倒角：选择实体特征边进行等距切角">倒角</button>
+          <button data-tool="fillet" title="圆角：对实体特征边缘应用光滑倒圆角">圆角</button>
+          <button data-tool="shell" title="抽壳：实体薄壁特征">抽壳</button>
+          <button data-tool="offset" title="偏移：实体法向等距扩展">偏移</button>
+          <button data-tool="mirror" title="镜像：沿基准面对称镜像">镜像</button>
+          <button data-tool="array" title="网格阵列：沿 X 和 Y 矩形排布">阵列</button>
+          <button data-tool="circular" title="环阵列：绕轴圆周等角环形阵列">环阵列</button>
+          <button data-tool="slice" title="切分：平面切除分割">切分</button>
+          <button data-tool="rotate3d" title="轴旋转：绕指定轴角度旋转">轴旋转</button>
+          <button data-tool="copy" title="复制：平移生成实体副本">复制</button>
+        </div>
+
+        <!-- 浮动参数弹窗 Modal Dialog -->
+        <div id="tool-dialog" class="tool-modal-backdrop hidden">
+          <div class="tool-modal-card">
+            <div class="tool-modal-header">
+              <span id="tool-modal-title" class="tool-modal-title">工具参数</span>
+              <button id="tool-modal-close" class="tool-modal-close" title="关闭">✕</button>
+            </div>
+            <p id="tool-modal-desc" class="tool-modal-desc"></p>
+            <form id="tool-modal-form" class="tool-modal-form">
+              <div id="tool-modal-fields" class="tool-modal-fields"></div>
+              <div id="tool-modal-base-option" class="tool-modal-option">
+                <label class="check-label">
+                  <input type="checkbox" id="tool-base-on-current" checked>
+                  基于当前几何模型进行操作（叠加特征）
+                </label>
+              </div>
+              <div class="tool-modal-actions">
+                <button type="button" id="tool-modal-cancel" class="btn btn-secondary">取消</button>
+                <button type="submit" id="tool-modal-submit" class="btn btn-primary">确定执行</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
         <!-- 加载遮罩 -->
         <div id="loading-overlay" class="loading-overlay hidden">
           <div class="spinner"></div>
