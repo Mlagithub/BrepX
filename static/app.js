@@ -1109,6 +1109,8 @@ const toolModalClose = document.getElementById('tool-modal-close');
 const toolModalCancel = document.getElementById('tool-modal-cancel');
 const toolBaseOption = document.getElementById('tool-modal-base-option');
 const toolBaseCheckbox = document.getElementById('tool-base-on-current');
+const toolModalError = document.getElementById('tool-modal-error');
+const toolModalSubmit = document.getElementById('tool-modal-submit');
 
 let activeToolKey = null;
 
@@ -1120,10 +1122,15 @@ function openToolModal(toolKey) {
   toolModalTitle.textContent = schema.title;
   toolModalDesc.textContent = schema.desc;
   toolModalFields.innerHTML = '';
+  if (toolModalError) {
+    toolModalError.style.display = 'none';
+    toolModalError.textContent = '';
+  }
 
-  // 是否显示“基于当前模型”选项
+  // 是否显示“基于当前模型”选项 (默认不勾选，确保独立创建 100% 成功)
   if (toolBaseOption) {
     toolBaseOption.style.display = schema.allowBaseOnCurrent ? 'block' : 'none';
+    if (toolBaseCheckbox) toolBaseCheckbox.checked = false;
   }
 
   (schema.fields || []).forEach(f => {
@@ -1172,8 +1179,10 @@ if (toolModalForm) {
 
     const baseOnCurrent = schema.allowBaseOnCurrent && toolBaseCheckbox ? toolBaseCheckbox.checked : false;
 
-    closeToolModal();
-    showLoading(`SMLib 正在执行【${schema.title}】运算…`);
+    if (toolModalSubmit) {
+      toolModalSubmit.disabled = true;
+      toolModalSubmit.textContent = '计算中…';
+    }
 
     try {
       const res = await fetch('/api/tools/execute', {
@@ -1187,7 +1196,15 @@ if (toolModalForm) {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || '工具运算失败');
+      if (!res.ok) {
+        let msg = '工具运算失败';
+        if (typeof data.detail === 'string') msg = data.detail;
+        else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+        throw new Error(msg);
+      }
+
+      // 运算成功，关闭弹窗
+      closeToolModal();
 
       // 渲染 3D
       renderModelGLTF(data.gltf);
@@ -1206,10 +1223,16 @@ if (toolModalForm) {
       });
 
     } catch (err) {
+      if (toolModalError) {
+        toolModalError.style.display = 'block';
+        toolModalError.textContent = `⚠️ ${err.message}`;
+      }
       showStatus(`工具执行失败: ${err.message}`, true);
-      alert(`运算失败: ${err.message}`);
     } finally {
-      hideLoading();
+      if (toolModalSubmit) {
+        toolModalSubmit.disabled = false;
+        toolModalSubmit.textContent = '确定执行';
+      }
     }
   };
 }

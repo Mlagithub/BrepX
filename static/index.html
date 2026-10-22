@@ -295,10 +295,11 @@
               <div id="tool-modal-fields" class="tool-modal-fields"></div>
               <div id="tool-modal-base-option" class="tool-modal-option">
                 <label class="check-label">
-                  <input type="checkbox" id="tool-base-on-current" checked>
-                  基于当前几何模型进行操作（叠加特征）
+                  <input type="checkbox" id="tool-base-on-current">
+                  在当前几何模型上追加此特征（取消勾选则创建独立新实体）
                 </label>
               </div>
+              <div id="tool-modal-error" style="color:#e06c75;font-size:11px;display:none;line-height:1.4;"></div>
               <div class="tool-modal-actions">
                 <button type="button" id="tool-modal-cancel" class="btn btn-secondary">取消</button>
                 <button type="submit" id="tool-modal-submit" class="btn btn-primary">确定执行</button>
