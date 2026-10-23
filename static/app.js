@@ -12,6 +12,8 @@ const state = {
   showEdges: true,
   currentPartGroup: null,
   isBuilding: false,
+  selectionMode: 'solid', // 'solid' | 'face' | 'edge' | 'vertex'
+  selectedItem: null,
 };
 
 // 参数定义配置
@@ -126,6 +128,42 @@ const axesHelper = new THREE.AxesHelper(50);
 axesHelper.material.linewidth = 2;
 scene.add(axesHelper);
 
+// CAD 分级拾取高亮层 (实体/面/边/点)
+const highlightGroup = new THREE.Group();
+scene.add(highlightGroup);
+
+const raycaster = new THREE.Raycaster();
+const mousePos = new THREE.Vector2();
+
+// 顶点标靶指示小球
+const vertexMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(1.2, 16, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffd885, depthTest: false })
+);
+vertexMarker.renderOrder = 999;
+vertexMarker.visible = false;
+highlightGroup.add(vertexMarker);
+
+// 面高亮网格
+let highlightFaceMesh = null;
+const faceHighlightMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffc766,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.65,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1
+});
+
+// 边高亮线条
+let highlightEdgeLine = null;
+const edgeHighlightMaterial = new THREE.LineBasicMaterial({
+  color: 0xffea00,
+  linewidth: 3,
+  depthTest: false
+});
+
 // 动效循环
 function animate() {
   requestAnimationFrame(animate);
@@ -226,6 +264,8 @@ function renderModelGLTF(gltfContent) {
     }
 
     fitCameraToObject(group);
+    clearHighlights();
+    updateTopologyView();
   }, (err) => {
     console.error('Failed to parse glTF:', err);
     showStatus('GLTF 解析失败: ' + err.message, true);
@@ -1097,6 +1137,33 @@ const RIGHT_TOOLS_SCHEMA = {
       { key: 'offset_x', label: '平移偏移 X (mm)', default: 50 },
       { key: 'offset_y', label: '平移偏移 Y (mm)', default: 0 }
     ]
+  },
+  'move': {
+    title: '实体平移变换 (Translate)',
+    desc: '沿空间 X、Y、Z 轴方向输入位移增量',
+    allowBaseOnCurrent: true,
+    fields: [
+      { key: 'dx', label: '沿 X 轴位移 (mm)', default: 20 },
+      { key: 'dy', label: '沿 Y 轴位移 (mm)', default: 0 },
+      { key: 'dz', label: '沿 Z 轴位移 (mm)', default: 0 }
+    ]
+  },
+  'rotate': {
+    title: '实体轴旋转变换 (Rotate)',
+    desc: '选择旋转基准轴向与空间旋转角度',
+    allowBaseOnCurrent: true,
+    fields: [
+      { key: 'axis', label: '旋转轴', type: 'select', options: ['Z', 'X', 'Y'], default: 'Z' },
+      { key: 'angle', label: '旋转角度 (°)', default: 45 }
+    ]
+  },
+  'scale': {
+    title: '实体等比缩放 (Scale)',
+    desc: '输入三维几何等比缩放因子 (大于0)',
+    allowBaseOnCurrent: true,
+    fields: [
+      { key: 'factor', label: '缩放系数 (如 1.5 放大, 0.8 缩小)', default: 1.25 }
+    ]
   }
 };
 
@@ -1185,15 +1252,32 @@ if (toolModalForm) {
     }
 
     try {
-      const res = await fetch('/api/tools/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tool: activeToolKey,
-          params,
-          base_on_current: baseOnCurrent
-        })
-      });
+      let res;
+      if (['move', 'rotate', 'scale'].includes(activeToolKey)) {
+        res = await fetch('/api/transform', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: activeToolKey === 'move' ? 'translate' : activeToolKey,
+            dx: params.dx || 0,
+            dy: params.dy || 0,
+            dz: params.dz || 0,
+            axis: params.axis || 'Z',
+            angle: params.angle || 0,
+            factor: params.factor || 1.0
+          })
+        });
+      } else {
+        res = await fetch('/api/tools/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tool: activeToolKey,
+            params,
+            base_on_current: baseOnCurrent
+          })
+        });
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -1235,6 +1319,265 @@ if (toolModalForm) {
       }
     }
   };
+}
+
+// 绑定顶部几何变换按钮
+const btnToolMove = document.getElementById('btn-tool-move');
+const btnToolRotate = document.getElementById('btn-tool-rotate');
+const btnToolScale = document.getElementById('btn-tool-scale');
+
+if (btnToolMove) btnToolMove.onclick = () => openToolModal('move');
+if (btnToolRotate) btnToolRotate.onclick = () => openToolModal('rotate');
+if (btnToolScale) btnToolScale.onclick = () => openToolModal('scale');
+
+// --- CAD 分级选择模式控制器 (实体/面/边/点) ---
+const selBadgeMode = document.getElementById('sel-badge-mode');
+const selSubInfo = document.getElementById('sel-sub-info');
+const selectionFields = document.getElementById('selection-fields');
+
+document.querySelectorAll('#selection-mode-group button[data-sel-mode]').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('#selection-mode-group button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.selectionMode = btn.dataset.selMode;
+
+    clearHighlights();
+
+    const modeLabels = { solid: '实体 (Solid)', face: '面 (Face)', edge: '边 (Edge)', vertex: '点 (Vertex)' };
+    if (selBadgeMode) selBadgeMode.textContent = `拾取: ${modeLabels[state.selectionMode] || state.selectionMode}`;
+    if (selSubInfo) selSubInfo.textContent = '点击 3D 视图中相应部位进行高亮与分析';
+
+    showStatus(`已切换选择模式: ${modeLabels[state.selectionMode]}`);
+  };
+});
+
+function clearHighlights() {
+  if (highlightFaceMesh) {
+    highlightGroup.remove(highlightFaceMesh);
+    if (highlightFaceMesh.geometry) highlightFaceMesh.geometry.dispose();
+    highlightFaceMesh = null;
+  }
+  if (highlightEdgeLine) {
+    highlightGroup.remove(highlightEdgeLine);
+    if (highlightEdgeLine.geometry) highlightEdgeLine.geometry.dispose();
+    highlightEdgeLine = null;
+  }
+  if (vertexMarker) {
+    vertexMarker.visible = false;
+  }
+  state.selectedItem = null;
+}
+
+// 鼠标点击画布触发拾取
+let pointerDownPos = { x: 0, y: 0 };
+container.addEventListener('pointerdown', (e) => {
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+});
+
+container.addEventListener('pointerup', (e) => {
+  const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+  if (dist > 5) return; // 属于视角拖拽旋转，忽略
+
+  const rect = container.getBoundingClientRect();
+  mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  performSelectionPick();
+});
+
+function performSelectionPick() {
+  if (!state.currentPartGroup) return;
+
+  raycaster.setFromCamera(mousePos, activeCamera);
+  const meshes = [];
+  state.currentPartGroup.traverse(child => {
+    if (child.isMesh && child.name !== 'cad-edge-line') meshes.push(child);
+  });
+
+  const intersects = raycaster.intersectObjects(meshes, true);
+  clearHighlights();
+
+  if (!intersects.length) {
+    if (selSubInfo) selSubInfo.textContent = '未选中目标（点击空白处清除选择）';
+    updateTopologyView();
+    return;
+  }
+
+  const hit = intersects[0];
+  const mode = state.selectionMode;
+
+  if (mode === 'solid') {
+    // 实体高亮
+    if (selBadgeMode) selBadgeMode.textContent = '拾取: 实体 (Solid)';
+    if (selSubInfo) selSubInfo.textContent = '已选择完整三维实体模型';
+    updateTopologyView();
+    showStatus('已选择实体模型');
+
+  } else if (mode === 'face') {
+    // 面拾取与高亮
+    if (hit.face) {
+      const geom = new THREE.BufferGeometry();
+      const posAttr = hit.object.geometry.attributes.position;
+      const idx = hit.object.geometry.index;
+
+      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+      if (idx) {
+        const iA = idx.getX(hit.faceIndex * 3);
+        const iB = idx.getX(hit.faceIndex * 3 + 1);
+        const iC = idx.getX(hit.faceIndex * 3 + 2);
+        pA.fromBufferAttribute(posAttr, iA);
+        pB.fromBufferAttribute(posAttr, iB);
+        pC.fromBufferAttribute(posAttr, iC);
+      } else {
+        pA.fromBufferAttribute(posAttr, hit.faceIndex * 3);
+        pB.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 1);
+        pC.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 2);
+      }
+
+      // 考虑物体变换
+      hit.object.localToWorld(pA);
+      hit.object.localToWorld(pB);
+      hit.object.localToWorld(pC);
+
+      geom.setAttribute('position', new THREE.Float32BufferAttribute([
+        pA.x, pA.y, pA.z,
+        pB.x, pB.y, pB.z,
+        pC.x, pC.y, pC.z
+      ], 3));
+      geom.computeVertexNormals();
+
+      highlightFaceMesh = new THREE.Mesh(geom, faceHighlightMaterial);
+      highlightGroup.add(highlightFaceMesh);
+
+      const normal = hit.face.normal.clone().applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
+      let orient = '空间倾斜面';
+      if (Math.abs(normal.z) > 0.95) orient = normal.z > 0 ? '顶面 (+Z)' : '底面 (-Z)';
+      else if (Math.abs(normal.y) > 0.95) orient = normal.y > 0 ? '侧面 (+Y)' : '侧面 (-Y)';
+      else if (Math.abs(normal.x) > 0.95) orient = normal.x > 0 ? '右侧面 (+X)' : '左侧面 (-X)';
+
+      if (selBadgeMode) selBadgeMode.textContent = `拾取: 面 (Face #${hit.faceIndex})`;
+      if (selSubInfo) selSubInfo.textContent = orient;
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">法向量 (X,Y,Z):</span><span class="stat-value">[${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}]</span></div>
+          <div class="stat-row"><span class="stat-name">面取向特征:</span><span class="stat-value">${orient}</span></div>
+          <div class="stat-row"><span class="stat-name">击中坐标 (XYZ):</span><span class="stat-value">${hit.point.x.toFixed(1)}, ${hit.point.y.toFixed(1)}, ${hit.point.z.toFixed(1)}</span></div>
+        `;
+      }
+      showStatus(`选中面 #${hit.faceIndex} · 法向: [${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}] · ${orient}`);
+    }
+
+  } else if (mode === 'edge') {
+    // 边拾取与高亮：在当前面寻找最近特征边
+    const geom = hit.object.geometry;
+    let closestLine = null;
+    let minD = Infinity;
+
+    // 寻找最近的两个顶点作为线段
+    const pos = geom.attributes.position;
+    const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+    const hitPt = hit.object.worldToLocal(hit.point.clone());
+
+    for (let i = 0; i < pos.count; i += 3) {
+      for (let j = 0; j < 3; j++) {
+        v1.fromBufferAttribute(pos, i + j);
+        v2.fromBufferAttribute(pos, i + ((j + 1) % 3));
+        const line = new THREE.Line3(v1, v2);
+        const closestPt = new THREE.Vector3();
+        line.closestPointToPoint(hitPt, true, closestPt);
+        const d = closestPt.distanceTo(hitPt);
+        if (d < minD) {
+          minD = d;
+          closestLine = [v1.clone(), v2.clone()];
+        }
+      }
+    }
+
+    if (closestLine) {
+      const p1 = hit.object.localToWorld(closestLine[0]);
+      const p2 = hit.object.localToWorld(closestLine[1]);
+      const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+      highlightEdgeLine = new THREE.LineSegments(lineGeom, edgeHighlightMaterial);
+      highlightGroup.add(highlightEdgeLine);
+
+      const length = p1.distanceTo(p2);
+      if (selBadgeMode) selBadgeMode.textContent = '拾取: 边 (Edge)';
+      if (selSubInfo) selSubInfo.textContent = `特征线段 (长 ${length.toFixed(2)} mm)`;
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">特征边长度:</span><span class="stat-value">${length.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">端点 1 (XYZ):</span><span class="stat-value">${p1.x.toFixed(1)}, ${p1.y.toFixed(1)}, ${p1.z.toFixed(1)}</span></div>
+          <div class="stat-row"><span class="stat-name">端点 2 (XYZ):</span><span class="stat-value">${p2.x.toFixed(1)}, ${p2.y.toFixed(1)}, ${p2.z.toFixed(1)}</span></div>
+        `;
+      }
+      showStatus(`选中边 · 长度: ${length.toFixed(2)} mm`);
+    }
+
+  } else if (mode === 'vertex') {
+    // 点拾取：吸附到三角形最近的顶点
+    const geom = hit.object.geometry;
+    const pos = geom.attributes.position;
+    const idx = geom.index;
+    let closestV = null;
+    let minD = Infinity;
+
+    const testIndices = idx ? [
+      idx.getX(hit.faceIndex * 3),
+      idx.getX(hit.faceIndex * 3 + 1),
+      idx.getX(hit.faceIndex * 3 + 2)
+    ] : [hit.faceIndex * 3, hit.faceIndex * 3 + 1, hit.faceIndex * 3 + 2];
+
+    for (const i of testIndices) {
+      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
+      hit.object.localToWorld(v);
+      const d = v.distanceTo(hit.point);
+      if (d < minD) {
+        minD = d;
+        closestV = v;
+      }
+    }
+
+    if (closestV) {
+      vertexMarker.position.copy(closestV);
+      vertexMarker.visible = true;
+
+      if (selBadgeMode) selBadgeMode.textContent = '拾取: 顶点 (Vertex)';
+      if (selSubInfo) selSubInfo.textContent = '几何特征顶点坐标已锁定';
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">绝对空间 X:</span><span class="stat-value">${closestV.x.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">绝对空间 Y:</span><span class="stat-value">${closestV.y.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">绝对空间 Z:</span><span class="stat-value">${closestV.z.toFixed(2)} mm</span></div>
+        `;
+      }
+      showStatus(`选中顶点 · 空间坐标: (${closestV.x.toFixed(2)}, ${closestV.y.toFixed(2)}, ${closestV.z.toFixed(2)}) mm`);
+    }
+  }
+}
+
+async function updateTopologyView() {
+  if (!state.currentPartGroup) return;
+  const box = new THREE.Box3().setFromObject(state.currentPartGroup);
+  if (!box.isEmpty()) {
+    const size = box.getSize(new THREE.Vector3());
+    const bboxStr = `${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm`;
+    const bboxEl = document.getElementById('stat-bbox');
+    if (bboxEl) bboxEl.textContent = bboxStr;
+  }
+
+  try {
+    const res = await fetch('/api/model/topology');
+    const data = await res.json();
+    if (data.ok) {
+      const areaEl = document.getElementById('stat-area');
+      if (areaEl) areaEl.textContent = `${data.area.toLocaleString()} mm²`;
+      if (data.size && document.getElementById('stat-bbox')) {
+        document.getElementById('stat-bbox').textContent = `${data.size[0]} × ${data.size[1]} × ${data.size[2]} mm`;
+      }
+    }
+  } catch (err) {
+    console.warn('Topology fetch error:', err);
+  }
 }
 
 // 绑定右侧工具栏所有按钮点击事件

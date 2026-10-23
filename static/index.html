@@ -39,6 +39,25 @@
       </div>
 
       <div class="nav-toolbar">
+        <!-- 选择模式分级拾取 (实体/面/边/点) -->
+        <div class="btn-group select-mode-group" id="selection-mode-group">
+          <button class="nav-btn active" data-sel-mode="solid" title="实体选择模式 (拾取整个模型)">实体</button>
+          <button class="nav-btn" data-sel-mode="face" title="面选择模式 (点击高亮面并查看法向)">面</button>
+          <button class="nav-btn" data-sel-mode="edge" title="边选择模式 (点击高亮边并测量长度)">边</button>
+          <button class="nav-btn" data-sel-mode="vertex" title="点选择模式 (点击捕捉三维坐标)">点</button>
+        </div>
+
+        <div class="btn-divider"></div>
+
+        <!-- 典型几何变换 (平移/旋转/缩放) -->
+        <div class="btn-group transform-group">
+          <button class="nav-btn" id="btn-tool-move" title="平移变换 (沿 X/Y/Z 轴位移增量)">平移</button>
+          <button class="nav-btn" id="btn-tool-rotate" title="旋转变换 (绕指定轴角度旋转)">旋转</button>
+          <button class="nav-btn" id="btn-tool-scale" title="缩放变换 (三维等比缩放)">缩放</button>
+        </div>
+
+        <div class="btn-divider"></div>
+
         <div class="btn-group">
           <button class="nav-btn active" id="btn-iso" title="等轴测视图">等轴测</button>
           <button class="nav-btn" id="btn-front" title="正视图">正视</button>
@@ -214,10 +233,27 @@
 
         <!-- 底部几何属性卡片 -->
         <div class="sidebar-footer">
+          <div class="selection-detail-card" id="selection-detail-card">
+            <div class="stat-header">
+              <span class="stat-mode-badge" id="sel-badge-mode">拾取: 实体 (Solid)</span>
+              <span class="stat-sub-info" id="sel-sub-info">点击画布中零件查看</span>
+            </div>
+            <div class="selection-fields" id="selection-fields">
+              <div class="stat-row">
+                <span class="stat-name">包围盒外形：</span>
+                <span class="stat-value" id="stat-bbox">- mm</span>
+              </div>
+            </div>
+          </div>
+          <div class="section-divider" style="margin:8px 0"></div>
           <div class="stats-card">
             <div class="stat-row">
               <span class="stat-name">实体体积：</span>
               <span class="stat-value" id="stat-volume">- mm³</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-name">实体表面积：</span>
+              <span class="stat-value" id="stat-area">- mm²</span>
             </div>
             <div class="stat-row">
               <span class="stat-name">计算耗时：</span>

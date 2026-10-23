@@ -359,6 +359,100 @@ def api_tools_execute(req: ToolExecuteRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+class TransformRequest(BaseModel):
+    kind: str  # 'translate' | 'rotate' | 'scale'
+    dx: Optional[float] = 0.0
+    dy: Optional[float] = 0.0
+    dz: Optional[float] = 0.0
+    axis: Optional[str] = "Z"  # "X", "Y", "Z"
+    angle: Optional[float] = 0.0
+    factor: Optional[float] = 1.0
+
+
+@app.post("/api/transform")
+def api_transform(req: TransformRequest):
+    part = CURRENT_MODEL.get("part")
+    if part is None:
+        raise HTTPException(status_code=400, detail="当前场景暂无可用模型，无法执行几何变换。")
+
+    t0 = time.perf_counter()
+    script = CURRENT_MODEL.get("script", "from smlibpy import *\n")
+    explanation = ""
+
+    try:
+        if req.kind == "translate":
+            part = part.translate(req.dx, req.dy, req.dz)
+            code_line = f"part = part.translate({req.dx}, {req.dy}, {req.dz})"
+            explanation = f"已平移位移增量: ({req.dx}, {req.dy}, {req.dz}) mm"
+        elif req.kind == "rotate":
+            axis_obj = Z if req.axis.upper() == "Z" else Y if req.axis.upper() == "Y" else X
+            part = part.rotate(axis_obj, req.angle)
+            code_line = f"part = part.rotate({req.axis.upper()}, {req.angle})"
+            explanation = f"已绕 {req.axis.upper()} 轴旋转 {req.angle}°"
+        elif req.kind == "scale":
+            if req.factor <= 0:
+                raise HTTPException(status_code=400, detail="缩放因子必须大于 0")
+            part = part.scale(req.factor)
+            code_line = f"part = part.scale({req.factor})"
+            explanation = f"已等比缩放 {req.factor} 倍"
+        else:
+            raise HTTPException(status_code=400, detail=f"未知的几何变换类型: {req.kind}")
+
+        new_script = script.rstrip() + f"\n# 几何变换\n{code_line}\n"
+        compute_ms = round((time.perf_counter() - t0) * 1000, 2)
+        gltf_data = export_part_to_gltf(part, "transformed_part")
+
+        CURRENT_MODEL["part"] = part
+        CURRENT_MODEL["script"] = new_script
+        CURRENT_MODEL["stats"] = {
+            "volume": round(getattr(part, "volume", 0), 2),
+            "compute_ms": compute_ms,
+        }
+
+        return {
+            "ok": True,
+            "explanation": explanation,
+            "code": new_script,
+            "gltf": gltf_data,
+            "stats": CURRENT_MODEL["stats"],
+        }
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/model/topology")
+def api_model_topology():
+    part = CURRENT_MODEL.get("part")
+    if part is None:
+        return {"ok": False, "msg": "空场景"}
+
+    try:
+        bbox = part.bbox()
+        pmin = bbox.min
+        pmax = bbox.max
+        size = [round(float(bbox.size[0]), 2), round(float(bbox.size[1]), 2), round(float(bbox.size[2]), 2)]
+        faces_count = len(list(part.faces()))
+        edges_count = len(list(part.edges()))
+        vertices_count = len(list(part.vertices()))
+        area = round(getattr(part, "area", 0), 2)
+        volume = round(getattr(part, "volume", 0), 2)
+
+        return {
+            "ok": True,
+            "size": size,
+            "bounds": {"min": [round(float(pmin[0]), 2), round(float(pmin[1]), 2), round(float(pmin[2]), 2)],
+                       "max": [round(float(pmax[0]), 2), round(float(pmax[1]), 2), round(float(pmax[2]), 2)]},
+            "faces_count": faces_count,
+            "edges_count": edges_count,
+            "vertices_count": vertices_count,
+            "area": area,
+            "volume": volume
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/export/{fmt}")
 def api_export(fmt: str):
     part = CURRENT_MODEL["part"]

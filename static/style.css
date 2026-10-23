@@ -406,6 +406,50 @@ body, html {
   background-color: var(--bg-primary);
 }
 
+/* 拾取与测量详情卡片 */
+.selection-detail-card {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stat-mode-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #e5c07b;
+  background-color: rgba(229, 192, 123, 0.15);
+  border: 1px solid rgba(229, 192, 123, 0.3);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.stat-sub-info {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.select-mode-group .nav-btn.active {
+  background-color: rgba(229, 192, 123, 0.25);
+  color: #ffd885;
+  border-color: #e5c07b;
+  font-weight: 600;
+}
+
+.transform-group .nav-btn:hover {
+  background-color: rgba(97, 175, 239, 0.3);
+  color: var(--accent-color);
+}
+
 .stats-card {
   display: flex;
   flex-direction: column;
