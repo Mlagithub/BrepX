@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SMLib Web Studio · 几何建模工作台</title>
+  <title>SMLib Studio Next · 工业 CAD & CFD 几何工作台</title>
   <link rel="stylesheet" href="./style.css">
   <script>
     window.onerror = function(msg, url, line) {
@@ -26,7 +26,7 @@
 </head>
 <body>
   <div id="app">
-    <!-- 顶部导航栏 -->
+    <!-- 顶部主导航栏 -->
     <header class="navbar">
       <div class="nav-brand">
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -34,17 +34,17 @@
           <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
           <line x1="12" y1="22.08" x2="12" y2="12"></line>
         </svg>
-        <span class="brand-title">SMLib Web Studio</span>
-        <span class="brand-badge">smlibpy 0.4.0 × cax-viewer</span>
+        <span class="brand-title">SMLib Studio Next</span>
+        <span class="brand-badge">B-Rep Native × CFD</span>
       </div>
 
       <div class="nav-toolbar">
-        <!-- 选择模式分级拾取 (实体/面/边/点) -->
+        <!-- 拾取层级分级切换 (点/边/面/体) -->
         <div class="btn-group select-mode-group" id="selection-mode-group">
-          <button class="nav-btn active" data-sel-mode="solid" title="实体选择模式 (拾取整个模型)">实体</button>
-          <button class="nav-btn" data-sel-mode="face" title="面选择模式 (点击高亮面并查看法向)">面</button>
-          <button class="nav-btn" data-sel-mode="edge" title="边选择模式 (点击高亮边并测量长度)">边</button>
-          <button class="nav-btn" data-sel-mode="vertex" title="点选择模式 (点击捕捉三维坐标)">点</button>
+          <button class="nav-btn active" data-sel-mode="solid" title="实体模式 (拾取整个模型)">实体</button>
+          <button class="nav-btn" data-sel-mode="face" title="面模式 (快捷键: 3 · 拾取 CAD 拓扑曲面)">面 [3]</button>
+          <button class="nav-btn" data-sel-mode="edge" title="边模式 (快捷键: 2 · 拾取 CAD 特征边线)">边 [2]</button>
+          <button class="nav-btn" data-sel-mode="vertex" title="点模式 (快捷键: 1 · 捕捉拓扑端点)">点 [1]</button>
         </div>
 
         <div class="btn-group cfd-mode-group">
@@ -53,349 +53,297 @@
 
         <div class="btn-divider"></div>
 
-        <!-- 典型几何变换 (平移/旋转/缩放) -->
+        <!-- 典型空间变换手柄 (G/R/S) -->
         <div class="btn-group transform-group">
-          <button class="nav-btn" id="btn-tool-move" title="平移变换 (沿 X/Y/Z 轴位移增量)">平移</button>
-          <button class="nav-btn" id="btn-tool-rotate" title="旋转变换 (绕指定轴角度旋转)">旋转</button>
-          <button class="nav-btn" id="btn-tool-scale" title="缩放变换 (三维等比缩放)">缩放</button>
+          <button class="nav-btn" id="btn-tool-move" title="平移变换手柄 (快捷键: G · 拖拽移动，按 X/Y/Z 锁定轴)">平移 [G]</button>
+          <button class="nav-btn" id="btn-tool-rotate" title="旋转变换手柄 (快捷键: R · 绕轴旋转)">旋转 [R]</button>
+          <button class="nav-btn" id="btn-tool-scale" title="缩放手柄 (快捷键: S)">缩放 [S]</button>
         </div>
 
         <div class="btn-divider"></div>
 
+        <!-- 标准视图切换 -->
         <div class="btn-group">
           <button class="nav-btn active" id="btn-iso" title="等轴测视图">等轴测</button>
           <button class="nav-btn" id="btn-front" title="正视图">正视</button>
           <button class="nav-btn" id="btn-top" title="俯视图">俯视</button>
           <button class="nav-btn" id="btn-right" title="右视图">右视</button>
-          <button class="nav-btn" id="btn-fit" title="适应窗口居中">适应</button>
+          <button class="nav-btn" id="btn-fit" title="全景居中适应">适应</button>
         </div>
 
         <div class="btn-divider"></div>
 
+        <!-- 视口渲染开关 -->
         <div class="btn-group">
-          <button class="nav-btn" id="btn-camera-toggle" title="切换正交/透视投影">透视</button>
+          <button class="nav-btn" id="btn-camera-toggle" title="切换正交/透视相机">透视</button>
           <button class="nav-btn active" id="btn-grid-toggle" title="网格开关">网格</button>
           <button class="nav-btn active" id="btn-axes-toggle" title="基准轴开关">坐标轴</button>
           <button class="nav-btn active" id="btn-edges-toggle" title="特征轮廓线开关">边线</button>
+          <button class="nav-btn" id="btn-xray-toggle" title="X-Ray 半透明透视 (快捷键: Alt+Z)">透视 [Alt+Z]</button>
         </div>
 
         <div class="btn-divider"></div>
 
+        <!-- 工业交付中心 -->
         <div class="btn-group export-group">
-          <button class="nav-btn btn-highlight" id="btn-export-step" title="导出工业级标准 STEP 文件">
+          <button class="nav-btn btn-highlight" id="btn-export-step" title="导出工业级标准 STEP AP242 (含命名物理边界)">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             导出 STEP
           </button>
-          <button class="nav-btn" id="btn-export-stl" title="导出 3D 打印 STL 文件">导出 STL</button>
-          <button class="nav-btn" id="btn-export-gltf" title="导出 Web 3D glTF 文件">导出 glTF</button>
-          <button class="nav-btn" id="btn-export-cfd" title="导出 CFD 物理边界条件定义 JSON">CFD 边界</button>
-          <button class="nav-btn" id="btn-export-py" title="导出 Python 建模脚本">Python 源码</button>
+          <button class="nav-btn" id="btn-export-cfd" title="导出 OpenFOAM/Fluent CFD 物理边界条件定义字典 (JSON)">CFD 边界</button>
+          <button class="nav-btn" id="btn-export-stl" title="导出 3D 打印 STL 文件">STL</button>
+          <button class="nav-btn" id="btn-export-gltf" title="导出 glTF 3D 文件">glTF</button>
+          <button class="nav-btn" id="btn-export-py" title="导出完整可复现 Python 建模脚本">Python 源码</button>
         </div>
       </div>
     </header>
 
-    <!-- 主体区域 -->
+    <!-- 工作台主体区域 -->
     <main class="main-container">
-      <!-- 左侧控制面板 -->
-      <aside class="sidebar">
-        <!-- 面板切换 Tab -->
-        <div class="tab-header">
-          <button class="tab-btn active" data-tab="agent">🤖 建模 Agent</button>
-          <button class="tab-btn" data-tab="parametric">参数化零件</button>
-          <button class="tab-btn" data-tab="script">Python 脚本</button>
-          <button class="tab-btn" data-tab="presets">模型库</button>
-        </div>
-
-        <div class="tab-content-container">
-          <!-- 0. AI 对话建模 Agent 面板 -->
-          <div class="tab-pane active" id="tab-agent">
-            <div class="agent-topbar">
-              <div class="agent-title-row">
-                <span class="section-title" style="margin:0">对话式几何设计</span>
-                <button id="btn-toggle-llm-settings" class="btn-text-sm" title="大模型 API 设置">⚙️ 设置</button>
-              </div>
-              <div id="llm-settings-panel" class="llm-settings-card hidden">
-                <div class="settings-title">自定义大模型接入 (可选)</div>
-                <div class="setting-presets">
-                  <span class="preset-pill" data-base="https://api.deepseek.com/v1" data-model="deepseek-chat">DeepSeek 官方</span>
-                  <span class="preset-pill" data-base="https://api.openai.com/v1" data-model="gpt-4o-mini">OpenAI 官方</span>
-                  <span class="preset-pill" data-base="http://localhost:11434/v1" data-model="qwen2.5-coder">本地 Ollama</span>
-                </div>
-                <div class="setting-field">
-                  <label>Base URL:</label>
-                  <input type="text" id="setting-base-url" class="form-input" placeholder="例如 https://api.deepseek.com/v1">
-                </div>
-                <div class="setting-field">
-                  <label>API Key:</label>
-                  <input type="password" id="setting-api-key" class="form-input" placeholder="sk-...">
-                </div>
-                <div class="setting-field">
-                  <label>模型名称:</label>
-                  <input type="text" id="setting-model" class="form-input" placeholder="例如 deepseek-chat 或 gpt-4o-mini">
-                </div>
-                <div class="settings-actions">
-                  <button id="btn-test-llm" class="btn btn-secondary btn-sm" style="width:100%">🧪 测试 API 连通性</button>
-                  <div id="llm-test-result" class="llm-test-msg"></div>
-                </div>
-                <div class="settings-hint">未填写 API Key 时，将自动启用高精度内置本地 CAD 语义引擎，秒级即开即用。</div>
-              </div>
-            </div>
-
-            <!-- 对话历史记录 -->
-            <div class="chat-container" id="chat-messages">
-              <div class="chat-bubble assistant">
-                <div class="bubble-header">🤖 SMLib 建模 Agent</div>
-                <div class="bubble-body">
-                  你好！我是你的三维几何建模助手。告诉我你想要的机械零部件或几何特征，我将编写标准 <code>smlibpy</code> Python 脚本并为你即时生成 3D 实体与工业 CAD 交换格式。
-                </div>
-              </div>
-            </div>
-
-            <!-- 快捷 Prompt 推荐 -->
-            <div class="quick-prompts">
-              <span class="prompt-pill" data-prompt="创建一个CFD文丘里喷嘴流道，入口半径25，喉部收缩至12，长度60">文丘里流道</span>
-              <span class="prompt-pill" data-prompt="设计一个90度圆弧弯管流道，管径12，弯曲回转半径35">90°弯头管道</span>
-              <span class="prompt-pill" data-prompt="帮我建一个带4个对称螺栓孔的管道连接法兰，外径80，内孔30，厚度12">管道法兰</span>
-              <span class="prompt-pill" data-prompt="做一个L型结构安装支架，长80宽50高60壁厚10，底部开一个固定孔">L型支架</span>
-              <span class="prompt-pill" data-prompt="建一个长方体底板100x70x12，四周垂直边倒圆角R8，中间开一个R14通孔">开孔圆角板</span>
-              <span class="prompt-pill" data-prompt="创建一个外径40内径20长60的阶梯轴套，带一个外径60的法兰凸缘">阶梯轴套</span>
-            </div>
-
-            <!-- 输入区域 -->
-            <div class="chat-input-area">
-              <textarea id="agent-input" class="chat-input" placeholder="描述你想要设计的零件（Enter 发送，Shift+Enter 换行）…" rows="2"></textarea>
-              <div class="chat-input-actions">
-                <button id="btn-clear-chat" class="btn-text-sm">清空对话</button>
-                <button id="btn-send-agent" class="btn btn-primary btn-sm">
-                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-                  发送建模指令
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- 1. 参数化建模面板 -->
-          <div class="tab-pane" id="tab-parametric">
-            <div class="section-title">零件类型选择</div>
-            <select id="template-select" class="form-select">
-              <option value="flange">带孔圆角板 / 机械法兰 (Flange Plate)</option>
-              <option value="bracket">L型角码 / 结构支架 (L-Bracket)</option>
-              <option value="bushing">法兰轴套 / 衬套 (Flanged Bushing)</option>
-              <option value="csg_demo">经典 CSG 球芯布尔体 (CSG Core)</option>
-            </select>
-
-            <div class="section-divider"></div>
-            <div class="section-title">几何参数调节</div>
-            <form id="parametric-form" class="param-form">
-              <!-- 动态参数由 JS 渲染 -->
-            </form>
-
-            <div class="form-actions">
-              <button id="btn-rebuild-param" class="btn btn-primary">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                重新构建几何
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. Python 脚本工作台面板 -->
-          <div class="tab-pane" id="tab-script">
-            <div class="script-header">
-              <span class="script-tip">实时生成的 smlibpy Python 脚本：</span>
-              <button id="btn-copy-script" class="btn-text">复制脚本</button>
-            </div>
-            <textarea id="script-editor" class="code-editor" spellcheck="false"></textarea>
-            <div class="script-actions">
-              <button id="btn-run-script" class="btn btn-primary">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                运行 Python 脚本 (Ctrl+Enter)
-              </button>
-              <button id="btn-format-script" class="btn btn-secondary">重置为模板</button>
-            </div>
-            <div class="quick-snippets">
-              <span class="snippet-label">快速插入：</span>
-              <button class="snip-btn" data-code="part = Box(60, 40, 10)">Box</button>
-              <button class="snip-btn" data-code="part = Cylinder(15, 30)">Cylinder</button>
-              <button class="snip-btn" data-code="part = Sphere(20)">Sphere</button>
-              <button class="snip-btn" data-code="part = part.fillet(part.edges().parallel_to(Z), 5)">Fillet</button>
-            </div>
-          </div>
-
-          <!-- 3. 模型库与说明 -->
-          <div class="tab-pane" id="tab-presets">
-            <div class="section-title">关于 SMLib 与 ClassCAD</div>
-            <p class="desc-text">
-              <strong>SMLib (Solid Modeling Library)</strong> 是享誉业界的工业级三维 NURBS 几何建模内核，具备严谨的拓扑数据结构、曲面求交、高级布尔运算与倒角能力。
-            </p>
-            <p class="desc-text">
-              本项目将 ClassCAD 官方的开源 <strong>smlibpy (Python)</strong> 内核与 <strong>cax-viewer</strong> 的现代 CAD 3D 渲染与交互架构深度融合，提供从参数化编辑、实时脚本运行到工业 STEP / STL 导出的全套 Web 解决方案。
-            </p>
-            <div class="info-card">
-              <div class="info-item"><span>内核状态：</span><strong class="text-success" id="info-kernel">SMLib NURBS</strong></div>
-              <div class="info-item"><span>Python 驱动：</span><span id="info-pyver">smlibpy 0.4.0</span></div>
-              <div class="info-item"><span>计算模式：</span><span>Native Multi-Threaded</span></div>
-            </div>
+      <!-- 左侧交互工具箱 (T-Panel) 与场景特征树 -->
+      <aside class="sidebar left-toolbar-panel">
+        <div class="panel-section-title">🛠️ 建模工具箱 (T-Panel)</div>
+        <div class="toolbar-category">
+          <div class="cat-label">3D 图元</div>
+          <div class="cat-grid">
+            <button class="tool-chip" data-op="box" title="长方体">长方体</button>
+            <button class="tool-chip" data-op="cylinder" title="圆柱体">圆柱</button>
+            <button class="tool-chip" data-op="sphere" title="球体">球体</button>
+            <button class="tool-chip" data-op="cone" title="圆锥 / 圆台">圆台</button>
+            <button class="tool-chip" data-op="torus" title="圆环体">圆环</button>
           </div>
         </div>
 
-        <!-- 底部几何属性卡片 -->
-        <div class="sidebar-footer">
-          <div class="selection-detail-card" id="selection-detail-card">
-            <div class="stat-header">
-              <span class="stat-mode-badge" id="sel-badge-mode">拾取: 实体 (Solid)</span>
-              <span class="stat-sub-info" id="sel-sub-info">点击画布中零件查看</span>
-            </div>
-            <div class="selection-fields" id="selection-fields">
-              <div class="stat-row">
-                <span class="stat-name">包围盒外形：</span>
-                <span class="stat-value" id="stat-bbox">- mm</span>
-              </div>
-            </div>
+        <div class="toolbar-category">
+          <div class="cat-label">2D 草图绘制 (在工作平面/选定面上)</div>
+          <div class="cat-grid">
+            <button class="tool-chip" data-op="line" title="绘制直线段">直线</button>
+            <button class="tool-chip" data-op="rectangle" title="绘制矩形草图">矩形</button>
+            <button class="tool-chip" data-op="circle" title="绘制圆形草图">圆</button>
+            <button class="tool-chip" data-op="arc" title="三点圆弧">圆弧</button>
+            <button class="tool-chip" data-op="polyline" title="多段连续折线">折线</button>
+            <button class="tool-chip" data-op="spline" title="NURBS 样条曲线">样条</button>
           </div>
-          <div class="section-divider" style="margin:8px 0"></div>
-          <div class="stats-card">
-            <div class="stat-row">
-              <span class="stat-name">实体体积：</span>
-              <span class="stat-value" id="stat-volume">- mm³</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-name">实体表面积：</span>
-              <span class="stat-value" id="stat-area">- mm²</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-name">计算耗时：</span>
-              <span class="stat-value" id="stat-time">- ms</span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-name">网格三角面：</span>
-              <span class="stat-value" id="stat-triangles">-</span>
-            </div>
+        </div>
+
+        <div class="toolbar-category">
+          <div class="cat-label">特征构造与变换</div>
+          <div class="cat-grid">
+            <button class="tool-chip" data-op="extrude" title="拉伸成体 (选面快捷键: E)">拉伸 [E]</button>
+            <button class="tool-chip" data-op="revolve" title="旋转成型">旋转体</button>
+            <button class="tool-chip" data-op="sweep" title="螺旋/沿路径扫掠">扫掠</button>
+            <button class="tool-chip" data-op="loft" title="多截面放样过渡">放样</button>
+            <button class="tool-chip" data-op="fillet" title="选边倒圆角 (选边快捷键: Ctrl+B)">圆角 [Ctrl+B]</button>
+            <button class="tool-chip" data-op="chamfer" title="选边倒角">倒角</button>
+            <button class="tool-chip" data-op="hole" title="在选定面上垂直开通孔">通孔</button>
+            <button class="tool-chip" data-op="counterbore" title="在选定面上开沉头孔">沉头孔</button>
+            <button class="tool-chip" data-op="shell" title="以选定面为开口薄壁抽壳">抽壳</button>
+            <button class="tool-chip" data-op="draft" title="选面拔模斜度">拔模</button>
+            <button class="tool-chip" data-op="mirror" title="沿基准面镜像">镜像</button>
+            <button class="tool-chip" data-op="array" title="网格阵列">阵列</button>
+            <button class="tool-chip" data-op="circular" title="圆周环形阵列">环阵列</button>
+            <button class="tool-chip" data-op="slice" title="基准面切分剖切">剖切</button>
           </div>
+        </div>
+
+        <div class="toolbar-category">
+          <div class="cat-label" style="color:#61afef">🌊 CFD 前处理与去特征化</div>
+          <div class="cat-grid">
+            <button class="tool-chip" data-op="cavity_extraction" title="反向提取封闭水密内流道实体">流体域提取</button>
+            <button class="tool-chip" data-op="remove_fillets" title="擦除选定或全部圆角面，延伸恢复锐边">去圆角</button>
+            <button class="tool-chip" data-op="remove_faces" title="选定孔洞或特征面直接移除并自动缝合愈合 (快捷键: X)">填平孔洞 [X]</button>
+            <button class="tool-chip" data-op="heal" title="几何拓扑缝合与修复">拓扑修复</button>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <!-- 实时拓扑与外形统计 -->
+        <div class="stats-card">
+          <div class="stat-header">📐 几何测量统计</div>
+          <div class="stat-row"><span class="stat-name">包围盒外形：</span><span class="stat-value" id="stat-bbox">- mm</span></div>
+          <div class="stat-row"><span class="stat-name">实体体积：</span><span class="stat-value" id="stat-volume">- mm³</span></div>
+          <div class="stat-row"><span class="stat-name">实体表面积：</span><span class="stat-value" id="stat-area">- mm²</span></div>
+          <div class="stat-row"><span class="stat-name">B-Rep 拓扑面：</span><span class="stat-value" id="stat-faces">-</span></div>
+          <div class="stat-row"><span class="stat-name">B-Rep 特征边：</span><span class="stat-value" id="stat-edges">-</span></div>
+          <div class="stat-row"><span class="stat-name">内核计算耗时：</span><span class="stat-value" id="stat-time">- ms</span></div>
         </div>
       </aside>
 
-      <!-- 3D 视口画布区域 -->
+      <!-- 中央全屏 3D 视口画布区域 -->
       <section class="viewport-wrapper">
         <div id="viewport" class="canvas-container"></div>
 
-        <!-- 3D 视口覆盖的 HUD 指示 -->
+        <!-- 3D 视口顶部 HUD 指示 -->
         <div class="viewport-hud">
-          <div class="hud-mode" id="hud-interaction-info">左键：旋转 | 中键：平移 | 滚轮：缩放 | G/R/S：变换 | Shift+A：添加</div>
+          <div class="hud-mode" id="hud-interaction-info">左键：旋转视角 | 中键：平移 | 滚轮：缩放 | G/R/S：变换手柄 | Shift+A：快速添加</div>
           <div class="hud-mode" id="hud-mode-tag" style="margin-top:4px;color:#ffd885">模式: 对象模式 [Tab 切换]</div>
         </div>
+
+        <!-- 模态操作中屏幕顶部显眼状态提示 (如拉伸或倒角进行中) -->
+        <div id="modal-status-bar" class="modal-status-bar hidden"></div>
 
         <!-- Blender 式 Shift + A 就地添加菜单 -->
         <div id="add-menu-popup" class="add-menu-popup hidden">
           <div class="add-menu-header">添加 (Shift + A)</div>
-          <div class="add-menu-section">三维实体</div>
-          <div class="add-menu-item" data-tool="box">长方体 (Box)</div>
-          <div class="add-menu-item" data-tool="cylinder">圆柱体 (Cylinder)</div>
-          <div class="add-menu-item" data-tool="sphere">球体 (Sphere)</div>
-          <div class="add-menu-item" data-tool="cone">圆锥 / 圆台 (Cone)</div>
-          <div class="add-menu-item" data-tool="torus">圆环体 (Torus)</div>
-          <div class="add-menu-section">草图与截面</div>
-          <div class="add-menu-item" data-tool="rectangle">矩形草图 (Rectangle)</div>
-          <div class="add-menu-item" data-tool="circle">圆形草图 (Circle)</div>
-          <div class="add-menu-item" data-tool="bspline">样条曲线 (B-Spline)</div>
-          <div class="add-menu-section">高级特征</div>
-          <div class="add-menu-item" data-tool="extrude">轮廓拉伸 (Extrude)</div>
-          <div class="add-menu-item" data-tool="revolve">旋转成型 (Revolve)</div>
-          <div class="add-menu-item" data-tool="sweep">螺旋扫掠 (Sweep)</div>
-          <div class="add-menu-item" data-tool="loft">多截面放样 (Loft)</div>
+          <div class="add-menu-section">3D 实体图元</div>
+          <div class="add-menu-item" data-op="box">长方体 (Box)</div>
+          <div class="add-menu-item" data-op="cylinder">圆柱体 (Cylinder)</div>
+          <div class="add-menu-item" data-op="sphere">球体 (Sphere)</div>
+          <div class="add-menu-item" data-op="cone">圆台 / 圆锥 (Cone)</div>
+          <div class="add-menu-item" data-op="torus">圆环体 (Torus)</div>
+          <div class="add-menu-section">2D 草图绘制</div>
+          <div class="add-menu-item" data-op="rectangle">矩形草图 (Rectangle)</div>
+          <div class="add-menu-item" data-op="circle">圆形草图 (Circle)</div>
+          <div class="add-menu-item" data-op="line">直线 (Line)</div>
+          <div class="add-menu-item" data-op="arc">三点圆弧 (Arc)</div>
+          <div class="add-menu-item" data-op="spline">样条曲线 (Spline)</div>
+          <div class="add-menu-section">特征构造</div>
+          <div class="add-menu-item" data-op="extrude">轮廓拉伸 (Extrude)</div>
+          <div class="add-menu-item" data-op="revolve">旋转体 (Revolve)</div>
+          <div class="add-menu-item" data-op="sweep">螺旋扫掠 (Sweep)</div>
+          <div class="add-menu-item" data-op="loft">多截面放样 (Loft)</div>
         </div>
 
-        <!-- 右侧经典 CAD 几何工具栏 (复刻自 cax-viewer) -->
-        <div aria-label="三维几何与视图工具" class="right-tools" role="toolbar">
-          <span class="tool-caption">三维</span>
-          <button data-tool="new-feature-graph" type="button" title="矩形草图的长度和宽度驱动拉伸、可选贯穿孔及圆角">草图驱动零件</button>
-          <button data-tool="new-parametric-part" type="button" title="矩形尺寸驱动拉伸、定位贯穿孔和外角圆角">带孔圆角板</button>
-          <button data-tool="box" title="长方体：长度 × 宽度 × 高度">长方体</button>
-          <button data-tool="cylinder" title="圆柱：半径 × 高度">圆柱</button>
-          <button data-tool="sphere" title="球体：球心与半径">球体</button>
-          <button data-tool="cone" title="圆锥 / 圆台：底面半径 × 顶面半径 × 高度">圆锥</button>
-          <button data-tool="torus" title="圆环：主环半径 × 截面半径">圆环</button>
-          <button data-tool="hole" title="定位长方体或当前实体上的贯穿孔">定位孔</button>
-
-          <span class="tool-caption">布尔运算</span>
-          <button data-tool="boolean-union" title="将当前模型与工具体合并为一个新实体">布尔并</button>
-          <button data-tool="boolean-subtract" title="从当前主体中减去工具体切削">布尔减</button>
-          <button data-tool="boolean-intersection" title="求两体公共重合相交区域">布尔交</button>
-          <button data-tool="boolean" title="高级布尔运算参数设置">布尔设置</button>
-
-          <span class="tool-caption">轮廓</span>
-          <button data-tool="line" title="直线：按参数创建直线并拉伸">直线</button>
-          <button data-tool="rectangle" title="矩形：按长宽创建闭合矩形轮廓">矩形</button>
-          <button data-tool="circle" title="圆：按半径创建圆形轮廓">圆</button>
-          <button data-tool="arc" title="圆弧：创建圆弧轮廓">圆弧</button>
-          <button data-tool="polyline" title="折线：按顶点创建多边形轮廓">折线</button>
-          <button data-tool="bspline" title="样条：创建平滑样条曲线">样条</button>
-
-          <span class="tool-caption">构造</span>
-          <button data-tool="extrude" title="拉伸：二维草图轮廓拉伸成体">拉伸</button>
-          <button data-tool="revolve" title="旋转体：轮廓绕轴旋转扫描成体">旋转体</button>
-          <button data-tool="sweep" title="扫掠：截面沿空间螺旋路径扫掠成体">扫掠</button>
-          <button data-tool="loft" title="放样：多截面平滑放样成体">放样</button>
-          <button data-tool="chamfer" title="倒角：选择实体特征边进行等距切角">倒角</button>
-          <button data-tool="fillet" title="圆角：对实体特征边缘应用光滑倒圆角">圆角</button>
-          <button data-tool="shell" title="抽壳：实体薄壁特征">抽壳</button>
-          <button data-tool="offset" title="偏移：实体法向等距扩展">偏移</button>
-          <button data-tool="mirror" title="镜像：沿基准面对称镜像">镜像</button>
-          <button data-tool="array" title="网格阵列：沿 X 和 Y 矩形排布">阵列</button>
-          <button data-tool="circular" title="环阵列：绕轴圆周等角环形阵列">环阵列</button>
-          <button data-tool="slice" title="切分：平面切除分割">切分</button>
-          <button data-tool="rotate3d" title="轴旋转：绕指定轴角度旋转">轴旋转</button>
-          <button data-tool="copy" title="复制：平移生成实体副本">复制</button>
-
-          <span class="tool-caption" style="color:#61afef">CFD 前处理</span>
-          <button data-tool="cavity_extraction" title="对中空/阀体执行反向包络差集，一键提取封闭水密流体域">流体域提取</button>
-          <button data-tool="remove_fillets" title="一键擦除模型上的微小圆角曲面，恢复锐角棱边防网格爆炸">去圆角特征</button>
+        <!-- 复刻 Blender F9：视口左下角 Adjust Last Operation 参数实时微调面板 -->
+        <div id="adjust-last-panel" class="adjust-last-panel hidden">
+          <div class="adjust-last-header">
+            <span id="adjust-last-title" class="adjust-last-title">微调操作</span>
+            <button id="adjust-last-close" class="btn-icon-subtle" title="折叠">✕</button>
+          </div>
+          <div id="adjust-last-body" class="adjust-last-body"></div>
         </div>
 
-        <!-- 浮动参数弹窗 Modal Dialog -->
-        <div id="tool-dialog" class="tool-modal-backdrop hidden">
-          <div class="tool-modal-card">
-            <div class="tool-modal-header">
-              <span id="tool-modal-title" class="tool-modal-title">工具参数</span>
-              <button id="tool-modal-close" class="tool-modal-close" title="关闭">✕</button>
+        <!-- 视口选定面浮动 CFD 物理边界打标条 -->
+        <div id="face-action-pill" class="face-action-pill hidden">
+          <span class="pill-label" id="pill-face-title">Face #0</span>
+          <button class="pill-btn pill-inlet" data-ptype="inlet" title="标记为速度/流量入口 (深蓝)">+ 入口 Inlet</button>
+          <button class="pill-btn pill-outlet" data-ptype="outlet" title="标记为压力出口 (玫红)">+ 出口 Outlet</button>
+          <button class="pill-btn pill-wall" data-ptype="wall" title="标记为固体壁面 (冷灰)">+ 壁面 Wall</button>
+          <button class="pill-btn pill-interface" data-ptype="interface" title="标记为流固耦合交界面 (暖橙)">+ 交界 Interface</button>
+        </div>
+      </section>
+
+      <!-- 右侧综合工作区面板 (N-Panel)：Agent 对话 / 物理边界 / 脚本编辑器 -->
+      <aside class="sidebar right-panel">
+        <div class="tab-header">
+          <button class="tab-btn active" data-tab="agent">🤖 具身 Agent</button>
+          <button class="tab-btn" data-tab="cfd">🌊 物理边界</button>
+          <button class="tab-btn" data-tab="script">🐍 Python 脚本</button>
+        </div>
+
+        <!-- Tab 1: 具身 Agent 协同面板 -->
+        <div class="tab-pane active" id="tab-agent">
+          <!-- 当前视口拓扑选区感知栏 -->
+          <div class="selection-context-bar" id="selection-context-bar">
+            <div class="ctx-header">
+              <span class="ctx-label">🎯 视口选区感知:</span>
+              <span class="ctx-summary" id="ctx-summary">未选中（点击视口中的面或边）</span>
             </div>
-            <p id="tool-modal-desc" class="tool-modal-desc"></p>
-            <form id="tool-modal-form" class="tool-modal-form">
-              <div id="tool-modal-fields" class="tool-modal-fields"></div>
-              <div id="tool-modal-base-option" class="tool-modal-option">
-                <label class="check-label">
-                  <input type="checkbox" id="tool-base-on-current">
-                  在当前几何模型上追加此特征（取消勾选则创建独立新实体）
-                </label>
+            <div class="ctx-pills" id="ctx-pills"></div>
+          </div>
+
+          <!-- 大模型设置卡片 -->
+          <div class="llm-settings-card">
+            <div class="settings-header">
+              <span class="settings-title">⚙️ LLM 服务配置</span>
+              <button id="btn-toggle-llm-settings" class="btn-text-sm">展开配置 ▾</button>
+            </div>
+            <div id="llm-settings-panel" class="settings-body hidden">
+              <div class="form-group">
+                <label for="setting-base-url">API Base URL</label>
+                <input type="text" id="setting-base-url" placeholder="https://api.deepseek.com/v1">
               </div>
-              <div id="tool-modal-error" style="color:#e06c75;font-size:11px;display:none;line-height:1.4;"></div>
-              <div class="tool-modal-actions">
-                <button type="button" id="tool-modal-cancel" class="btn btn-secondary">取消</button>
-                <button type="submit" id="tool-modal-submit" class="btn btn-primary">确定执行</button>
+              <div class="form-group">
+                <label for="setting-api-key">API Key</label>
+                <input type="password" id="setting-api-key" placeholder="sk-...">
               </div>
-            </form>
+              <div class="form-group">
+                <label for="setting-model">模型名称 (Model)</label>
+                <input type="text" id="setting-model" placeholder="deepseek-chat">
+              </div>
+              <div class="settings-actions">
+                <button id="btn-test-llm" class="btn btn-secondary btn-sm" style="width:100%">🧪 测试 API 连通性</button>
+                <div id="llm-test-result" class="llm-test-msg"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 对话消息流 -->
+          <div class="chat-container" id="chat-messages">
+            <div class="chat-bubble assistant">
+              <div class="bubble-header">🤖 SMLib 具身 Agent</div>
+              <div class="bubble-body">
+                你好！我是你的 CFD 具身几何建模副驾。我能直接感知你在 3D 视口中选中的拓扑面与边，编写标准 <code>smlibpy</code> 代码为你执行高精度建模、去特征化与内流道提取。
+              </div>
+            </div>
+          </div>
+
+          <!-- CFD 快捷 Prompt 胶囊 -->
+          <div class="quick-prompts">
+            <span class="prompt-pill" data-prompt="创建一个文丘里喷嘴流道，入口半径25，喉部收缩至12，长度60">文丘里喷嘴流道</span>
+            <span class="prompt-pill" data-prompt="设计一个90度圆弧弯管流道，管径12，弯曲回转半径35">90°圆弧弯管</span>
+            <span class="prompt-pill" data-prompt="帮我建一个带4个对称螺栓孔的管道连接法兰，外径80，内孔30，厚度12">管道法兰</span>
+            <span class="prompt-pill" data-prompt="在当前选中的面上垂直打一个直径12的贯穿孔">在当前面上打孔</span>
+            <span class="prompt-pill" data-prompt="擦除模型上的微小圆角，延伸恢复锐角棱边">去圆角特征</span>
+          </div>
+
+          <!-- 输入框与发送 -->
+          <div class="chat-input-area">
+            <textarea id="agent-input" class="chat-textarea" placeholder="描述你想要的几何特征或流道设计（Enter 发送，Shift+Enter 换行）…" rows="3"></textarea>
+            <div class="chat-actions">
+              <button id="btn-clear-chat" class="btn btn-secondary btn-sm" title="清空对话历史">清空历史</button>
+              <button id="btn-send-agent" class="btn btn-primary btn-sm">发送指令 ↵</button>
+            </div>
           </div>
         </div>
 
-        <!-- 加载遮罩 -->
-        <div id="loading-overlay" class="loading-overlay hidden">
-          <div class="spinner"></div>
-          <div class="loading-text" id="loading-msg">正在调用 SMLib 几何内核计算…</div>
+        <!-- Tab 2: CFD 物理边界管理面板 -->
+        <div class="tab-pane" id="tab-cfd">
+          <div class="panel-section-title">🌊 物理边界补丁列表 (Boundary Patches)</div>
+          <div class="cfd-legend-bar">
+            <span class="legend-chip" style="background:#3a86ff">Inlet 入口</span>
+            <span class="legend-chip" style="background:#ff006e">Outlet 出口</span>
+            <span class="legend-chip" style="background:#8d99ae">Wall 壁面</span>
+            <span class="legend-chip" style="background:#fb5607">Interface 交界</span>
+            <span class="legend-chip" style="background:#06d6a0">Symmetry 对称</span>
+          </div>
+          <div id="cfd-patch-list" class="cfd-patch-list">
+            <div class="empty-hint">暂无已标注边界。在 3D 视口中点击拓扑面并标记为对应边界类型。</div>
+          </div>
         </div>
-      </section>
+
+        <!-- Tab 3: Python 建模脚本编辑器 -->
+        <div class="tab-pane" id="tab-script">
+          <div class="script-toolbar">
+            <button id="btn-run-script" class="btn btn-primary btn-sm" title="运行当前脚本更新模型 (Ctrl+Enter)">▶ 运行脚本 (Ctrl+Enter)</button>
+            <button id="btn-copy-script" class="btn btn-secondary btn-sm" title="复制完整脚本">📋 复制</button>
+            <button id="btn-undo" class="btn btn-secondary btn-sm" title="撤销上一步 (Ctrl+Z)">↶ 撤销</button>
+            <button id="btn-redo" class="btn btn-secondary btn-sm" title="重做 (Ctrl+Y)">↷ 重做</button>
+          </div>
+          <textarea id="script-editor" class="script-editor" spellcheck="false"></textarea>
+        </div>
+      </aside>
     </main>
 
     <!-- 底部状态栏 -->
     <footer class="statusbar">
       <div class="status-left">
-        <span class="status-dot online"></span>
-        <span id="status-text">就绪 · SMLib 本地运算引擎在线</span>
+        <span class="status-indicator"></span>
+        <span id="status-text">就绪 · SMLib Studio Next 已加载</span>
       </div>
       <div class="status-right">
-        <span>单位: mm</span>
-        <span class="divider">|</span>
-        <span id="perf-display">渲染帧率: 60 FPS</span>
+        <span class="status-item">单位: mm</span>
+        <span class="status-item" id="info-kernel">SMLib NURBS B-Rep</span>
+        <span class="status-item" id="info-pyver">smlibpy 0.4.0</span>
       </div>
     </footer>
+
+    <!-- 全屏计算加载遮罩 -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+      <div class="loading-spinner"></div>
+      <div id="loading-msg" class="loading-text">SMLib 工业几何内核计算中…</div>
+    </div>
   </div>
 
   <script type="module" src="./app.js"></script>
