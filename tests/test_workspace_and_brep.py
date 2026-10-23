@@ -6,6 +6,7 @@ import unittest
 from smlibpy import Box
 from backend.workspace import WorkspaceSession, SecurityViolationError
 from backend.brep_graphic import serialize_body
+from backend.operators import build_operator_code
 
 
 class TestWorkspaceAndBrep(unittest.TestCase):
@@ -63,6 +64,50 @@ class TestWorkspaceAndBrep(unittest.TestCase):
         # Redo back to R=5 hole
         st_redo = self.ws.redo()
         self.assertAlmostEqual(st_redo["scene"]["summary"]["volume"], vol_with_r5, places=1)
+
+    def test_selection_sensitive_operators(self) -> None:
+        # 1. Create Box
+        code, lbl, rep = build_operator_code("box", {"length": 60, "width": 40, "height": 20})
+        st = self.ws.execute_step(code, lbl, "box", replace_all=rep)
+        self.assertEqual(st["scene"]["summary"]["faces_count"], 6)
+
+        # 2. Fillet only specific selected edges (edge 0 and edge 1)
+        code, lbl, _ = build_operator_code(
+            "fillet",
+            {"radius": 3.0},
+            selections=["part.edges()[0]", "part.edges()[1]"],
+            has_existing_part=True,
+        )
+        st_fillet = self.ws.execute_step(code, lbl, "fillet")
+        self.assertLess(st_fillet["scene"]["summary"]["volume"], 48000.0)
+        self.assertEqual(st_fillet["scene"]["summary"]["faces_count"], 8)
+
+        # 3. Defeature: remove_fillets restores exact 6-face Box
+        code, lbl, _ = build_operator_code("remove_fillets", {}, has_existing_part=True)
+        st_unfillet = self.ws.execute_step(code, lbl, "remove_fillets")
+        self.assertAlmostEqual(st_unfillet["scene"]["summary"]["volume"], 48000.0, places=1)
+        self.assertEqual(st_unfillet["scene"]["summary"]["faces_count"], 6)
+
+        # 4. Extrude on a specific selected face (e.g. face 0 by +10 mm)
+        code, lbl, _ = build_operator_code(
+            "extrude",
+            {"height": 10.0, "mode": "join"},
+            selections=["part.faces()[0]"],
+            has_existing_part=True,
+        )
+        st_ext = self.ws.execute_step(code, lbl, "extrude")
+        self.assertGreater(st_ext["scene"]["summary"]["volume"], 48000.0)
+
+        # 5. Shell with selected opening face
+        self.ws.undo()
+        code, lbl, _ = build_operator_code(
+            "shell",
+            {"thickness": 2.0},
+            selections=["part.faces()[0]"],
+            has_existing_part=True,
+        )
+        st_shell = self.ws.execute_step(code, lbl, "shell")
+        self.assertLess(st_shell["scene"]["summary"]["volume"], 20000.0)
 
 
 if __name__ == "__main__":
