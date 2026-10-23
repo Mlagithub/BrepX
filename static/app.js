@@ -1,25 +1,46 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
-import { TransformControls } from 'three/addons/TransformControls.js';
 
-// --- 全局状态与配置 ---
-const state = {
+import {
+  container, scene, renderer, activeCamera, perspCamera, orthoCamera, controls,
+  gridHelper, axesHelper, fitCameraToObject, setStandardView, startAnimationLoop, setActiveCamera
+} from './js/viewport.js';
+
+import {
+  transformControls, resetAxesConstraints, toggleXrayMode, setTransformFinishedCallback, getIsXrayMode
+} from './js/gizmo.js';
+
+import {
+  performSelectionPick, clearHighlights
+} from './js/selection.js';
+
+import {
+  setBoundaryMode, setBoundaryPatches, markFaceSemantic, updateBoundaryVisuals, getIsBoundaryMode
+} from './js/boundary.js';
+
+import {
+  openToolModal, setToolExecuteCallback, RIGHT_TOOLS_SCHEMA
+} from './js/tools.js';
+
+import {
+  initAgentUI, sendAgentMessage, appendChatBubble
+} from './js/agent.js';
+
+// --- 全局应用状态 ---
+export const state = {
   template: 'flange',
   params: {},
-  cameraType: 'perspective', // 'perspective' | 'orthographic'
+  cameraType: 'perspective',
   showGrid: true,
   showAxes: true,
   showEdges: true,
   currentPartGroup: null,
   isBuilding: false,
-  selectionMode: 'solid', // 'solid' | 'face' | 'edge' | 'vertex'
-  selectedItem: null,
-  transformMode: 'translate',
-  transforming: false,
+  selectionMode: 'solid',
+  currentHitFace: null,
 };
 
-// 参数定义配置
+// 预设参数化模板定义
 const TEMPLATE_CONFIGS = {
   flange: {
     name: '带孔圆角板 / 机械法兰',
@@ -66,108 +87,143 @@ const TEMPLATE_CONFIGS = {
   }
 };
 
-// --- Three.js 场景初始化 ---
-const container = document.getElementById('viewport');
-const width = container.clientWidth;
-const height = container.clientHeight;
+// UI 元素引用
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingMsg = document.getElementById('loading-msg');
+const statusText = document.getElementById('status-text');
+const scriptEditor = document.getElementById('script-editor');
+const paramForm = document.getElementById('parametric-form');
+const templateSelect = document.getElementById('template-select');
+const selBadgeMode = document.getElementById('sel-badge-mode');
+const selSubInfo = document.getElementById('sel-sub-info');
+const selectionFields = document.getElementById('selection-fields');
+const hudModeTag = document.getElementById('hud-mode-tag');
+const addMenuPopup = document.getElementById('add-menu-popup');
+const btnToggleBoundary = document.getElementById('btn-toggle-boundary-mode');
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1d24);
-
-// 相机系统 (支持透视与正交)
-const aspect = width / height;
-const frustumSize = 160;
-
-const perspCamera = new THREE.PerspectiveCamera(45, aspect, 0.1, 2000);
-perspCamera.position.set(120, 100, 140);
-
-const orthoCamera = new THREE.OrthographicCamera(
-  -frustumSize * aspect / 2,
-  frustumSize * aspect / 2,
-  frustumSize / 2,
-  -frustumSize / 2,
-  0.1,
-  2000
-);
-orthoCamera.position.copy(perspCamera.position);
-
-let activeCamera = perspCamera;
-
-// 渲染器
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-renderer.setSize(width, height);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-container.appendChild(renderer.domElement);
-
-// 控制器
-const controls = new OrbitControls(activeCamera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.target.set(0, 0, 0);
-
-// Blender 式交互变换手柄 (TransformControls)
-const transformControls = new TransformControls(activeCamera, renderer.domElement);
-transformControls.size = 0.85;
-scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
-
-let transformStartPos = new THREE.Vector3();
-let transformStartRot = new THREE.Euler();
-let transformStartScale = new THREE.Vector3();
-
-transformControls.addEventListener('dragging-changed', (event) => {
-  controls.enabled = !event.value;
-  state.transforming = event.value;
-  if (event.value && state.currentPartGroup) {
-    transformStartPos.copy(state.currentPartGroup.position);
-    transformStartRot.copy(state.currentPartGroup.rotation);
-    transformStartScale.copy(state.currentPartGroup.scale);
-  }
-});
-
-function resetAxesConstraints() {
-  transformControls.showX = true;
-  transformControls.showY = true;
-  transformControls.showZ = true;
+export function showLoading(msg = '正在调用 SMLib 几何内核计算…') {
+  if (loadingMsg) loadingMsg.textContent = msg;
+  if (loadingOverlay) loadingOverlay.classList.remove('hidden');
 }
 
-// 手柄松开时执行最终提交
-transformControls.addEventListener('mouseUp', async () => {
+export function hideLoading() {
+  if (loadingOverlay) loadingOverlay.classList.add('hidden');
+}
+
+export function showStatus(text, isError = false) {
+  if (!statusText) return;
+  statusText.textContent = text;
+  statusText.style.color = isError ? '#e06c75' : '';
+}
+
+// --- GLTF 几何解析与视口刷新 ---
+const gltfLoader = new GLTFLoader();
+
+export function renderModelGLTF(gltfContent) {
+  gltfLoader.parse(gltfContent, '', (gltf) => {
+    if (state.currentPartGroup) {
+      scene.remove(state.currentPartGroup);
+      state.currentPartGroup.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      });
+      state.currentPartGroup = null;
+    }
+
+    const group = gltf.scene;
+
+    // 解除 smlibpy 默认的 0.001 缩放，还原真实毫米尺寸
+    group.traverse((child) => {
+      if (child.scale && Math.abs(child.scale.x - 0.001) < 0.0001) {
+        child.scale.set(1, 1, 1);
+      }
+    });
+
+    let triangleCount = 0;
+    group.traverse((child) => {
+      if (child.isMesh) {
+        triangleCount += child.geometry.index ? child.geometry.index.count / 3 : child.geometry.attributes.position.count / 3;
+        child.material = new THREE.MeshStandardMaterial({
+          color: 0x80baff,
+          metalness: 0.15,
+          roughness: 0.4,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1
+        });
+        child.castShadow = true;
+        child.receiveShadow = true;
+
+        if (state.showEdges) {
+          const edges = new THREE.EdgesGeometry(child.geometry, 28);
+          const lineMaterial = new THREE.LineBasicMaterial({ color: 0x111c2e, linewidth: 2 });
+          const lineSegments = new THREE.LineSegments(edges, lineMaterial);
+          lineSegments.name = 'cad-edge-line';
+          child.add(lineSegments);
+        }
+      } else if (child.isLineSegments) {
+        child.material = new THREE.LineBasicMaterial({ color: 0x111c2e, linewidth: 2 });
+        child.name = 'cad-edge-line';
+      }
+    });
+
+    const triEl = document.getElementById('stat-triangles');
+    if (triEl) triEl.textContent = Math.round(triangleCount).toLocaleString();
+
+    scene.add(group);
+    state.currentPartGroup = group;
+
+    // 手柄重新挂载到新模型
+    transformControls.attach(group);
+    transformControls.visible = true;
+
+    // 辅助网格对齐底面
+    const box = new THREE.Box3().setFromObject(group);
+    if (!box.isEmpty()) {
+      gridHelper.position.y = box.min.y - 0.2;
+    }
+
+    fitCameraToObject(group);
+    clearHighlights();
+    updateTopologyView();
+    updateBoundaryVisuals(group);
+  }, (err) => {
+    console.error('Failed to parse glTF:', err);
+    showStatus('GLTF 解析失败: ' + err.message, true);
+  });
+}
+
+// 更新总体积、面积与外形包围盒
+async function updateTopologyView() {
   if (!state.currentPartGroup) return;
-  const curPos = state.currentPartGroup.position;
-  const dx = curPos.x - transformStartPos.x;
-  const dy = curPos.y - transformStartPos.y;
-  const dz = curPos.z - transformStartPos.z;
-
-  const mode = transformControls.getMode();
-  if (mode === 'translate' && (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01 || Math.abs(dz) > 0.01)) {
-    state.currentPartGroup.position.copy(transformStartPos);
-    await applyTransformDirect('translate', { dx: round2(dx), dy: round2(dy), dz: round2(dz) });
-  } else if (mode === 'rotate') {
-    const curRot = state.currentPartGroup.rotation;
-    const dangle = THREE.MathUtils.radToDeg(curRot.z - transformStartRot.z);
-    if (Math.abs(dangle) > 0.1) {
-      state.currentPartGroup.rotation.copy(transformStartRot);
-      await applyTransformDirect('rotate', { axis: 'Z', angle: round2(dangle) });
-    }
-  } else if (mode === 'scale') {
-    const curScale = state.currentPartGroup.scale;
-    const factor = curScale.x / (transformStartScale.x || 1.0);
-    if (Math.abs(factor - 1.0) > 0.01) {
-      state.currentPartGroup.scale.copy(transformStartScale);
-      await applyTransformDirect('scale', { factor: round2(factor) });
-    }
+  const box = new THREE.Box3().setFromObject(state.currentPartGroup);
+  if (!box.isEmpty()) {
+    const size = box.getSize(new THREE.Vector3());
+    const bboxEl = document.getElementById('stat-bbox');
+    if (bboxEl) bboxEl.textContent = `${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm`;
   }
-});
 
-function round2(v) {
-  return Math.round(v * 100) / 100;
+  try {
+    const res = await fetch('/api/model/topology');
+    const data = await res.json();
+    if (data.ok) {
+      const areaEl = document.getElementById('stat-area');
+      if (areaEl) areaEl.textContent = `${data.area.toLocaleString()} mm²`;
+      if (data.size && document.getElementById('stat-bbox')) {
+        document.getElementById('stat-bbox').textContent = `${data.size[0]} × ${data.size[1]} × ${data.size[2]} mm`;
+      }
+    }
+  } catch (err) {
+    console.warn('Topology fetch error:', err);
+  }
 }
 
-async function applyTransformDirect(kind, params) {
+// 手柄拖拽松手回调
+setTransformFinishedCallback(async (kind, params) => {
   showLoading(`正在执行【${kind}】几何变换…`);
   try {
     const res = await fetch('/api/transform', {
@@ -186,512 +242,82 @@ async function applyTransformDirect(kind, params) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || '变换失败');
     renderModelGLTF(data.gltf);
-    scriptEditor.value = data.code;
+    if (scriptEditor) scriptEditor.value = data.code;
     showStatus(`${data.explanation} · 耗时: ${data.stats.compute_ms} ms`);
-  } catch(err) {
+  } catch (err) {
     showStatus(`变换失败: ${err.message}`, true);
   } finally {
     hideLoading();
   }
-}
-
-// 光照系统 (专业 CAD 漫反射三点光)
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
-scene.add(ambientLight);
-
-const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
-dirLight1.position.set(150, 200, 150);
-scene.add(dirLight1);
-
-const dirLight2 = new THREE.DirectionalLight(0xb0c4de, 0.6);
-dirLight2.position.set(-150, -100, -150);
-scene.add(dirLight2);
-
-// 网格辅助面
-const gridHelper = new THREE.GridHelper(300, 60, 0x3e4451, 0x2c313a);
-gridHelper.position.y = -0.1;
-scene.add(gridHelper);
-
-// 坐标轴辅助
-const axesHelper = new THREE.AxesHelper(50);
-axesHelper.material.linewidth = 2;
-scene.add(axesHelper);
-
-// CAD 分级拾取高亮层 (实体/面/边/点)
-const highlightGroup = new THREE.Group();
-scene.add(highlightGroup);
-
-// CFD 物理边界高亮层 (仅在物理边界模式下开启显示)
-const boundaryGroup = new THREE.Group();
-boundaryGroup.visible = false;
-scene.add(boundaryGroup);
-
-const raycaster = new THREE.Raycaster();
-const mousePos = new THREE.Vector2();
-
-// 顶点标靶指示小球
-const vertexMarker = new THREE.Mesh(
-  new THREE.SphereGeometry(1.2, 16, 16),
-  new THREE.MeshBasicMaterial({ color: 0xffd885, depthTest: false })
-);
-vertexMarker.renderOrder = 999;
-vertexMarker.visible = false;
-highlightGroup.add(vertexMarker);
-
-// 面高亮网格
-let highlightFaceMesh = null;
-const faceHighlightMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffc766,
-  side: THREE.DoubleSide,
-  transparent: true,
-  opacity: 0.65,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1
 });
 
-// 边高亮线条
-let highlightEdgeLine = null;
-const edgeHighlightMaterial = new THREE.LineBasicMaterial({
-  color: 0xffea00,
-  linewidth: 3,
-  depthTest: false
-});
-
-// 动效循环
-function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
-  renderer.render(scene, activeCamera);
-}
-animate();
-
-// 自适应窗口缩放
-window.addEventListener('resize', () => {
-  const w = container.clientWidth;
-  const h = container.clientHeight;
-  const asp = w / h;
-
-  perspCamera.aspect = asp;
-  perspCamera.updateProjectionMatrix();
-
-  orthoCamera.left = -frustumSize * asp / 2;
-  orthoCamera.right = frustumSize * asp / 2;
-  orthoCamera.top = frustumSize / 2;
-  orthoCamera.bottom = -frustumSize / 2;
-  orthoCamera.updateProjectionMatrix();
-
-  renderer.setSize(w, h);
-});
-
-// --- GLTF 加载与 CAD 渲染管线 ---
-const gltfLoader = new GLTFLoader();
-
-function renderModelGLTF(gltfContent) {
-  gltfLoader.parse(gltfContent, '', (gltf) => {
-    // 移除旧几何体
-    if (state.currentPartGroup) {
-      scene.remove(state.currentPartGroup);
-      state.currentPartGroup.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-          else child.material.dispose();
-        }
-      });
-      state.currentPartGroup = null;
-    }
-
-    const group = gltf.scene;
-
-    // 处理 smlibpy 导出的 0.001 (mm 转米) 缩放，还原为 1:1 真实的 mm 工程尺寸
-    group.traverse((child) => {
-      if (child.scale && Math.abs(child.scale.x - 0.001) < 0.0001) {
-        child.scale.set(1, 1, 1);
-      }
-    });
-
-    // 统计三角面并增强材质
-    let triangleCount = 0;
-
-    group.traverse((child) => {
-      if (child.isMesh) {
-        triangleCount += child.geometry.index ? child.geometry.index.count / 3 : child.geometry.attributes.position.count / 3;
-
-        // 统一使用高质感天蓝色 CAD 双面光照材质
-        child.material = new THREE.MeshStandardMaterial({
-          color: 0x80baff,
-          metalness: 0.15,
-          roughness: 0.4,
-          side: THREE.DoubleSide,
-          polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1
-        });
-        child.castShadow = true;
-        child.receiveShadow = true;
-
-        // 生成特征轮廓边线
-        if (state.showEdges) {
-          const edges = new THREE.EdgesGeometry(child.geometry, 28);
-          const lineMaterial = new THREE.LineBasicMaterial({ color: 0x111c2e, linewidth: 2 });
-          const lineSegments = new THREE.LineSegments(edges, lineMaterial);
-          lineSegments.name = 'cad-edge-line';
-          child.add(lineSegments);
-        }
-      } else if (child.isLineSegments) {
-        // smlibpy 原生导出的边线
-        child.material = new THREE.LineBasicMaterial({ color: 0x111c2e, linewidth: 2 });
-        child.name = 'cad-edge-line';
-      }
-    });
-
-    document.getElementById('stat-triangles').textContent = Math.round(triangleCount).toLocaleString();
-
-    scene.add(group);
-    state.currentPartGroup = group;
-    transformControls.attach(group);
-    transformControls.visible = true;
-
-    // 将辅助网格对齐到模型底部
-    const box = new THREE.Box3().setFromObject(group);
-    if (!box.isEmpty()) {
-      gridHelper.position.y = box.min.y - 0.2;
-    }
-
-    fitCameraToObject(group);
-    clearHighlights();
-    updateTopologyView();
-  }, (err) => {
-    console.error('Failed to parse glTF:', err);
-    showStatus('GLTF 解析失败: ' + err.message, true);
-  });
-}
-
-function fitCameraToObject(object) {
-  const box = new THREE.Box3().setFromObject(object);
-  if (box.isEmpty()) return;
-
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-
-  const maxDim = Math.max(size.x, size.y, size.z, 20);
-  const distance = maxDim * 2.2;
-
-  controls.target.copy(center);
-
-  // 保持当前视角的观察向量，调整距离
-  const dir = new THREE.Vector3().subVectors(activeCamera.position, controls.target).normalize();
-  if (dir.lengthSq() < 0.001) dir.set(1, 0.8, 1).normalize();
-
-  activeCamera.position.copy(center).addScaledVector(dir, distance);
-  activeCamera.near = Math.max(0.5, distance / 200);
-  activeCamera.far = Math.max(distance * 30, 8000);
-
-  if (activeCamera.isOrthographicCamera) {
-    const asp = container.clientWidth / container.clientHeight;
-    activeCamera.left = -maxDim * asp * 1.2;
-    activeCamera.right = maxDim * asp * 1.2;
-    activeCamera.top = maxDim * 1.2;
-    activeCamera.bottom = -maxDim * 1.2;
-  }
-  activeCamera.updateProjectionMatrix();
-
-  controls.update();
-}
-
-// --- 视角控制按钮逻辑 ---
-function setStandardView(type) {
-  if (!state.currentPartGroup) return;
-  const box = new THREE.Box3().setFromObject(state.currentPartGroup);
-  const center = box.getCenter(new THREE.Vector3());
-  const dist = Math.max(box.getSize(new THREE.Vector3()).length() * 1.5, 80);
-
-  controls.target.copy(center);
-
-  if (type === 'iso') {
-    activeCamera.position.set(center.x + dist * 0.7, center.y + dist * 0.6, center.z + dist * 0.7);
-  } else if (type === 'front') {
-    activeCamera.position.set(center.x, center.y, center.z + dist);
-  } else if (type === 'top') {
-    activeCamera.position.set(center.x, center.y + dist, center.z);
-  } else if (type === 'right') {
-    activeCamera.position.set(center.x + dist, center.y, center.z);
-  } else if (type === 'fit') {
-    fitCameraToObject(state.currentPartGroup);
-    return;
-  }
-  controls.update();
-}
-
-document.getElementById('btn-iso').onclick = () => setStandardView('iso');
-document.getElementById('btn-front').onclick = () => setStandardView('front');
-document.getElementById('btn-top').onclick = () => setStandardView('top');
-document.getElementById('btn-right').onclick = () => setStandardView('right');
-document.getElementById('btn-fit').onclick = () => setStandardView('fit');
-
-// 正交 / 透视投影切换
-document.getElementById('btn-camera-toggle').onclick = (e) => {
-  const btn = e.currentTarget;
-  if (state.cameraType === 'perspective') {
-    state.cameraType = 'orthographic';
-    orthoCamera.position.copy(perspCamera.position);
-    orthoCamera.quaternion.copy(perspCamera.quaternion);
-    controls.object = orthoCamera;
-    activeCamera = orthoCamera;
-    transformControls.camera = orthoCamera;
-    btn.textContent = '正交';
-    btn.classList.add('active');
-  } else {
-    state.cameraType = 'perspective';
-    perspCamera.position.copy(orthoCamera.position);
-    perspCamera.quaternion.copy(orthoCamera.quaternion);
-    controls.object = perspCamera;
-    activeCamera = perspCamera;
-    transformControls.camera = perspCamera;
-    btn.textContent = '透视';
-    btn.classList.remove('active');
-  }
-  controls.update();
-};
-
-// 网格 / 坐标轴 / 边线 开关
-document.getElementById('btn-grid-toggle').onclick = (e) => {
-  state.showGrid = !state.showGrid;
-  gridHelper.visible = state.showGrid;
-  e.currentTarget.classList.toggle('active', state.showGrid);
-};
-
-document.getElementById('btn-axes-toggle').onclick = (e) => {
-  state.showAxes = !state.showAxes;
-  axesHelper.visible = state.showAxes;
-  e.currentTarget.classList.toggle('active', state.showAxes);
-};
-
-document.getElementById('btn-edges-toggle').onclick = (e) => {
-  state.showEdges = !state.showEdges;
-  e.currentTarget.classList.toggle('active', state.showEdges);
-  if (state.currentPartGroup) {
-    state.currentPartGroup.traverse((child) => {
-      if (child.name === 'cad-edge-line') child.visible = state.showEdges;
-    });
-  }
-};
-
-// --- 参数化表单与后端交互 ---
-const templateSelect = document.getElementById('template-select');
-const paramForm = document.getElementById('parametric-form');
-const scriptEditor = document.getElementById('script-editor');
-const loadingOverlay = document.getElementById('loading-overlay');
-const loadingMsg = document.getElementById('loading-msg');
-
-function showLoading(msg = '正在调用 SMLib 几何内核计算…') {
-  loadingMsg.textContent = msg;
-  loadingOverlay.classList.remove('hidden');
-}
-
-function hideLoading() {
-  loadingOverlay.classList.add('hidden');
-}
-
-function showStatus(text, isError = false) {
-  const el = document.getElementById('status-text');
-  el.textContent = text;
-  el.style.color = isError ? '#e06c75' : '';
-}
-
-// 渲染参数表单
-function renderParamForm(templateKey) {
-  const config = TEMPLATE_CONFIGS[templateKey];
-  if (!config) return;
-
-  state.template = templateKey;
-  state.params = {};
-  paramForm.innerHTML = '';
-
-  config.params.forEach((p) => {
-    state.params[p.key] = p.default;
-
-    const group = document.createElement('div');
-    group.className = 'param-group';
-
-    if (p.type === 'boolean') {
-      group.innerHTML = `
-        <div class="param-header">
-          <label class="param-label" for="param-${p.key}">${p.label}</label>
-          <input type="checkbox" id="param-${p.key}" ${p.default ? 'checked' : ''}>
-        </div>
-      `;
-      const checkbox = group.querySelector('input');
-      checkbox.onchange = () => {
-        state.params[p.key] = checkbox.checked;
-        triggerParametricBuild();
-      };
-    } else {
-      group.innerHTML = `
-        <div class="param-header">
-          <label class="param-label" for="param-${p.key}">${p.label}</label>
-          <span class="param-val-preview">${p.default}</span>
-        </div>
-        <div class="param-inputs">
-          <input type="range" class="param-slider" id="slider-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}">
-          <input type="number" class="param-num" id="num-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}">
-        </div>
-      `;
-
-      const slider = group.querySelector('.param-slider');
-      const numInput = group.querySelector('.param-num');
-      const preview = group.querySelector('.param-val-preview');
-
-      const updateVal = (val) => {
-        state.params[p.key] = parseFloat(val);
-        slider.value = val;
-        numInput.value = val;
-        preview.textContent = val;
-      };
-
-      slider.oninput = (e) => {
-        updateVal(e.target.value);
-        debounceBuild();
-      };
-
-      numInput.onchange = (e) => {
-        updateVal(e.target.value);
-        triggerParametricBuild();
-      };
-    }
-
-    paramForm.appendChild(group);
-  });
-}
-
-let debounceTimer = null;
-let needRebuild = false;
-
-function debounceBuild() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    triggerParametricBuild();
-  }, 120);
-}
-
-async function triggerParametricBuild() {
-  if (state.isBuilding) {
-    needRebuild = true;
-    return;
-  }
-  state.isBuilding = true;
-  showLoading('SMLib 正在重构参数化特征…');
-
-  try {
-    const res = await fetch('/api/build/parametric', {
+// 右侧工具弹窗执行回调
+setToolExecuteCallback(async (toolKey, params, baseOnCurrent, schema) => {
+  showLoading(`SMLib 正在执行【${schema.title}】运算…`);
+  let res;
+  if (['move', 'rotate', 'scale'].includes(toolKey)) {
+    res = await fetch('/api/transform', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        template: state.template,
-        params: state.params
+        kind: toolKey === 'move' ? 'translate' : toolKey,
+        dx: params.dx || 0,
+        dy: params.dy || 0,
+        dz: params.dz || 0,
+        axis: params.axis || 'Z',
+        angle: params.angle || 0,
+        factor: params.factor || 1.0
       })
     });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '建模错误');
-
-    // 渲染几何
-    renderModelGLTF(data.gltf);
-
-    // 同步代码与统计
-    scriptEditor.value = data.script;
-    document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
-    document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
-    showStatus(`建模完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
-  } catch (err) {
-    showStatus(`构建失败: ${err.message}`, true);
-  } finally {
-    state.isBuilding = false;
-    hideLoading();
-    if (needRebuild) {
-      needRebuild = false;
-      triggerParametricBuild();
-    }
-  }
-}
-
-// 运行自定义脚本
-async function runScript() {
-  const code = scriptEditor.value.trim();
-  if (!code) return;
-
-  showLoading('SMLib 正在执行自定义 Python 脚本…');
-  try {
-    const res = await fetch('/api/build/script', {
+  } else {
+    res = await fetch('/api/tools/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script: code, name: 'custom_part' })
+      body: JSON.stringify({ tool: toolKey, params, base_on_current: baseOnCurrent })
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '执行失败');
+  }
 
-    renderModelGLTF(data.gltf);
+  const data = await res.json();
+  if (!res.ok) {
+    let msg = '工具运算失败';
+    if (typeof data.detail === 'string') msg = data.detail;
+    else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+    throw new Error(msg);
+  }
+
+  renderModelGLTF(data.gltf);
+  if (scriptEditor) scriptEditor.value = data.code;
+
+  if (data.stats) {
     document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
     document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
-    showStatus(`脚本构建完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
-  } catch (err) {
-    alert('脚本执行出错:\n' + err.message);
-    showStatus(`执行失败: ${err.message}`, true);
-  } finally {
-    hideLoading();
+    showStatus(`${data.explanation} · 耗时: ${data.stats.compute_ms} ms`);
   }
-}
 
-// 模板选择器事件
-templateSelect.onchange = (e) => {
-  renderParamForm(e.target.value);
-  triggerParametricBuild();
-};
-
-document.getElementById('btn-rebuild-param').onclick = () => triggerParametricBuild();
-document.getElementById('btn-run-script').onclick = () => runScript();
-document.getElementById('btn-format-script').onclick = () => triggerParametricBuild();
-
-// 快捷插入代码片段
-document.querySelectorAll('.snip-btn').forEach((btn) => {
-  btn.onclick = () => {
-    const code = btn.dataset.code;
-    const pos = scriptEditor.selectionStart;
-    const prev = scriptEditor.value;
-    scriptEditor.value = prev.slice(0, pos) + '\n' + code + prev.slice(pos);
-    scriptEditor.focus();
-  };
+  appendChatBubble('assistant', `🛠️ 执行工具【${schema.title}】：${data.explanation}`, {
+    code: data.code,
+    compute_ms: data.stats ? data.stats.compute_ms : null
+  });
 });
 
-// 复制代码
-document.getElementById('btn-copy-script').onclick = () => {
-  navigator.clipboard.writeText(scriptEditor.value).then(() => {
-    showStatus('Python 脚本已复制到剪贴板！');
-  });
-};
+// Agent 回调绑定
+initAgentUI(showLoading, hideLoading, showStatus);
 
-let isXrayMode = false;
-let currentAppMode = 'OBJECT'; // 'OBJECT' | 'EDIT'
-let lastCursorScreenPos = { x: 300, y: 200 };
+// --- 模式与分级选择控制器 ---
+let currentAppMode = 'OBJECT';
+let lastCursorPos = { x: 300, y: 200 };
 
-const addMenuPopup = document.getElementById('add-menu-popup');
-const hudModeTag = document.getElementById('hud-mode-tag');
-
-// 视口内实时跟踪鼠标屏幕坐标
 container.addEventListener('mousemove', (e) => {
   const rect = container.getBoundingClientRect();
-  lastCursorScreenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  lastCursorPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 });
 
-// 点击视口空白处自动关闭 Shift+A 菜单
 container.addEventListener('pointerdown', (e) => {
   if (addMenuPopup && !addMenuPopup.contains(e.target)) {
     addMenuPopup.classList.add('hidden');
   }
 });
 
-// 绑定 Shift+A 菜单项点击
 if (addMenuPopup) {
   addMenuPopup.querySelectorAll('.add-menu-item').forEach(item => {
     item.onclick = (e) => {
@@ -725,7 +351,91 @@ function switchSelectionModeTo(modeKey) {
   showStatus(`选择模式: ${modeLabels[modeKey]}`);
 }
 
-// 快捷键支持 (Blender 级 Shift+A / Tab / 1 / 2 / 3 / G / R / S / X / Y / Z / Alt+Z)
+document.querySelectorAll('#selection-mode-group button[data-sel-mode]').forEach(btn => {
+  btn.onclick = () => switchSelectionModeTo(btn.dataset.selMode);
+});
+
+// 画布点击触发分级拾取
+let pointerDownCoord = { x: 0, y: 0 };
+container.addEventListener('pointerdown', (e) => {
+  pointerDownCoord = { x: e.clientX, y: e.clientY };
+});
+
+container.addEventListener('pointerup', (e) => {
+  const dist = Math.hypot(e.clientX - pointerDownCoord.x, e.clientY - pointerDownCoord.y);
+  if (dist > 5) return; // 拖拽旋转相机，忽略
+
+  performSelectionPick(e.clientX, e.clientY, container, state.currentPartGroup, state.selectionMode, {
+    onClear: () => {
+      if (selSubInfo) selSubInfo.textContent = '未选中目标（点击空白处清除选择）';
+      updateTopologyView();
+    },
+    onSolidPick: () => {
+      if (selBadgeMode) selBadgeMode.textContent = '拾取: 实体 (Solid)';
+      if (selSubInfo) selSubInfo.textContent = '已选择完整三维实体模型';
+      updateTopologyView();
+      showStatus('已选择实体模型');
+    },
+    onFacePick: (res) => {
+      state.currentHitFace = res;
+      if (selBadgeMode) selBadgeMode.textContent = `拾取: 面 (Face #${res.index})`;
+      if (selSubInfo) selSubInfo.textContent = res.orient;
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">法向量 (X,Y,Z):</span><span class="stat-value">[${res.normal[0]}, ${res.normal[1]}, ${res.normal[2]}]</span></div>
+          <div class="stat-row"><span class="stat-name">面取向特征:</span><span class="stat-value">${res.orient}</span></div>
+          <div class="stat-row"><span class="stat-name">击中坐标 (XYZ):</span><span class="stat-value">${res.point.x.toFixed(1)}, ${res.point.y.toFixed(1)}, ${res.point.z.toFixed(1)}</span></div>
+          <div style="margin-top:6px;font-size:10px;color:#abb2bf">物理边界标注 (CFD):</div>
+          <div class="cfd-patch-toolbar" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+            <button class="btn-text-sm btn-mark-patch" data-ptype="inlet" style="color:#3a86ff;border:1px solid #3a86ff;border-radius:3px;padding:2px 5px;background:rgba(58,134,255,0.1)">+ 入口 (Inlet)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="outlet" style="color:#ff006e;border:1px solid #ff006e;border-radius:3px;padding:2px 5px;background:rgba(255,0,110,0.1)">+ 出口 (Outlet)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="wall" style="color:#a0aab8;border:1px solid #a0aab8;border-radius:3px;padding:2px 5px;background:rgba(160,170,184,0.1)">+ 壁面 (Wall)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="interface" style="color:#fb5607;border:1px solid #fb5607;border-radius:3px;padding:2px 5px;background:rgba(251,86,7,0.1)">+ 交界 (Interface)</button>
+          </div>
+        `;
+        selectionFields.querySelectorAll('.btn-mark-patch').forEach(b => {
+          b.onclick = async () => {
+            try {
+              const patch = await markFaceSemantic(res.index, b.dataset.ptype, res.normal, state.currentPartGroup);
+              if (btnToggleBoundary) btnToggleBoundary.classList.add('active');
+              showStatus(`已将面 #${res.index} 标记为【${patch.name}】(${b.dataset.ptype})`);
+              appendChatBubble('assistant', `🌊 物理边界标注：已将面 #${res.index} 设为 **${patch.name}** [类型: ${b.dataset.ptype.toUpperCase()}]`);
+            } catch (err) {
+              showStatus(`打标失败: ${err.message}`, true);
+            }
+          };
+        });
+      }
+      showStatus(`选中面 #${res.index} · 法向: [${res.normal[0]}, ${res.normal[1]}, ${res.normal[2]}] · ${res.orient}`);
+    },
+    onEdgePick: (res) => {
+      if (selBadgeMode) selBadgeMode.textContent = '拾取: 边 (Edge)';
+      if (selSubInfo) selSubInfo.textContent = `特征线段 (长 ${res.length.toFixed(2)} mm)`;
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">特征边长度:</span><span class="stat-value">${res.length.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">端点 1 (XYZ):</span><span class="stat-value">${res.p1.x.toFixed(1)}, ${res.p1.y.toFixed(1)}, ${res.p1.z.toFixed(1)}</span></div>
+          <div class="stat-row"><span class="stat-name">端点 2 (XYZ):</span><span class="stat-value">${res.p2.x.toFixed(1)}, ${res.p2.y.toFixed(1)}, ${res.p2.z.toFixed(1)}</span></div>
+        `;
+      }
+      showStatus(`选中边 · 长度: ${res.length.toFixed(2)} mm`);
+    },
+    onVertexPick: (res) => {
+      if (selBadgeMode) selBadgeMode.textContent = '拾取: 顶点 (Vertex)';
+      if (selSubInfo) selSubInfo.textContent = '几何特征顶点坐标已锁定';
+      if (selectionFields) {
+        selectionFields.innerHTML = `
+          <div class="stat-row"><span class="stat-name">绝对空间 X:</span><span class="stat-value">${res.vertex.x.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">绝对空间 Y:</span><span class="stat-value">${res.vertex.y.toFixed(2)} mm</span></div>
+          <div class="stat-row"><span class="stat-name">绝对空间 Z:</span><span class="stat-value">${res.vertex.z.toFixed(2)} mm</span></div>
+        `;
+      }
+      showStatus(`选中顶点 · 空间坐标: (${res.vertex.x.toFixed(2)}, ${res.vertex.y.toFixed(2)}, ${res.vertex.z.toFixed(2)}) mm`);
+    }
+  });
+});
+
+// --- Blender 快捷键流体系 (Shift+A, Tab, 1/2/3, G/R/S/X/Y/Z, Alt+Z) ---
 window.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea') {
@@ -736,41 +446,31 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Ctrl + Enter 运行脚本
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
     runScript();
     return;
   }
 
-  // Shift + A: 就地弹出添加菜单
   if (e.shiftKey && (e.key === 'a' || e.key === 'A')) {
     e.preventDefault();
     if (addMenuPopup) {
       const maxX = container.clientWidth - 180;
       const maxY = container.clientHeight - 340;
-      const posX = Math.max(10, Math.min(lastCursorScreenPos.x, maxX));
-      const posY = Math.max(10, Math.min(lastCursorScreenPos.y, maxY));
-      addMenuPopup.style.left = `${posX}px`;
-      addMenuPopup.style.top = `${posY}px`;
+      addMenuPopup.style.left = `${Math.max(10, Math.min(lastCursorPos.x, maxX))}px`;
+      addMenuPopup.style.top = `${Math.max(10, Math.min(lastCursorPos.y, maxY))}px`;
       addMenuPopup.classList.remove('hidden');
     }
     return;
   }
 
-  // Tab: 切换对象模式与编辑模式
   if (e.key === 'Tab') {
     e.preventDefault();
     setAppMode(currentAppMode === 'OBJECT' ? 'EDIT' : 'OBJECT');
-    if (currentAppMode === 'EDIT') {
-      switchSelectionModeTo('face'); // 默认进面编辑
-    } else {
-      switchSelectionModeTo('solid');
-    }
+    switchSelectionModeTo(currentAppMode === 'EDIT' ? 'face' : 'solid');
     return;
   }
 
-  // 数字 1 / 2 / 3: 在编辑模式下切换点 / 边 / 面
   if (e.key === '1') {
     e.preventDefault();
     setAppMode('EDIT');
@@ -788,24 +488,13 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Alt + Z: 切换 X-Ray 半透明透视模式
   if (e.altKey && (e.key === 'z' || e.key === 'Z')) {
     e.preventDefault();
-    isXrayMode = !isXrayMode;
-    if (state.currentPartGroup) {
-      state.currentPartGroup.traverse((child) => {
-        if (child.isMesh && child.name !== 'cad-edge-line') {
-          child.material.transparent = isXrayMode;
-          child.material.opacity = isXrayMode ? 0.35 : 1.0;
-          child.material.depthWrite = !isXrayMode;
-        }
-      });
-    }
-    showStatus(isXrayMode ? '已开启 X-Ray 半透明透视模式 (Alt+Z)' : '已恢复实体着色模式 (Alt+Z)');
+    const xActive = toggleXrayMode(state.currentPartGroup);
+    showStatus(xActive ? '已开启 X-Ray 半透明透视模式 (Alt+Z)' : '已恢复实体着色模式 (Alt+Z)');
     return;
   }
 
-  // Blender 快捷变换键
   if (e.key === 'g' || e.key === 'G') {
     e.preventDefault();
     transformControls.setMode('translate');
@@ -827,25 +516,19 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'x' || e.key === 'X') {
     if (transformControls.visible) {
       e.preventDefault();
-      transformControls.showX = true;
-      transformControls.showY = false;
-      transformControls.showZ = false;
+      transformControls.showX = true; transformControls.showY = false; transformControls.showZ = false;
       showStatus('已锁定 X 轴向约束');
     }
   } else if (e.key === 'y' || e.key === 'Y') {
     if (transformControls.visible) {
       e.preventDefault();
-      transformControls.showX = false;
-      transformControls.showY = true;
-      transformControls.showZ = false;
+      transformControls.showX = false; transformControls.showY = true; transformControls.showZ = false;
       showStatus('已锁定 Y 轴向约束');
     }
   } else if (e.key === 'z' || e.key === 'Z') {
     if (transformControls.visible) {
       e.preventDefault();
-      transformControls.showX = false;
-      transformControls.showY = false;
-      transformControls.showZ = true;
+      transformControls.showX = false; transformControls.showY = false; transformControls.showZ = true;
       showStatus('已锁定 Z 轴向约束');
     }
   } else if (e.key === 'Escape') {
@@ -854,12 +537,238 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// --- Tab 切换 ---
+// --- 顶部导航与视角控制 ---
+document.getElementById('btn-iso').onclick = () => setStandardView('iso', state.currentPartGroup);
+document.getElementById('btn-front').onclick = () => setStandardView('front', state.currentPartGroup);
+document.getElementById('btn-top').onclick = () => setStandardView('top', state.currentPartGroup);
+document.getElementById('btn-right').onclick = () => setStandardView('right', state.currentPartGroup);
+document.getElementById('btn-fit').onclick = () => setStandardView('fit', state.currentPartGroup);
+
+document.getElementById('btn-camera-toggle').onclick = (e) => {
+  const btn = e.currentTarget;
+  if (state.cameraType === 'perspective') {
+    state.cameraType = 'orthographic';
+    orthoCamera.position.copy(perspCamera.position);
+    orthoCamera.quaternion.copy(perspCamera.quaternion);
+    setActiveCamera(orthoCamera);
+    transformControls.camera = orthoCamera;
+    btn.textContent = '正交';
+    btn.classList.add('active');
+  } else {
+    state.cameraType = 'perspective';
+    perspCamera.position.copy(orthoCamera.position);
+    perspCamera.quaternion.copy(orthoCamera.quaternion);
+    setActiveCamera(perspCamera);
+    transformControls.camera = perspCamera;
+    btn.textContent = '透视';
+    btn.classList.remove('active');
+  }
+  controls.update();
+};
+
+document.getElementById('btn-grid-toggle').onclick = (e) => {
+  state.showGrid = !state.showGrid;
+  gridHelper.visible = state.showGrid;
+  e.currentTarget.classList.toggle('active', state.showGrid);
+};
+
+document.getElementById('btn-axes-toggle').onclick = (e) => {
+  state.showAxes = !state.showAxes;
+  axesHelper.visible = state.showAxes;
+  e.currentTarget.classList.toggle('active', state.showAxes);
+};
+
+document.getElementById('btn-edges-toggle').onclick = (e) => {
+  state.showEdges = !state.showEdges;
+  e.currentTarget.classList.toggle('active', state.showEdges);
+  if (state.currentPartGroup) {
+    state.currentPartGroup.traverse((child) => {
+      if (child.name === 'cad-edge-line') child.visible = state.showEdges;
+    });
+  }
+};
+
+if (btnToggleBoundary) {
+  btnToggleBoundary.onclick = () => {
+    const next = !getIsBoundaryMode();
+    btnToggleBoundary.classList.toggle('active', next);
+    setBoundaryMode(next, state.currentPartGroup);
+    showStatus(next ? '已开启【🌊 物理边界模式】：高亮显示各物理边界补丁颜色' : '已退出边界模式：恢复标准 CAD 天蓝色实体外观');
+  };
+}
+
+// 顶部变换按钮绑定
+const btnToolMove = document.getElementById('btn-tool-move');
+const btnToolRotate = document.getElementById('btn-tool-rotate');
+const btnToolScale = document.getElementById('btn-tool-scale');
+if (btnToolMove) btnToolMove.onclick = () => openToolModal('move');
+if (btnToolRotate) btnToolRotate.onclick = () => openToolModal('rotate');
+if (btnToolScale) btnToolScale.onclick = () => openToolModal('scale');
+
+// 右侧工具栏按钮绑定
+document.querySelectorAll('.right-tools button[data-tool]').forEach(btn => {
+  btn.onclick = () => {
+    const tool = btn.dataset.tool;
+    if (tool) openToolModal(tool);
+  };
+});
+
+// --- 参数化模板表单逻辑 ---
+function renderParamForm(templateKey) {
+  const config = TEMPLATE_CONFIGS[templateKey];
+  if (!config) return;
+
+  state.template = templateKey;
+  state.params = {};
+  paramForm.innerHTML = '';
+
+  config.params.forEach((p) => {
+    state.params[p.key] = p.default;
+    const group = document.createElement('div');
+    group.className = 'param-group';
+
+    if (p.type === 'boolean') {
+      group.innerHTML = `
+        <div class="param-header"><label class="param-label" for="param-${p.key}">${p.label}</label><input type="checkbox" id="param-${p.key}" ${p.default ? 'checked' : ''}></div>
+      `;
+      const checkbox = group.querySelector('input');
+      checkbox.onchange = () => {
+        state.params[p.key] = checkbox.checked;
+        triggerParametricBuild();
+      };
+    } else {
+      group.innerHTML = `
+        <div class="param-header"><label class="param-label" for="param-${p.key}">${p.label}</label><span class="param-val-preview">${p.default}</span></div>
+        <div class="param-inputs"><input type="range" class="param-slider" id="slider-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}"><input type="number" class="param-num" id="num-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.default}"></div>
+      `;
+      const slider = group.querySelector('.param-slider');
+      const numInput = group.querySelector('.param-num');
+      const preview = group.querySelector('.param-val-preview');
+
+      const updateVal = (val) => {
+        state.params[p.key] = parseFloat(val);
+        slider.value = val;
+        numInput.value = val;
+        preview.textContent = val;
+      };
+
+      slider.oninput = (e) => { updateVal(e.target.value); debounceBuild(); };
+      numInput.onchange = (e) => { updateVal(e.target.value); triggerParametricBuild(); };
+    }
+    paramForm.appendChild(group);
+  });
+}
+
+let debounceTimer = null;
+let needRebuild = false;
+
+function debounceBuild() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => triggerParametricBuild(), 120);
+}
+
+export async function triggerParametricBuild() {
+  if (state.isBuilding) {
+    needRebuild = true;
+    return;
+  }
+  state.isBuilding = true;
+  showLoading('SMLib 正在重构参数化特征…');
+
+  try {
+    const res = await fetch('/api/build/parametric', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template: state.template, params: state.params })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '建模错误');
+
+    renderModelGLTF(data.gltf);
+    if (scriptEditor) scriptEditor.value = data.script;
+
+    document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
+    document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
+    showStatus(`建模完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
+  } catch (err) {
+    showStatus(`构建失败: ${err.message}`, true);
+  } finally {
+    state.isBuilding = false;
+    hideLoading();
+    if (needRebuild) {
+      needRebuild = false;
+      triggerParametricBuild();
+    }
+  }
+}
+
+async function runScript() {
+  const code = (scriptEditor ? scriptEditor.value : '').trim();
+  if (!code) return;
+
+  showLoading('SMLib 正在执行自定义 Python 脚本…');
+  try {
+    const res = await fetch('/api/build/script', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script: code, name: 'custom_part' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '执行失败');
+
+    renderModelGLTF(data.gltf);
+    document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
+    document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
+    showStatus(`脚本构建完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
+  } catch (err) {
+    alert('脚本执行出错:\n' + err.message);
+    showStatus(`执行失败: ${err.message}`, true);
+  } finally {
+    hideLoading();
+  }
+}
+
+if (templateSelect) {
+  templateSelect.onchange = (e) => {
+    renderParamForm(e.target.value);
+    triggerParametricBuild();
+  };
+}
+
+const btnRebuild = document.getElementById('btn-rebuild-param');
+const btnRunScript = document.getElementById('btn-run-script');
+const btnFormatScript = document.getElementById('btn-format-script');
+if (btnRebuild) btnRebuild.onclick = () => triggerParametricBuild();
+if (btnRunScript) btnRunScript.onclick = () => runScript();
+if (btnFormatScript) btnFormatScript.onclick = () => triggerParametricBuild();
+
+// 快捷代码插入与复制
+document.querySelectorAll('.snip-btn').forEach((btn) => {
+  btn.onclick = () => {
+    if (!scriptEditor) return;
+    const code = btn.dataset.code;
+    const pos = scriptEditor.selectionStart;
+    const prev = scriptEditor.value;
+    scriptEditor.value = prev.slice(0, pos) + '\n' + code + prev.slice(pos);
+    scriptEditor.focus();
+  };
+});
+
+const btnCopy = document.getElementById('btn-copy-script');
+if (btnCopy) {
+  btnCopy.onclick = () => {
+    if (!scriptEditor) return;
+    navigator.clipboard.writeText(scriptEditor.value).then(() => {
+      showStatus('Python 脚本已复制到剪贴板！');
+    });
+  };
+}
+
+// 侧栏 Tab 切换
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-
     btn.classList.add('active');
     const tabId = `tab-${btn.dataset.tab}`;
     const pane = document.getElementById(tabId);
@@ -867,7 +776,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
   };
 });
 
-// --- 文件导出绑定 ---
+// 文件下载与导出
 function downloadFile(url) {
   const link = document.createElement('a');
   link.href = url;
@@ -881,1016 +790,27 @@ document.getElementById('btn-export-step').onclick = () => {
   downloadFile('/api/export/step');
   showStatus('正在生成并下载工业标准 STEP 文件…');
 };
-
 document.getElementById('btn-export-stl').onclick = () => {
   downloadFile('/api/export/stl');
   showStatus('正在生成并下载 3D 打印 STL 文件…');
 };
-
 document.getElementById('btn-export-gltf').onclick = () => {
   downloadFile('/api/export/gltf');
   showStatus('正在下载 glTF 3D 文件…');
 };
-
 document.getElementById('btn-export-py').onclick = () => {
   downloadFile('/api/export/py');
   showStatus('正在下载 Python 独立建模脚本…');
 };
 
-// --- AI 对话建模 Agent 前端控制器 ---
-const chatMessages = document.getElementById('chat-messages');
-const agentInput = document.getElementById('agent-input');
-const btnSendAgent = document.getElementById('btn-send-agent');
-const btnClearChat = document.getElementById('btn-clear-chat');
-const btnToggleLlm = document.getElementById('btn-toggle-llm-settings');
-const llmSettingsCard = document.getElementById('llm-settings-panel');
-
-const settingBaseUrl = document.getElementById('setting-base-url');
-const settingApiKey = document.getElementById('setting-api-key');
-const settingModel = document.getElementById('setting-model');
-
-// 加载持久化的 LLM 设置
-const savedLlmConfig = JSON.parse(localStorage.getItem('smlib_llm_config') || '{}');
-if (settingBaseUrl) settingBaseUrl.value = savedLlmConfig.baseUrl || '';
-if (settingApiKey) settingApiKey.value = savedLlmConfig.apiKey || '';
-if (settingModel) settingModel.value = savedLlmConfig.model || '';
-
-function saveLlmConfig() {
-  const cfg = {
-    baseUrl: settingBaseUrl ? settingBaseUrl.value.trim() : '',
-    apiKey: settingApiKey ? settingApiKey.value.trim() : '',
-    model: settingModel ? settingModel.value.trim() : '',
-  };
-  localStorage.setItem('smlib_llm_config', JSON.stringify(cfg));
-  return cfg;
-}
-
-[settingBaseUrl, settingApiKey, settingModel].forEach(input => {
-  if (input) {
-    input.onchange = saveLlmConfig;
-    input.oninput = saveLlmConfig;
-  }
-});
-
-// 切换设置面板显示/隐藏
-if (btnToggleLlm && llmSettingsCard) {
-  btnToggleLlm.onclick = (e) => {
-    e.preventDefault();
-    llmSettingsCard.classList.toggle('hidden');
+const btnExportCfd = document.getElementById('btn-export-cfd');
+if (btnExportCfd) {
+  btnExportCfd.onclick = () => {
+    downloadFile('/api/export/cfd_meta');
+    showStatus('正在生成并下载 CFD 物理边界字典 (JSON)…');
   };
 }
 
-// 预设切换药丸
-document.querySelectorAll('.preset-pill').forEach(pill => {
-  pill.onclick = () => {
-    if (settingBaseUrl) settingBaseUrl.value = pill.dataset.base || '';
-    if (settingModel) settingModel.value = pill.dataset.model || '';
-    saveLlmConfig();
-  };
-});
-
-// 测试大模型连通性
-const btnTestLlm = document.getElementById('btn-test-llm');
-const llmTestResult = document.getElementById('llm-test-result');
-if (btnTestLlm) {
-  btnTestLlm.onclick = async () => {
-    const cfg = saveLlmConfig();
-    if (!cfg.apiKey) {
-      llmTestResult.innerHTML = '<span style="color:#e5c07b">⚠️ 请先输入 API Key</span>';
-      return;
-    }
-    btnTestLlm.disabled = true;
-    btnTestLlm.textContent = '正在测试连接…';
-    llmTestResult.innerHTML = '<span style="color:#abb2bf">正在向大模型接口发送心跳握手…</span>';
-    try {
-      const res = await fetch('/api/agent/test_llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        llmTestResult.innerHTML = `<span style="color:#98c379">✅ 连通成功！模型: ${data.model} · 延时: ${data.latency_ms} ms</span>`;
-      } else {
-        llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 握手失败: ${escapeHtml(data.error || '未知错误')}</span><br><span style="color:#7f848e;font-size:10px;">目标端点: ${escapeHtml(data.endpoint)}</span>`;
-      }
-    } catch (err) {
-      llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 网络异常: ${escapeHtml(err.message)}</span>`;
-    } finally {
-      btnTestLlm.disabled = false;
-      btnTestLlm.textContent = '🧪 测试 API 连通性';
-    }
-  };
-}
-
-let agentChatHistory = [];
-
-function appendChatBubble(role, content, meta = {}) {
-  const bubble = document.createElement('div');
-  bubble.className = `chat-bubble ${role}`;
-
-  if (role === 'user') {
-    bubble.innerHTML = `<div class="bubble-body">${escapeHtml(content)}</div>`;
-  } else {
-    let html = `
-      <div class="bubble-header">
-        <span>🤖 SMLib 建模 Agent</span>
-        ${meta.compute_ms ? `<span class="bubble-meta">${meta.compute_ms} ms</span>` : ''}
-      </div>
-      <div class="bubble-body">${escapeHtml(content).replace(/\n/g, '<br>')}</div>
-    `;
-
-    if (meta.code) {
-      html += `
-        <pre class="bubble-code"><code>${escapeHtml(meta.code)}</code></pre>
-        <div class="bubble-actions">
-          <button class="btn-text-sm btn-load-editor">在脚本编辑器中查看</button>
-        </div>
-      `;
-    }
-
-    if (meta.error) {
-      html += `<div style="color:#e06c75;margin-top:4px;font-size:11px;">⚠️ 执行提示: ${escapeHtml(meta.error)}</div>`;
-    }
-
-    bubble.innerHTML = html;
-
-    const btnLoad = bubble.querySelector('.btn-load-editor');
-    if (btnLoad) {
-      btnLoad.onclick = () => {
-        scriptEditor.value = meta.code;
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-        document.querySelector('[data-tab="script"]').classList.add('active');
-        document.getElementById('tab-script').classList.add('active');
-      };
-    }
-  }
-
-  chatMessages.appendChild(bubble);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-function escapeHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-async function sendAgentMessage(userPrompt) {
-  const text = (userPrompt || (agentInput ? agentInput.value : '')).trim();
-  if (!text) return;
-
-  if (agentInput) agentInput.value = '';
-
-  // 渲染用户输入
-  appendChatBubble('user', text);
-  showLoading('SMLib 智能 Agent 正在分析几何特征并编写代码…');
-
-  const cfg = saveLlmConfig();
-
-  try {
-    const res = await fetch('/api/agent/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: text,
-        history: agentChatHistory,
-        config: cfg
-      })
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || '请求 Agent 异常');
-
-    // 渲染 Agent 回复
-    appendChatBubble('assistant', data.reply, {
-      code: data.code,
-      compute_ms: data.stats ? data.stats.compute_ms : null,
-      error: data.error
-    });
-
-    // 记录历史
-    agentChatHistory.push({ role: 'user', content: text });
-    agentChatHistory.push({ role: 'assistant', content: data.reply, code: data.code });
-
-    // 成功生成模型后立即渲染 3D 几何
-    if (data.ok && data.gltf) {
-      renderModelGLTF(data.gltf);
-      scriptEditor.value = data.code;
-      if (data.stats) {
-        document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
-        document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
-        showStatus(`Agent 建模完成 · 体积: ${data.stats.volume} mm³ · 耗时: ${data.stats.compute_ms} ms`);
-      }
-    } else if (data.error) {
-      showStatus(`Agent 建模失败: ${data.error}`, true);
-    }
-  } catch (err) {
-    appendChatBubble('assistant', '抱歉，建模过程遇到网络或执行异常：' + err.message);
-    showStatus(`Agent 失败: ${err.message}`, true);
-  } finally {
-    hideLoading();
-  }
-}
-
-if (btnSendAgent) {
-  btnSendAgent.onclick = () => sendAgentMessage();
-}
-
-if (agentInput) {
-  agentInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendAgentMessage();
-    }
-  });
-}
-
-if (btnClearChat) {
-  btnClearChat.onclick = () => {
-    agentChatHistory = [];
-    chatMessages.innerHTML = `
-      <div class="chat-bubble assistant">
-        <div class="bubble-header">🤖 SMLib 建模 Agent</div>
-        <div class="bubble-body">对话历史已重置。请输入你希望生成的零件或几何特征！</div>
-      </div>
-    `;
-  };
-}
-
-// 快捷 Prompt 胶囊点击
-document.querySelectorAll('.prompt-pill').forEach(pill => {
-  pill.onclick = () => {
-    const prompt = pill.dataset.prompt;
-    if (prompt) sendAgentMessage(prompt);
-  };
-});
-
-// --- 右侧几何工具栏控制器 (复刻 cax-viewer) ---
-const RIGHT_TOOLS_SCHEMA = {
-  'new-feature-graph': {
-    title: '草图驱动零件',
-    desc: '矩形草图尺寸驱动拉伸，并可选圆柱凸台、贯穿通孔及外角圆角',
-    fields: [
-      { key: 'length', label: '草图长度 X (mm)', default: 80 },
-      { key: 'width', label: '草图宽度 Y (mm)', default: 50 },
-      { key: 'height', label: '拉伸高度 Z (mm)', default: 12 },
-      { key: 'boss_d', label: '凸台直径 (mm)', default: 24 },
-      { key: 'boss_h', label: '凸台高度 (mm)', default: 15 },
-      { key: 'hole_d', label: '贯穿孔直径 (mm)', default: 12 },
-      { key: 'fillet_r', label: '四角圆角半径 (mm)', default: 6 },
-    ]
-  },
-  'new-parametric-part': {
-    title: '带孔圆角板',
-    desc: '在 XY 工作平面拉伸矩形板，施加四个竖边圆角与贯穿中心通孔',
-    fields: [
-      { key: 'length', label: '基板长度 X (mm)', default: 100 },
-      { key: 'width', label: '基板宽度 Y (mm)', default: 80 },
-      { key: 'thickness', label: '厚度 Z (mm)', default: 12 },
-      { key: 'hole_r', label: '中心孔半径 (mm)', default: 15 },
-      { key: 'fillet_r', label: '四角圆角半径 (mm)', default: 10 }
-    ]
-  },
-  'box': {
-    title: '长方体',
-    desc: '创建标准三维对称长方体',
-    fields: [
-      { key: 'length', label: '长度 X (mm)', default: 60 },
-      { key: 'width', label: '宽度 Y (mm)', default: 40 },
-      { key: 'height', label: '高度 Z (mm)', default: 20 }
-    ]
-  },
-  'cylinder': {
-    title: '圆柱体',
-    desc: '沿 Z 轴创建轴对称实体圆柱',
-    fields: [
-      { key: 'radius', label: '圆柱半径 R (mm)', default: 15 },
-      { key: 'height', label: '圆柱高度 H (mm)', default: 40 }
-    ]
-  },
-  'sphere': {
-    title: '球体',
-    desc: '以原点为球心创建三维球体',
-    fields: [
-      { key: 'radius', label: '球体半径 R (mm)', default: 25 }
-    ]
-  },
-  'cone': {
-    title: '圆锥 / 圆台',
-    desc: '创建截面平滑渐变的圆锥台实体',
-    fields: [
-      { key: 'radius1', label: '底面半径 R1 (mm)', default: 20 },
-      { key: 'radius2', label: '顶面半径 R2 (mm)', default: 10 },
-      { key: 'height', label: '圆台高度 H (mm)', default: 40 }
-    ]
-  },
-  'torus': {
-    title: '圆环体',
-    desc: '截面圆绕 Z 轴回转扫掠出的闭合环体',
-    fields: [
-      { key: 'radius_major', label: '主环半径 R (mm)', default: 30 },
-      { key: 'radius_minor', label: '截面半径 r (mm)', default: 8 }
-    ]
-  },
-  'hole': {
-    title: '定位孔',
-    desc: '在指定平面坐标切削贯穿通孔',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'radius', label: '通孔半径 R (mm)', default: 8 },
-      { key: 'depth', label: '切削深度 (mm)', default: 60 },
-      { key: 'x', label: '定位 X (mm)', default: 0 },
-      { key: 'y', label: '定位 Y (mm)', default: 0 }
-    ]
-  },
-  'boolean-union': {
-    title: '布尔并集',
-    desc: '将当前模型与工具体合并为一个新实体',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'tool_kind', label: '工具体类型', type: 'select', options: ['cylinder', 'sphere', 'box'], default: 'cylinder' },
-      { key: 'tool_r', label: '工具体尺寸/半径 (mm)', default: 15 },
-      { key: 'tool_h', label: '工具体高度 (mm)', default: 45 }
-    ]
-  },
-  'boolean-subtract': {
-    title: '布尔差集 (切削)',
-    desc: '从主体中减去工具体切削',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'tool_kind', label: '切削工具体类型', type: 'select', options: ['cylinder', 'sphere', 'box'], default: 'cylinder' },
-      { key: 'tool_r', label: '切削工具半径 (mm)', default: 12 },
-      { key: 'tool_h', label: '切削工具高度 (mm)', default: 50 }
-    ]
-  },
-  'boolean-intersection': {
-    title: '布尔交集',
-    desc: '保留主体与工具体的公共相交区域',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'tool_kind', label: '工具体类型', type: 'select', options: ['sphere', 'cylinder', 'box'], default: 'sphere' },
-      { key: 'tool_r', label: '工具体半径 (mm)', default: 25 },
-      { key: 'tool_h', label: '工具体高度 (mm)', default: 50 }
-    ]
-  },
-  'boolean': {
-    title: '高级布尔运算设置',
-    desc: '自由选择布尔运算类型与工具体参数',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'operation', label: '运算类型', type: 'select', options: ['union', 'difference', 'intersection'], default: 'difference' },
-      { key: 'tool_kind', label: '工具体类型', type: 'select', options: ['cylinder', 'sphere', 'box'], default: 'cylinder' },
-      { key: 'tool_r', label: '工具体半径 (mm)', default: 14 },
-      { key: 'tool_h', label: '工具体高度 (mm)', default: 40 }
-    ]
-  },
-  'line': {
-    title: '直线轮廓',
-    desc: '创建截面线段轮廓并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '线段长度 (mm)', default: 50 }
-    ]
-  },
-  'rectangle': {
-    title: '矩形草图轮廓',
-    desc: '创建闭合矩形草图并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '长度 X (mm)', default: 50 },
-      { key: 'dim2', label: '宽度 Y (mm)', default: 30 }
-    ]
-  },
-  'circle': {
-    title: '圆形草图轮廓',
-    desc: '创建圆形草图轮廓并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '圆半径 R (mm)', default: 20 }
-    ]
-  },
-  'arc': {
-    title: '圆弧轮廓',
-    desc: '创建圆弧草图轮廓并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '圆弧半径 R (mm)', default: 20 }
-    ]
-  },
-  'polyline': {
-    title: '折线多边形轮廓',
-    desc: '创建多段多边形轮廓并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '轮廓跨度尺寸 1 (mm)', default: 45 },
-      { key: 'dim2', label: '轮廓跨度尺寸 2 (mm)', default: 25 }
-    ]
-  },
-  'bspline': {
-    title: '样条曲线轮廓',
-    desc: '创建光滑 NURBS 样条曲线并拉伸成体',
-    fields: [
-      { key: 'dim1', label: '样条跨度 X (mm)', default: 40 },
-      { key: 'dim2', label: '样条起伏 Y (mm)', default: 20 }
-    ]
-  },
-  'extrude': {
-    title: '草图轮廓拉伸',
-    desc: '将二维草图沿指定厚度拉伸成实体',
-    fields: [
-      { key: 'profile', label: '截面草图形状', type: 'select', options: ['rectangle', 'circle'], default: 'rectangle' },
-      { key: 'dim1', label: '长/半径 (mm)', default: 40 },
-      { key: 'dim2', label: '宽 (mm)', default: 30 },
-      { key: 'height', label: '拉伸高度 (mm)', default: 25 }
-    ]
-  },
-  'revolve': {
-    title: '旋转体',
-    desc: 'XZ 平面上的截面绕 Z 轴旋转扫描成体',
-    fields: [
-      { key: 'radius', label: '截面圆半径 R (mm)', default: 10 },
-      { key: 'offset_x', label: '旋转轴偏置距离 (mm)', default: 25 },
-      { key: 'angle', label: '旋转角度 (°)', default: 360 }
-    ]
-  },
-  'sweep': {
-    title: '空间扫掠成体',
-    desc: '截面圆沿三维螺旋路径引导扫掠',
-    fields: [
-      { key: 'radius', label: '截面圆半径 (mm)', default: 4 },
-      { key: 'helix_radius', label: '螺旋回转半径 (mm)', default: 25 },
-      { key: 'pitch', label: '导程/螺距 (mm)', default: 20 },
-      { key: 'height', label: '扫掠总高 (mm)', default: 60 }
-    ]
-  },
-  'loft': {
-    title: '多截面放样',
-    desc: '两个截面之间进行平滑 NURBS 曲面放样过渡成体',
-    fields: [
-      { key: 'bottom_radius', label: '底面截面半径 R1 (mm)', default: 25 },
-      { key: 'top_radius', label: '顶面截面半径 R2 (mm)', default: 12 },
-      { key: 'height', label: '放样高度 H (mm)', default: 40 }
-    ]
-  },
-  'chamfer': {
-    title: '特征倒角',
-    desc: '对实体垂直特征边切等距倒角',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'distance', label: '倒角距离 (mm)', default: 3 }
-    ]
-  },
-  'fillet': {
-    title: '倒圆角',
-    desc: '对实体特征边缘应用光滑倒圆角',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'radius', label: '圆角半径 R (mm)', default: 5 }
-    ]
-  },
-  'shell': {
-    title: '薄壁抽壳',
-    desc: '指定壁厚对当前实体掏空抽壳',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'thickness', label: '薄壁厚度 (mm)', default: 2 }
-    ]
-  },
-  'offset': {
-    title: '几何等距偏移',
-    desc: '沿法向整体均匀扩展/收缩',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'distance', label: '偏移距离 (mm)', default: 5 }
-    ]
-  },
-  'mirror': {
-    title: '对称镜像',
-    desc: '沿基准平面对称镜像并组合',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'plane', label: '镜像基准面', type: 'select', options: ['YZ', 'XZ', 'XY'], default: 'YZ' }
-    ]
-  },
-  'array': {
-    title: '网格阵列',
-    desc: '沿 X 和 Y 方向矩形阵列排布',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'count_x', label: 'X 方向数量', default: 2 },
-      { key: 'step_x', label: 'X 间距 (mm)', default: 35 },
-      { key: 'count_y', label: 'Y 方向数量', default: 2 },
-      { key: 'step_y', label: 'Y 间距 (mm)', default: 35 }
-    ]
-  },
-  'circular': {
-    title: '圆周环形阵列',
-    desc: '绕 Z 轴圆周等角度环形阵列复制',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'count', label: '环阵列数量', default: 6 },
-      { key: 'radius', label: '分布圆半径 (mm)', default: 30 }
-    ]
-  },
-  'slice': {
-    title: '切分剖切',
-    desc: '沿平面切分模型保留半侧',
-    allowBaseOnCurrent: true,
-    fields: []
-  },
-  'rotate3d': {
-    title: '轴旋转变换',
-    desc: '绕指定坐标轴旋转模型角度',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'axis', label: '旋转轴', type: 'select', options: ['Z', 'X', 'Y'], default: 'Z' },
-      { key: 'angle', label: '旋转角度 (°)', default: 45 }
-    ]
-  },
-  'copy': {
-    title: '复制副本',
-    desc: '创建实体副本并平移偏移',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'offset_x', label: '平移偏移 X (mm)', default: 50 },
-      { key: 'offset_y', label: '平移偏移 Y (mm)', default: 0 }
-    ]
-  },
-  'move': {
-    title: '实体平移变换 (Translate)',
-    desc: '沿空间 X、Y、Z 轴方向输入位移增量',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'dx', label: '沿 X 轴位移 (mm)', default: 20 },
-      { key: 'dy', label: '沿 Y 轴位移 (mm)', default: 0 },
-      { key: 'dz', label: '沿 Z 轴位移 (mm)', default: 0 }
-    ]
-  },
-  'rotate': {
-    title: '实体轴旋转变换 (Rotate)',
-    desc: '选择旋转基准轴向与空间旋转角度',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'axis', label: '旋转轴', type: 'select', options: ['Z', 'X', 'Y'], default: 'Z' },
-      { key: 'angle', label: '旋转角度 (°)', default: 45 }
-    ]
-  },
-  'scale': {
-    title: '实体等比缩放 (Scale)',
-    desc: '输入三维几何等比缩放因子 (大于0)',
-    allowBaseOnCurrent: true,
-    fields: [
-      { key: 'factor', label: '缩放系数 (如 1.5 放大, 0.8 缩小)', default: 1.25 }
-    ]
-  },
-  'remove_fillets': {
-    title: '去特征化 (消除圆角)',
-    desc: '一键擦除模型上的微小圆角曲面，将相邻平面自动延伸缝合为锐边，防止网格爆炸',
-    allowBaseOnCurrent: true,
-    fields: []
-  },
-  'cavity_extraction': {
-    title: '内流体域提取 (Cavity)',
-    desc: '对机械阀体/管道外壳执行反向包络差集，一键提取封闭水密流体域',
-    allowBaseOnCurrent: true,
-    fields: []
-  }
-};
-
-const toolDialog = document.getElementById('tool-dialog');
-const toolModalTitle = document.getElementById('tool-modal-title');
-const toolModalDesc = document.getElementById('tool-modal-desc');
-const toolModalFields = document.getElementById('tool-modal-fields');
-const toolModalForm = document.getElementById('tool-modal-form');
-const toolModalClose = document.getElementById('tool-modal-close');
-const toolModalCancel = document.getElementById('tool-modal-cancel');
-const toolBaseOption = document.getElementById('tool-modal-base-option');
-const toolBaseCheckbox = document.getElementById('tool-base-on-current');
-const toolModalError = document.getElementById('tool-modal-error');
-const toolModalSubmit = document.getElementById('tool-modal-submit');
-
-let activeToolKey = null;
-
-function openToolModal(toolKey) {
-  const schema = RIGHT_TOOLS_SCHEMA[toolKey];
-  if (!schema) return;
-
-  activeToolKey = toolKey;
-  toolModalTitle.textContent = schema.title;
-  toolModalDesc.textContent = schema.desc;
-  toolModalFields.innerHTML = '';
-  if (toolModalError) {
-    toolModalError.style.display = 'none';
-    toolModalError.textContent = '';
-  }
-
-  // 是否显示“基于当前模型”选项 (默认不勾选，确保独立创建 100% 成功)
-  if (toolBaseOption) {
-    toolBaseOption.style.display = schema.allowBaseOnCurrent ? 'block' : 'none';
-    if (toolBaseCheckbox) toolBaseCheckbox.checked = false;
-  }
-
-  (schema.fields || []).forEach(f => {
-    const fDiv = document.createElement('div');
-    fDiv.className = 'tool-modal-field';
-
-    if (f.type === 'select') {
-      let opts = f.options.map(o => `<option value="${o}" ${o === f.default ? 'selected' : ''}>${o}</option>`).join('');
-      fDiv.innerHTML = `
-        <label for="tf-${f.key}">${f.label}</label>
-        <select id="tf-${f.key}">${opts}</select>
-      `;
-    } else {
-      fDiv.innerHTML = `
-        <label for="tf-${f.key}">${f.label}</label>
-        <input type="number" id="tf-${f.key}" value="${f.default}" step="any">
-      `;
-    }
-    toolModalFields.appendChild(fDiv);
-  });
-
-  toolDialog.classList.remove('hidden');
-}
-
-function closeToolModal() {
-  toolDialog.classList.add('hidden');
-  activeToolKey = null;
-}
-
-if (toolModalClose) toolModalClose.onclick = closeToolModal;
-if (toolModalCancel) toolModalCancel.onclick = closeToolModal;
-
-if (toolModalForm) {
-  toolModalForm.onsubmit = async (e) => {
-    e.preventDefault();
-    if (!activeToolKey) return;
-
-    const schema = RIGHT_TOOLS_SCHEMA[activeToolKey];
-    const params = {};
-    (schema.fields || []).forEach(f => {
-      const el = document.getElementById(`tf-${f.key}`);
-      if (el) {
-        params[f.key] = f.type === 'select' ? el.value : parseFloat(el.value);
-      }
-    });
-
-    const baseOnCurrent = schema.allowBaseOnCurrent && toolBaseCheckbox ? toolBaseCheckbox.checked : false;
-
-    if (toolModalSubmit) {
-      toolModalSubmit.disabled = true;
-      toolModalSubmit.textContent = '计算中…';
-    }
-
-    try {
-      let res;
-      if (['move', 'rotate', 'scale'].includes(activeToolKey)) {
-        res = await fetch('/api/transform', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            kind: activeToolKey === 'move' ? 'translate' : activeToolKey,
-            dx: params.dx || 0,
-            dy: params.dy || 0,
-            dz: params.dz || 0,
-            axis: params.axis || 'Z',
-            angle: params.angle || 0,
-            factor: params.factor || 1.0
-          })
-        });
-      } else {
-        res = await fetch('/api/tools/execute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tool: activeToolKey,
-            params,
-            base_on_current: baseOnCurrent
-          })
-        });
-      }
-
-      const data = await res.json();
-      if (!res.ok) {
-        let msg = '工具运算失败';
-        if (typeof data.detail === 'string') msg = data.detail;
-        else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
-        throw new Error(msg);
-      }
-
-      // 运算成功，关闭弹窗
-      closeToolModal();
-
-      // 渲染 3D
-      renderModelGLTF(data.gltf);
-      scriptEditor.value = data.code;
-
-      if (data.stats) {
-        document.getElementById('stat-volume').textContent = `${data.stats.volume.toLocaleString()} mm³`;
-        document.getElementById('stat-time').textContent = `${data.stats.compute_ms} ms`;
-        showStatus(`${data.explanation} · 耗时: ${data.stats.compute_ms} ms`);
-      }
-
-      // 如果在 Agent 标签页，同步插入一条助手气泡
-      appendChatBubble('assistant', `🛠️ 执行工具【${schema.title}】：${data.explanation}`, {
-        code: data.code,
-        compute_ms: data.stats ? data.stats.compute_ms : null
-      });
-
-    } catch (err) {
-      if (toolModalError) {
-        toolModalError.style.display = 'block';
-        toolModalError.textContent = `⚠️ ${err.message}`;
-      }
-      showStatus(`工具执行失败: ${err.message}`, true);
-    } finally {
-      if (toolModalSubmit) {
-        toolModalSubmit.disabled = false;
-        toolModalSubmit.textContent = '确定执行';
-      }
-    }
-  };
-}
-
-// 绑定顶部几何变换按钮
-const btnToolMove = document.getElementById('btn-tool-move');
-const btnToolRotate = document.getElementById('btn-tool-rotate');
-const btnToolScale = document.getElementById('btn-tool-scale');
-
-if (btnToolMove) btnToolMove.onclick = () => openToolModal('move');
-if (btnToolRotate) btnToolRotate.onclick = () => openToolModal('rotate');
-if (btnToolScale) btnToolScale.onclick = () => openToolModal('scale');
-
-// --- CAD 分级选择模式控制器 (实体/面/边/点) ---
-const selBadgeMode = document.getElementById('sel-badge-mode');
-const selSubInfo = document.getElementById('sel-sub-info');
-const selectionFields = document.getElementById('selection-fields');
-
-document.querySelectorAll('#selection-mode-group button[data-sel-mode]').forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll('#selection-mode-group button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    state.selectionMode = btn.dataset.selMode;
-
-    clearHighlights();
-
-    const modeLabels = { solid: '实体 (Solid)', face: '面 (Face)', edge: '边 (Edge)', vertex: '点 (Vertex)' };
-    if (selBadgeMode) selBadgeMode.textContent = `拾取: ${modeLabels[state.selectionMode] || state.selectionMode}`;
-    if (selSubInfo) selSubInfo.textContent = '点击 3D 视图中相应部位进行高亮与分析';
-
-    showStatus(`已切换选择模式: ${modeLabels[state.selectionMode]}`);
-  };
-});
-
-function clearHighlights() {
-  if (highlightFaceMesh) {
-    highlightGroup.remove(highlightFaceMesh);
-    if (highlightFaceMesh.geometry) highlightFaceMesh.geometry.dispose();
-    highlightFaceMesh = null;
-  }
-  if (highlightEdgeLine) {
-    highlightGroup.remove(highlightEdgeLine);
-    if (highlightEdgeLine.geometry) highlightEdgeLine.geometry.dispose();
-    highlightEdgeLine = null;
-  }
-  if (vertexMarker) {
-    vertexMarker.visible = false;
-  }
-  state.selectedItem = null;
-}
-
-// 鼠标点击画布触发拾取
-let pointerDownPos = { x: 0, y: 0 };
-container.addEventListener('pointerdown', (e) => {
-  pointerDownPos = { x: e.clientX, y: e.clientY };
-});
-
-container.addEventListener('pointerup', (e) => {
-  const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
-  if (dist > 5) return; // 属于视角拖拽旋转，忽略
-
-  const rect = container.getBoundingClientRect();
-  mousePos.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mousePos.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-  performSelectionPick();
-});
-
-function performSelectionPick() {
-  if (!state.currentPartGroup) return;
-
-  raycaster.setFromCamera(mousePos, activeCamera);
-  const meshes = [];
-  state.currentPartGroup.traverse(child => {
-    if (child.isMesh && child.name !== 'cad-edge-line') meshes.push(child);
-  });
-
-  const intersects = raycaster.intersectObjects(meshes, true);
-  clearHighlights();
-
-  if (!intersects.length) {
-    if (selSubInfo) selSubInfo.textContent = '未选中目标（点击空白处清除选择）';
-    updateTopologyView();
-    return;
-  }
-
-  const hit = intersects[0];
-  const mode = state.selectionMode;
-
-  if (mode === 'solid') {
-    // 实体高亮
-    if (selBadgeMode) selBadgeMode.textContent = '拾取: 实体 (Solid)';
-    if (selSubInfo) selSubInfo.textContent = '已选择完整三维实体模型';
-    updateTopologyView();
-    showStatus('已选择实体模型');
-
-  } else if (mode === 'face') {
-    // 面拾取与高亮
-    if (hit.face) {
-      const geom = new THREE.BufferGeometry();
-      const posAttr = hit.object.geometry.attributes.position;
-      const idx = hit.object.geometry.index;
-
-      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-      if (idx) {
-        const iA = idx.getX(hit.faceIndex * 3);
-        const iB = idx.getX(hit.faceIndex * 3 + 1);
-        const iC = idx.getX(hit.faceIndex * 3 + 2);
-        pA.fromBufferAttribute(posAttr, iA);
-        pB.fromBufferAttribute(posAttr, iB);
-        pC.fromBufferAttribute(posAttr, iC);
-      } else {
-        pA.fromBufferAttribute(posAttr, hit.faceIndex * 3);
-        pB.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 1);
-        pC.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 2);
-      }
-
-      // 考虑物体变换
-      hit.object.localToWorld(pA);
-      hit.object.localToWorld(pB);
-      hit.object.localToWorld(pC);
-
-      geom.setAttribute('position', new THREE.Float32BufferAttribute([
-        pA.x, pA.y, pA.z,
-        pB.x, pB.y, pB.z,
-        pC.x, pC.y, pC.z
-      ], 3));
-      geom.computeVertexNormals();
-
-      highlightFaceMesh = new THREE.Mesh(geom, faceHighlightMaterial);
-      highlightGroup.add(highlightFaceMesh);
-
-      const normal = hit.face.normal.clone().applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
-      let orient = '空间倾斜面';
-      if (Math.abs(normal.z) > 0.95) orient = normal.z > 0 ? '顶面 (+Z)' : '底面 (-Z)';
-      else if (Math.abs(normal.y) > 0.95) orient = normal.y > 0 ? '侧面 (+Y)' : '侧面 (-Y)';
-      else if (Math.abs(normal.x) > 0.95) orient = normal.x > 0 ? '右侧面 (+X)' : '左侧面 (-X)';
-
-      state.currentHitFace = {
-        index: hit.faceIndex,
-        normal: [round2(normal.x), round2(normal.y), round2(normal.z)],
-        area: 0.0
-      };
-
-      if (selBadgeMode) selBadgeMode.textContent = `拾取: 面 (Face #${hit.faceIndex})`;
-      if (selSubInfo) selSubInfo.textContent = orient;
-      if (selectionFields) {
-        selectionFields.innerHTML = `
-          <div class="stat-row"><span class="stat-name">法向量 (X,Y,Z):</span><span class="stat-value">[${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}]</span></div>
-          <div class="stat-row"><span class="stat-name">面取向特征:</span><span class="stat-value">${orient}</span></div>
-          <div class="stat-row"><span class="stat-name">击中坐标 (XYZ):</span><span class="stat-value">${hit.point.x.toFixed(1)}, ${hit.point.y.toFixed(1)}, ${hit.point.z.toFixed(1)}</span></div>
-          <div style="margin-top:6px;font-size:10px;color:#abb2bf">物理边界标注 (CFD):</div>
-          <div class="cfd-patch-toolbar" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
-            <button class="btn-text-sm btn-mark-patch" data-ptype="inlet" style="color:#3a86ff;border:1px solid #3a86ff;border-radius:3px;padding:2px 5px;background:rgba(58,134,255,0.1)">+ 入口 (Inlet)</button>
-            <button class="btn-text-sm btn-mark-patch" data-ptype="outlet" style="color:#ff006e;border:1px solid #ff006e;border-radius:3px;padding:2px 5px;background:rgba(255,0,110,0.1)">+ 出口 (Outlet)</button>
-            <button class="btn-text-sm btn-mark-patch" data-ptype="wall" style="color:#a0aab8;border:1px solid #a0aab8;border-radius:3px;padding:2px 5px;background:rgba(160,170,184,0.1)">+ 壁面 (Wall)</button>
-            <button class="btn-text-sm btn-mark-patch" data-ptype="interface" style="color:#fb5607;border:1px solid #fb5607;border-radius:3px;padding:2px 5px;background:rgba(251,86,7,0.1)">+ 交界 (Interface)</button>
-          </div>
-        `;
-
-        selectionFields.querySelectorAll('.btn-mark-patch').forEach(btn => {
-          btn.onclick = () => markCurrentFaceAs(btn.dataset.ptype);
-        });
-      }
-      showStatus(`选中面 #${hit.faceIndex} · 法向: [${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}] · ${orient}`);
-    }
-
-  } else if (mode === 'edge') {
-    // 边拾取与高亮：在当前面寻找最近特征边
-    const geom = hit.object.geometry;
-    let closestLine = null;
-    let minD = Infinity;
-
-    // 寻找最近的两个顶点作为线段
-    const pos = geom.attributes.position;
-    const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
-    const hitPt = hit.object.worldToLocal(hit.point.clone());
-
-    for (let i = 0; i < pos.count; i += 3) {
-      for (let j = 0; j < 3; j++) {
-        v1.fromBufferAttribute(pos, i + j);
-        v2.fromBufferAttribute(pos, i + ((j + 1) % 3));
-        const line = new THREE.Line3(v1, v2);
-        const closestPt = new THREE.Vector3();
-        line.closestPointToPoint(hitPt, true, closestPt);
-        const d = closestPt.distanceTo(hitPt);
-        if (d < minD) {
-          minD = d;
-          closestLine = [v1.clone(), v2.clone()];
-        }
-      }
-    }
-
-    if (closestLine) {
-      const p1 = hit.object.localToWorld(closestLine[0]);
-      const p2 = hit.object.localToWorld(closestLine[1]);
-      const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-      highlightEdgeLine = new THREE.LineSegments(lineGeom, edgeHighlightMaterial);
-      highlightGroup.add(highlightEdgeLine);
-
-      const length = p1.distanceTo(p2);
-      if (selBadgeMode) selBadgeMode.textContent = '拾取: 边 (Edge)';
-      if (selSubInfo) selSubInfo.textContent = `特征线段 (长 ${length.toFixed(2)} mm)`;
-      if (selectionFields) {
-        selectionFields.innerHTML = `
-          <div class="stat-row"><span class="stat-name">特征边长度:</span><span class="stat-value">${length.toFixed(2)} mm</span></div>
-          <div class="stat-row"><span class="stat-name">端点 1 (XYZ):</span><span class="stat-value">${p1.x.toFixed(1)}, ${p1.y.toFixed(1)}, ${p1.z.toFixed(1)}</span></div>
-          <div class="stat-row"><span class="stat-name">端点 2 (XYZ):</span><span class="stat-value">${p2.x.toFixed(1)}, ${p2.y.toFixed(1)}, ${p2.z.toFixed(1)}</span></div>
-        `;
-      }
-      showStatus(`选中边 · 长度: ${length.toFixed(2)} mm`);
-    }
-
-  } else if (mode === 'vertex') {
-    // 点拾取：吸附到三角形最近的顶点
-    const geom = hit.object.geometry;
-    const pos = geom.attributes.position;
-    const idx = geom.index;
-    let closestV = null;
-    let minD = Infinity;
-
-    const testIndices = idx ? [
-      idx.getX(hit.faceIndex * 3),
-      idx.getX(hit.faceIndex * 3 + 1),
-      idx.getX(hit.faceIndex * 3 + 2)
-    ] : [hit.faceIndex * 3, hit.faceIndex * 3 + 1, hit.faceIndex * 3 + 2];
-
-    for (const i of testIndices) {
-      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
-      hit.object.localToWorld(v);
-      const d = v.distanceTo(hit.point);
-      if (d < minD) {
-        minD = d;
-        closestV = v;
-      }
-    }
-
-    if (closestV) {
-      vertexMarker.position.copy(closestV);
-      vertexMarker.visible = true;
-
-      if (selBadgeMode) selBadgeMode.textContent = '拾取: 顶点 (Vertex)';
-      if (selSubInfo) selSubInfo.textContent = '几何特征顶点坐标已锁定';
-      if (selectionFields) {
-        selectionFields.innerHTML = `
-          <div class="stat-row"><span class="stat-name">绝对空间 X:</span><span class="stat-value">${closestV.x.toFixed(2)} mm</span></div>
-          <div class="stat-row"><span class="stat-name">绝对空间 Y:</span><span class="stat-value">${closestV.y.toFixed(2)} mm</span></div>
-          <div class="stat-row"><span class="stat-name">绝对空间 Z:</span><span class="stat-value">${closestV.z.toFixed(2)} mm</span></div>
-        `;
-      }
-      showStatus(`选中顶点 · 空间坐标: (${closestV.x.toFixed(2)}, ${closestV.y.toFixed(2)}, ${closestV.z.toFixed(2)}) mm`);
-    }
-  }
-}
-
-async function updateTopologyView() {
-  if (!state.currentPartGroup) return;
-  const box = new THREE.Box3().setFromObject(state.currentPartGroup);
-  if (!box.isEmpty()) {
-    const size = box.getSize(new THREE.Vector3());
-    const bboxStr = `${size.x.toFixed(1)} × ${size.y.toFixed(1)} × ${size.z.toFixed(1)} mm`;
-    const bboxEl = document.getElementById('stat-bbox');
-    if (bboxEl) bboxEl.textContent = bboxStr;
-  }
-
-  try {
-    const res = await fetch('/api/model/topology');
-    const data = await res.json();
-    if (data.ok) {
-      const areaEl = document.getElementById('stat-area');
-      if (areaEl) areaEl.textContent = `${data.area.toLocaleString()} mm²`;
-      if (data.size && document.getElementById('stat-bbox')) {
-        document.getElementById('stat-bbox').textContent = `${data.size[0]} × ${data.size[1]} × ${data.size[2]} mm`;
-      }
-    }
-  } catch (err) {
-    console.warn('Topology fetch error:', err);
-  }
-}
-
-// 绑定右侧工具栏所有按钮点击事件
-document.querySelectorAll('.right-tools button[data-tool]').forEach(btn => {
-  btn.onclick = () => {
-    const tool = btn.dataset.tool;
-    if (tool) openToolModal(tool);
-  };
-});
-
-// 获取系统内核信息
 async function fetchInfo() {
   try {
     const res = await fetch('/api/info');
@@ -1902,124 +822,14 @@ async function fetchInfo() {
   }
 }
 
-// --- CFD 表面物理语义系统 ---
-const btnToggleBoundary = document.getElementById('btn-toggle-boundary-mode');
-const btnExportCfd = document.getElementById('btn-export-cfd');
-
-if (btnExportCfd) {
-  btnExportCfd.onclick = () => {
-    downloadFile('/api/export/cfd_meta');
-    showStatus('正在生成并下载 CFD 物理边界字典 (JSON)…');
-  };
-}
-
-let isBoundaryMode = false;
-let boundaryPatches = [];
-
-if (btnToggleBoundary) {
-  btnToggleBoundary.onclick = () => {
-    isBoundaryMode = !isBoundaryMode;
-    btnToggleBoundary.classList.toggle('active', isBoundaryMode);
-    boundaryGroup.visible = isBoundaryMode;
-    showStatus(isBoundaryMode ? '已开启【🌊 物理边界模式】：高亮显示各物理边界补丁颜色' : '已退出边界模式：恢复标准 CAD 天蓝色实体外观');
-  };
-}
-
-async function markCurrentFaceAs(semanticType) {
-  if (!state.currentHitFace) return;
-  try {
-    const res = await fetch('/api/semantic/patch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        face_index: state.currentHitFace.index,
-        semantic_type: semanticType,
-        normal: state.currentHitFace.normal,
-        area: 0.0
-      })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      boundaryPatches = data.all_patches;
-      updateBoundaryVisuals();
-      if (!isBoundaryMode && btnToggleBoundary) {
-        btnToggleBoundary.click();
-      }
-      showStatus(`已将面 #${state.currentHitFace.index} 标记为【${data.patch.name}】(${semanticType})`);
-      appendChatBubble('assistant', `🌊 物理边界标注成功：已将面 #${state.currentHitFace.index} 设为 **${data.patch.name}** [类型: ${semanticType.toUpperCase()}]`);
-    }
-  } catch(err) {
-    showStatus(`打标失败: ${err.message}`, true);
-  }
-}
-
-function updateBoundaryVisuals() {
-  while (boundaryGroup.children.length > 0) {
-    const obj = boundaryGroup.children[0];
-    boundaryGroup.remove(obj);
-    if (obj.geometry) obj.geometry.dispose();
-  }
-
-  if (!state.currentPartGroup) return;
-
-  let mainMesh = null;
-  state.currentPartGroup.traverse(child => {
-    if (child.isMesh && child.name !== 'cad-edge-line' && !mainMesh) mainMesh = child;
-  });
-  if (!mainMesh) return;
-
-  const posAttr = mainMesh.geometry.attributes.position;
-  const idx = mainMesh.geometry.index;
-
-  boundaryPatches.forEach(p => {
-    const colorHex = parseInt(p.color_hex.replace('#', '0x'));
-    p.face_indices.forEach(fIdx => {
-      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-      if (idx) {
-        if (fIdx * 3 + 2 >= idx.count) return;
-        pA.fromBufferAttribute(posAttr, idx.getX(fIdx * 3));
-        pB.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 1));
-        pC.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 2));
-      } else {
-        if (fIdx * 3 + 2 >= posAttr.count) return;
-        pA.fromBufferAttribute(posAttr, fIdx * 3);
-        pB.fromBufferAttribute(posAttr, fIdx * 3 + 1);
-        pC.fromBufferAttribute(posAttr, fIdx * 3 + 2);
-      }
-
-      mainMesh.localToWorld(pA);
-      mainMesh.localToWorld(pB);
-      mainMesh.localToWorld(pC);
-
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute([
-        pA.x, pA.y, pA.z,
-        pB.x, pB.y, pB.z,
-        pC.x, pC.y, pC.z
-      ], 3));
-      geom.computeVertexNormals();
-
-      const patchMat = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2
-      });
-
-      const patchMesh = new THREE.Mesh(geom, patchMat);
-      boundaryGroup.add(patchMesh);
-    });
-  });
-}
-
-// 页面初始化加载
+// 初始化启动
+startAnimationLoop();
 renderParamForm('flange');
 triggerParametricBuild();
 fetchInfo();
 
-// 暴露全局引用以便调试与测试
+// 暴露全局变量供测试
 window.transformControls = transformControls;
 window.state = state;
-window.__getIsXray = () => isXrayMode;
-window.__getIsBoundaryMode = () => isBoundaryMode;
+window.__getIsXray = () => getIsXrayMode();
+window.__getIsBoundaryMode = () => getIsBoundaryMode();

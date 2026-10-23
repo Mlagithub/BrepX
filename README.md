@@ -117,18 +117,30 @@ python server.py
 ## 五、 项目结构清单
 ```text
 C:\Users\keep_\work\smlib\
-├── tools_handler.py       # 右侧 32 项几何工具执行引擎 (Box, Cylinder, Torus, Loft, Sweep...)
+├── session_manager.py     # 会话管理与文件导出中心 (解耦状态存储与文件生命周期)
+├── semantic_manager.py    # CFD 表面物理边界标注管理器 (Inlet/Outlet/Wall/Interface)
+├── tools_handler.py       # SMLib 32+ 项核心建模算子底层封装 (CSG, Loft, Sweep, Revolve...)
 ├── agent.py               # CAD Agent 核心 (支持外部大模型接入与本地语义解析引擎)
-├── server.py              # FastAPI 后端服务 (参数化解析、Agent 对话接口、工具调用、STEP导出)
+├── server.py              # FastAPI 路由网关与静态托管
 ├── requirements.txt       # Python 依赖清单
 ├── start.bat              # Windows 一键启动脚本
 ├── static/                # 前端静态 Web 资产
-│   ├── index.html         # CAD 工作台主界面 (包含 Agent、CAD 视口与右侧工具栏)
-│   ├── style.css          # 工程灰/暗黑主题样式表与右侧工具栏组件
-│   ├── app.js             # Three.js 视口控制、GLTF渲染管线、右侧工具弹窗交互
+│   ├── index.html         # CAD 工作台主界面 (包含 Agent、视口、右侧工具栏与 Shift+A 菜单)
+│   ├── style.css          # 工程灰/暗黑主题样式表、弹窗组件与浮动菜单
+│   ├── app.js             # [已解耦精简] 前端主入口，胶水绑定子模块 (<470 行)
+│   ├── js/                # [模块化重构子系统]
+│   │   ├── viewport.js    # Three.js 场景、相机系统、标准视角与渲染循环 (~120 行)
+│   │   ├── gizmo.js       # Blender 级 TransformControls 空间手柄与快捷键 (~100 行)
+│   │   ├── selection.js   # 点/线/面/体分级拾取与高亮指示器 (~130 行)
+│   │   ├── boundary.js    # CFD 物理边界模式网格着色与标注 (~90 行)
+│   │   ├── tools.js       # 右侧 32 项几何工具弹窗表单与 Shift+A 菜单 (~180 行)
+│   │   └── agent.js       # AI Agent 对话历史与 Prompt 胶囊 (~110 行)
 │   ├── utils/             # Three.js 几何工具库 (BufferGeometryUtils, SkeletonUtils)
 │   └── vendor/            # 本地离线 Three.js 及其扩展库 (r186)
-├── cax_reverse/           # cax-viewer.com 逆向源码与分析文件
-├── test_templates.py      # 参数化模板单元测试
-└── test_e2e.py            # 端到端 API 接口与导出测试
+├── docs/                  # 顶层设计文档库
+│   ├── intent/            # 意图宪章 (statement_of_intent.md)
+│   ├── spec/              # 功能规格说明书 (SPEC-cfd-cad-workbench.md)
+│   ├── ideas/             # 概念单页 (cfd_cad_workbench_concept.md)
+│   └── blender_architecture_dna.md # Blender 5.1.2 核心数据结构手册
+└── test_e2e.py            # 端到端 API 自动化回归测试
 ```

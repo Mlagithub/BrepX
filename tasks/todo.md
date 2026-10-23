@@ -29,3 +29,9 @@
   - Acceptance: 对 Agent 说“将当前面标记为入口，并沿内腔挖一个通孔”，Agent 自动理解并执行完成。
   - Verify: 真实浏览器端多轮对话自动化测试。
   - Files: `agent.py`, `server.py`, `static/app.js`
+
+- [x] Task 6: 代码系统性简化与架构稳固化 (Code Simplification & Modularization)
+  - 描述: 解耦 2013 行的单体 `app.js`，按职责拆分为 `viewport.js`, `gizmo.js`, `selection.js`, `boundary.js`, `tools.js`, `agent.js`；后端引入 `session_manager.py` 解耦状态与临时文件生命周期。
+  - Acceptance: 单文件代码量下降 75% 以上，所有功能行为 100% 保持一致，全量回归测试绿灯通过。
+  - Verify: 运行 `test_e2e.py` 与浏览器自动化截图测试。
+  - Files: `server.py`, `session_manager.py`, `static/app.js`, `static/js/*.js`
