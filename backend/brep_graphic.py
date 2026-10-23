@@ -83,6 +83,16 @@ def extract_face_metadata(face: Face, face_idx: int, body_expr: str, scale: floa
 
 def extract_edge_metadata(edge: Edge, edge_idx: int, body_expr: str, scale: float) -> dict[str, Any]:
     """Extract analytic curve properties (type, length, center, radius, endpoints) for a B-Rep Edge."""
+    is_convex = None
+    try:
+        raw_convex = getattr(edge, "is_convex", None)
+        if callable(raw_convex):
+            is_convex = bool(raw_convex())
+        elif isinstance(raw_convex, bool):
+            is_convex = raw_convex
+    except Exception:
+        pass
+
     meta: dict[str, Any] = {
         "edge_index": edge_idx,
         "expr": f"{body_expr}.edges()[{edge_idx}]",
@@ -90,7 +100,7 @@ def extract_edge_metadata(edge: Edge, edge_idx: int, body_expr: str, scale: floa
         "length": _round_val(getattr(edge, "length", 0.0)),
         "center": [0.0, 0.0, 0.0],
         "radius": None,
-        "is_convex": getattr(edge, "is_convex", None),
+        "is_convex": is_convex,
     }
     try:
         c = edge.center().to_tuple()

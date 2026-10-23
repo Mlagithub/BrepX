@@ -272,7 +272,14 @@ def build_operator_code(
 
         if face_ids:
             f_idx = face_ids[0]
-            code = f"_f = part.faces()[{f_idx}]\npart = part - {tool_expr}.translate({x}, {y}, 0).on(_f)"
+            code = (
+                f"_f = part.faces()[{f_idx}]\n"
+                f"if _f.is_planar:\n"
+                f"    part = part - {tool_expr}.translate({x}, {y}, 0).on(_f)\n"
+                f"else:\n"
+                f"    _c, _n = _f.center(), _f.normal_at()\n"
+                f"    part = part - Cylinder({r}, {depth}).rotate(Z, 0).translate(_c.x + {x}, _c.y + {y}, _c.z)"
+            )
             return code, f"{lbl} @ Face #{f_idx}", False
         code = f"part = part - Cylinder({r}, {depth}).translate({x}, {y}, 0)"
         return code, lbl, False
