@@ -11,8 +11,8 @@ from typing import Dict, Any, List, Optional, Tuple
 import smlibpy
 from smlibpy import *
 
-SYSTEM_PROMPT = """你是一个精通 CAD 几何建模与 Python smlibpy 库的专业 AI 建模工程师。
-你的任务是根据用户的自然语言描述，编写准确、符合物理与机械加工逻辑的 Python smlibpy 建模代码。
+SYSTEM_PROMPT = """你是一个精通 CAD 几何建模与 Python smlibpy 库的专业 AI 建模工程师，专注于服务于 AI+CAD+CAE (特别是 CFD 流体仿真) 工业全栈场景。
+你的任务是根据用户的自然语言描述，编写准确、符合流体动力学与机械加工逻辑的 Python smlibpy 建模代码。
 
 【smlibpy 核心 API 指南】
 1. 引用与导入：代码必须以 `from smlibpy import *` 开头。
@@ -26,18 +26,23 @@ SYSTEM_PROMPT = """你是一个精通 CAD 几何建模与 Python smlibpy 库的�
    - `.translate(dx, dy, dz)`: 平移
    - `.rotate(axis, angle_in_degrees)`: 绕指定轴旋转，如 `.rotate(Z, 45)`、`.rotate(X, 90)`
    - `.scale(factor)`: 等比缩放
-4. 布尔运算（重载运算符）：
+4. 高级造型与流道成型：
+   - 截面放样：`loft([Circle(20), Circle(10).translate(0, 0, 30)])`
+   - 空间扫掠：`sweep(Circle(4), Helix(pitch=20, height=60, radius=25))`
+   - 截面旋转：`revolve(Circle(10).on(Plane.XZ).translate(25, 0, 0), Z, 360)`
+   - 轮廓拉伸：`extrude(Rectangle(40, 30), 20)`
+5. 布尔运算（重载运算符）：
    - 并集：`a + b`
-   - 差集（切削/开孔）：`a - b`
+   - 差集（切削/开孔/掏空）：`a - b`
    - 交集：`a & b`
-5. 特征编辑：
-   - 倒圆角：`part.fillet(edges, radius)`，例如选择竖直边：`part.fillet(part.edges().parallel_to(Z), 5)`
-   - 倒角：`part.chamfer(edges, distance)`
-6. 严格规范：
+6. 特征编辑与去特征化 (CFD Defeaturing)：
+   - 倒圆角：`part.fillet(edges, radius)`
+   - 去圆角恢复锐边：`part.remove_fillets(part.faces().filter(lambda f: not f.is_planar))`
+   - 抽壳薄壁：`part.shell(thickness)`
+7. 严格规范：
    - 最终构造好的模型必须赋值给名为 `part` 的变量：`part = ...`
    - 不要包含 `show(part)` 或 `part.export(...)`，系统会自动处理导出与渲染
-   - 优先使用布尔切削实现孔、槽、台阶特征
-   - 请在代码块 ```python ... ``` 中输出完整的 Python 代码，并在代码块外附带简明扼要的设计说明与尺寸参数解析。
+   - 请在代码块 ```python ... ``` 中输出完整的 Python 代码，并在代码块外附带面向流体工程师的简明设计说明与物理边界指导。
 """
 
 class LocalSemanticEngine:
@@ -112,8 +117,47 @@ class LocalSemanticEngine:
         # 2. 意图分支匹配与精准参数提取
         ev = LocalSemanticEngine.extract_val
 
-        # A. 法兰盘 / 带孔圆盘 / 管道法兰
-        if any(k in prompt_lower for k in ["法兰", "flange", "圆盘", "管道接口"]):
+        # A. CFD 典型流体域: 文丘里管 / 收缩喷嘴 (Venturi Nozzle)
+        if any(k in prompt_lower for k in ["文丘里", "喷嘴", "渐缩", "喉部", "venturi", "nozzle"]):
+            r_inlet = ev(prompt, ["入口", "外径", "大端"], 25)
+            r_throat = ev(prompt, ["喉部", "喉径", "小端", "内径"], 12)
+            l_conv = ev(prompt, ["收缩段", "长度"], 35)
+            l_div = ev(prompt, ["扩散段"], 45)
+            
+            code = f"""from smlibpy import *
+
+# 1. 文丘里收缩段 (Inlet to Throat)
+conv = Cone({r_inlet}, {r_throat}, {l_conv})
+
+# 2. 文丘里扩散段 (Throat to Outlet)
+div = Cone({r_throat}, {r_inlet}, {l_div}).translate(0, 0, {l_conv / 2 + l_div / 2})
+
+# 组合流道外形并进行中心流道切削
+body = conv + div
+bore = Cone({r_inlet - 3}, {r_throat - 3}, {l_conv + 2}) + Cone({r_throat - 3}, {r_inlet - 3}, {l_div + 2}).translate(0, 0, {l_conv / 2 + l_div / 2})
+part = body - bore
+"""
+            explanation = f"已创建【CFD 文丘里喷嘴流道】：入口 R{r_inlet}mm，喉部收缩至 R{r_throat}mm，流体从加速段流向扩张段，壁厚 3mm。"
+            return explanation, code
+
+        # B. CFD 典型流体域: 90° 空间流体圆弧弯管 (Elbow Pipe)
+        elif any(k in prompt_lower for k in ["弯管", "弯头", "elbow", "90度管", "弧形管"]):
+            r_pipe = ev(prompt, ["管径", "半径", "内径"], 12)
+            r_bend = ev(prompt, ["弯曲半径", "回转半径", "偏置"], 35)
+            
+            code = f"""from smlibpy import *
+
+# 90° 圆弧弯管 (XZ 平面截面绕 Z 轴扫描 90°)
+outer_sketch = Circle({r_pipe}).on(Plane.XZ).translate({r_bend}, 0, 0)
+inner_sketch = Circle({r_pipe - 2.5}).on(Plane.XZ).translate({r_bend}, 0, 0)
+
+part = revolve(outer_sketch, Z, 90) - revolve(inner_sketch, Z, 92)
+"""
+            explanation = f"已创建【CFD 90° 流体弯管】：管道通径 R{r_pipe}mm，弯曲回转中心半径 R{r_bend}mm，两端截面可直接定义为 Inlet 与 Outlet。"
+            return explanation, code
+
+        # C. 法兰盘 / 带孔圆盘 / 管道法兰
+        elif any(k in prompt_lower for k in ["法兰", "flange", "圆盘", "管道接口"]):
             # 提取外径/外半径 (默认 80)
             d_out = ev(prompt, ["外径", "外圆直径", "直径", "外圆"], 80)
             # 提取内孔 (默认 30)

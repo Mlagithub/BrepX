@@ -47,6 +47,10 @@
           <button class="nav-btn" data-sel-mode="vertex" title="点选择模式 (点击捕捉三维坐标)">点</button>
         </div>
 
+        <div class="btn-group cfd-mode-group">
+          <button class="nav-btn" id="btn-toggle-boundary-mode" title="切换物理边界模式 (进入后彩色高亮显示 Inlet/Outlet/Wall，退出恢复纯色)">🌊 边界模式</button>
+        </div>
+
         <div class="btn-divider"></div>
 
         <!-- 典型几何变换 (平移/旋转/缩放) -->
@@ -84,6 +88,7 @@
           </button>
           <button class="nav-btn" id="btn-export-stl" title="导出 3D 打印 STL 文件">导出 STL</button>
           <button class="nav-btn" id="btn-export-gltf" title="导出 Web 3D glTF 文件">导出 glTF</button>
+          <button class="nav-btn" id="btn-export-cfd" title="导出 CFD 物理边界条件定义 JSON">CFD 边界</button>
           <button class="nav-btn" id="btn-export-py" title="导出 Python 建模脚本">Python 源码</button>
         </div>
       </div>
@@ -148,6 +153,8 @@
 
             <!-- 快捷 Prompt 推荐 -->
             <div class="quick-prompts">
+              <span class="prompt-pill" data-prompt="创建一个CFD文丘里喷嘴流道，入口半径25，喉部收缩至12，长度60">文丘里流道</span>
+              <span class="prompt-pill" data-prompt="设计一个90度圆弧弯管流道，管径12，弯曲回转半径35">90°弯头管道</span>
               <span class="prompt-pill" data-prompt="帮我建一个带4个对称螺栓孔的管道连接法兰，外径80，内孔30，厚度12">管道法兰</span>
               <span class="prompt-pill" data-prompt="做一个L型结构安装支架，长80宽50高60壁厚10，底部开一个固定孔">L型支架</span>
               <span class="prompt-pill" data-prompt="建一个长方体底板100x70x12，四周垂直边倒圆角R8，中间开一个R14通孔">开孔圆角板</span>
@@ -273,7 +280,28 @@
 
         <!-- 3D 视口覆盖的 HUD 指示 -->
         <div class="viewport-hud">
-          <div class="hud-mode">左键：旋转 | 中键：平移 | 滚轮：缩放</div>
+          <div class="hud-mode" id="hud-interaction-info">左键：旋转 | 中键：平移 | 滚轮：缩放 | G/R/S：变换 | Shift+A：添加</div>
+          <div class="hud-mode" id="hud-mode-tag" style="margin-top:4px;color:#ffd885">模式: 对象模式 [Tab 切换]</div>
+        </div>
+
+        <!-- Blender 式 Shift + A 就地添加菜单 -->
+        <div id="add-menu-popup" class="add-menu-popup hidden">
+          <div class="add-menu-header">添加 (Shift + A)</div>
+          <div class="add-menu-section">三维实体</div>
+          <div class="add-menu-item" data-tool="box">长方体 (Box)</div>
+          <div class="add-menu-item" data-tool="cylinder">圆柱体 (Cylinder)</div>
+          <div class="add-menu-item" data-tool="sphere">球体 (Sphere)</div>
+          <div class="add-menu-item" data-tool="cone">圆锥 / 圆台 (Cone)</div>
+          <div class="add-menu-item" data-tool="torus">圆环体 (Torus)</div>
+          <div class="add-menu-section">草图与截面</div>
+          <div class="add-menu-item" data-tool="rectangle">矩形草图 (Rectangle)</div>
+          <div class="add-menu-item" data-tool="circle">圆形草图 (Circle)</div>
+          <div class="add-menu-item" data-tool="bspline">样条曲线 (B-Spline)</div>
+          <div class="add-menu-section">高级特征</div>
+          <div class="add-menu-item" data-tool="extrude">轮廓拉伸 (Extrude)</div>
+          <div class="add-menu-item" data-tool="revolve">旋转成型 (Revolve)</div>
+          <div class="add-menu-item" data-tool="sweep">螺旋扫掠 (Sweep)</div>
+          <div class="add-menu-item" data-tool="loft">多截面放样 (Loft)</div>
         </div>
 
         <!-- 右侧经典 CAD 几何工具栏 (复刻自 cax-viewer) -->
@@ -317,6 +345,10 @@
           <button data-tool="slice" title="切分：平面切除分割">切分</button>
           <button data-tool="rotate3d" title="轴旋转：绕指定轴角度旋转">轴旋转</button>
           <button data-tool="copy" title="复制：平移生成实体副本">复制</button>
+
+          <span class="tool-caption" style="color:#61afef">CFD 前处理</span>
+          <button data-tool="cavity_extraction" title="对中空/阀体执行反向包络差集，一键提取封闭水密流体域">流体域提取</button>
+          <button data-tool="remove_fillets" title="一键擦除模型上的微小圆角曲面，恢复锐角棱边防网格爆炸">去圆角特征</button>
         </div>
 
         <!-- 浮动参数弹窗 Modal Dialog -->

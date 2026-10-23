@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
+import { TransformControls } from 'three/addons/TransformControls.js';
 
 // --- 全局状态与配置 ---
 const state = {
@@ -14,6 +15,8 @@ const state = {
   isBuilding: false,
   selectionMode: 'solid', // 'solid' | 'face' | 'edge' | 'vertex'
   selectedItem: null,
+  transformMode: 'translate',
+  transforming: false,
 };
 
 // 参数定义配置
@@ -106,6 +109,92 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.target.set(0, 0, 0);
 
+// Blender 式交互变换手柄 (TransformControls)
+const transformControls = new TransformControls(activeCamera, renderer.domElement);
+transformControls.size = 0.85;
+scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
+
+let transformStartPos = new THREE.Vector3();
+let transformStartRot = new THREE.Euler();
+let transformStartScale = new THREE.Vector3();
+
+transformControls.addEventListener('dragging-changed', (event) => {
+  controls.enabled = !event.value;
+  state.transforming = event.value;
+  if (event.value && state.currentPartGroup) {
+    transformStartPos.copy(state.currentPartGroup.position);
+    transformStartRot.copy(state.currentPartGroup.rotation);
+    transformStartScale.copy(state.currentPartGroup.scale);
+  }
+});
+
+function resetAxesConstraints() {
+  transformControls.showX = true;
+  transformControls.showY = true;
+  transformControls.showZ = true;
+}
+
+// 手柄松开时执行最终提交
+transformControls.addEventListener('mouseUp', async () => {
+  if (!state.currentPartGroup) return;
+  const curPos = state.currentPartGroup.position;
+  const dx = curPos.x - transformStartPos.x;
+  const dy = curPos.y - transformStartPos.y;
+  const dz = curPos.z - transformStartPos.z;
+
+  const mode = transformControls.getMode();
+  if (mode === 'translate' && (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01 || Math.abs(dz) > 0.01)) {
+    state.currentPartGroup.position.copy(transformStartPos);
+    await applyTransformDirect('translate', { dx: round2(dx), dy: round2(dy), dz: round2(dz) });
+  } else if (mode === 'rotate') {
+    const curRot = state.currentPartGroup.rotation;
+    const dangle = THREE.MathUtils.radToDeg(curRot.z - transformStartRot.z);
+    if (Math.abs(dangle) > 0.1) {
+      state.currentPartGroup.rotation.copy(transformStartRot);
+      await applyTransformDirect('rotate', { axis: 'Z', angle: round2(dangle) });
+    }
+  } else if (mode === 'scale') {
+    const curScale = state.currentPartGroup.scale;
+    const factor = curScale.x / (transformStartScale.x || 1.0);
+    if (Math.abs(factor - 1.0) > 0.01) {
+      state.currentPartGroup.scale.copy(transformStartScale);
+      await applyTransformDirect('scale', { factor: round2(factor) });
+    }
+  }
+});
+
+function round2(v) {
+  return Math.round(v * 100) / 100;
+}
+
+async function applyTransformDirect(kind, params) {
+  showLoading(`正在执行【${kind}】几何变换…`);
+  try {
+    const res = await fetch('/api/transform', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind,
+        dx: params.dx || 0,
+        dy: params.dy || 0,
+        dz: params.dz || 0,
+        axis: params.axis || 'Z',
+        angle: params.angle || 0,
+        factor: params.factor || 1.0
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '变换失败');
+    renderModelGLTF(data.gltf);
+    scriptEditor.value = data.code;
+    showStatus(`${data.explanation} · 耗时: ${data.stats.compute_ms} ms`);
+  } catch(err) {
+    showStatus(`变换失败: ${err.message}`, true);
+  } finally {
+    hideLoading();
+  }
+}
+
 // 光照系统 (专业 CAD 漫反射三点光)
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
 scene.add(ambientLight);
@@ -131,6 +220,11 @@ scene.add(axesHelper);
 // CAD 分级拾取高亮层 (实体/面/边/点)
 const highlightGroup = new THREE.Group();
 scene.add(highlightGroup);
+
+// CFD 物理边界高亮层 (仅在物理边界模式下开启显示)
+const boundaryGroup = new THREE.Group();
+boundaryGroup.visible = false;
+scene.add(boundaryGroup);
 
 const raycaster = new THREE.Raycaster();
 const mousePos = new THREE.Vector2();
@@ -256,6 +350,8 @@ function renderModelGLTF(gltfContent) {
 
     scene.add(group);
     state.currentPartGroup = group;
+    transformControls.attach(group);
+    transformControls.visible = true;
 
     // 将辅助网格对齐到模型底部
     const box = new THREE.Box3().setFromObject(group);
@@ -343,6 +439,7 @@ document.getElementById('btn-camera-toggle').onclick = (e) => {
     orthoCamera.quaternion.copy(perspCamera.quaternion);
     controls.object = orthoCamera;
     activeCamera = orthoCamera;
+    transformControls.camera = orthoCamera;
     btn.textContent = '正交';
     btn.classList.add('active');
   } else {
@@ -351,6 +448,7 @@ document.getElementById('btn-camera-toggle').onclick = (e) => {
     perspCamera.quaternion.copy(orthoCamera.quaternion);
     controls.object = perspCamera;
     activeCamera = perspCamera;
+    transformControls.camera = perspCamera;
     btn.textContent = '透视';
     btn.classList.remove('active');
   }
@@ -573,11 +671,186 @@ document.getElementById('btn-copy-script').onclick = () => {
   });
 };
 
-// 快捷键支持 (Ctrl + Enter 运行脚本)
+let isXrayMode = false;
+let currentAppMode = 'OBJECT'; // 'OBJECT' | 'EDIT'
+let lastCursorScreenPos = { x: 300, y: 200 };
+
+const addMenuPopup = document.getElementById('add-menu-popup');
+const hudModeTag = document.getElementById('hud-mode-tag');
+
+// 视口内实时跟踪鼠标屏幕坐标
+container.addEventListener('mousemove', (e) => {
+  const rect = container.getBoundingClientRect();
+  lastCursorScreenPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+});
+
+// 点击视口空白处自动关闭 Shift+A 菜单
+container.addEventListener('pointerdown', (e) => {
+  if (addMenuPopup && !addMenuPopup.contains(e.target)) {
+    addMenuPopup.classList.add('hidden');
+  }
+});
+
+// 绑定 Shift+A 菜单项点击
+if (addMenuPopup) {
+  addMenuPopup.querySelectorAll('.add-menu-item').forEach(item => {
+    item.onclick = (e) => {
+      e.stopPropagation();
+      const tool = item.dataset.tool;
+      addMenuPopup.classList.add('hidden');
+      if (tool) openToolModal(tool);
+    };
+  });
+}
+
+function setAppMode(mode) {
+  currentAppMode = mode;
+  if (hudModeTag) {
+    hudModeTag.textContent = mode === 'OBJECT' ? '模式: 对象模式 [Tab 切换]' : '模式: 编辑模式 (1点 2边 3面) [Tab 切换]';
+    hudModeTag.style.color = mode === 'OBJECT' ? '#ffd885' : '#61afef';
+  }
+  showStatus(`已切换至: ${mode === 'OBJECT' ? '对象模式 (Object Mode)' : '编辑模式 (Edit Mode)'}`);
+}
+
+function switchSelectionModeTo(modeKey) {
+  document.querySelectorAll('#selection-mode-group button').forEach(b => b.classList.remove('active'));
+  const targetBtn = document.querySelector(`#selection-mode-group button[data-sel-mode="${modeKey}"]`);
+  if (targetBtn) targetBtn.classList.add('active');
+  state.selectionMode = modeKey;
+  clearHighlights();
+
+  const modeLabels = { solid: '实体 (Solid)', face: '面 (Face)', edge: '边 (Edge)', vertex: '点 (Vertex)' };
+  if (selBadgeMode) selBadgeMode.textContent = `拾取: ${modeLabels[modeKey] || modeKey}`;
+  if (selSubInfo) selSubInfo.textContent = '点击 3D 视图中相应部位进行高亮与分析';
+  showStatus(`选择模式: ${modeLabels[modeKey]}`);
+}
+
+// 快捷键支持 (Blender 级 Shift+A / Tab / 1 / 2 / 3 / G / R / S / X / Y / Z / Alt+Z)
 window.addEventListener('keydown', (e) => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      runScript();
+    }
+    return;
+  }
+
+  // Ctrl + Enter 运行脚本
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
     runScript();
+    return;
+  }
+
+  // Shift + A: 就地弹出添加菜单
+  if (e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+    e.preventDefault();
+    if (addMenuPopup) {
+      const maxX = container.clientWidth - 180;
+      const maxY = container.clientHeight - 340;
+      const posX = Math.max(10, Math.min(lastCursorScreenPos.x, maxX));
+      const posY = Math.max(10, Math.min(lastCursorScreenPos.y, maxY));
+      addMenuPopup.style.left = `${posX}px`;
+      addMenuPopup.style.top = `${posY}px`;
+      addMenuPopup.classList.remove('hidden');
+    }
+    return;
+  }
+
+  // Tab: 切换对象模式与编辑模式
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    setAppMode(currentAppMode === 'OBJECT' ? 'EDIT' : 'OBJECT');
+    if (currentAppMode === 'EDIT') {
+      switchSelectionModeTo('face'); // 默认进面编辑
+    } else {
+      switchSelectionModeTo('solid');
+    }
+    return;
+  }
+
+  // 数字 1 / 2 / 3: 在编辑模式下切换点 / 边 / 面
+  if (e.key === '1') {
+    e.preventDefault();
+    setAppMode('EDIT');
+    switchSelectionModeTo('vertex');
+    return;
+  } else if (e.key === '2') {
+    e.preventDefault();
+    setAppMode('EDIT');
+    switchSelectionModeTo('edge');
+    return;
+  } else if (e.key === '3') {
+    e.preventDefault();
+    setAppMode('EDIT');
+    switchSelectionModeTo('face');
+    return;
+  }
+
+  // Alt + Z: 切换 X-Ray 半透明透视模式
+  if (e.altKey && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    isXrayMode = !isXrayMode;
+    if (state.currentPartGroup) {
+      state.currentPartGroup.traverse((child) => {
+        if (child.isMesh && child.name !== 'cad-edge-line') {
+          child.material.transparent = isXrayMode;
+          child.material.opacity = isXrayMode ? 0.35 : 1.0;
+          child.material.depthWrite = !isXrayMode;
+        }
+      });
+    }
+    showStatus(isXrayMode ? '已开启 X-Ray 半透明透视模式 (Alt+Z)' : '已恢复实体着色模式 (Alt+Z)');
+    return;
+  }
+
+  // Blender 快捷变换键
+  if (e.key === 'g' || e.key === 'G') {
+    e.preventDefault();
+    transformControls.setMode('translate');
+    resetAxesConstraints();
+    transformControls.visible = true;
+    showStatus('变换手柄: 平移 (G) · 拖拽手柄移动，按 X/Y/Z 可锁定单轴');
+  } else if (e.key === 'r' || e.key === 'R') {
+    e.preventDefault();
+    transformControls.setMode('rotate');
+    resetAxesConstraints();
+    transformControls.visible = true;
+    showStatus('变换手柄: 旋转 (R) · 拖拽手柄旋转，按 X/Y/Z 可锁定单轴');
+  } else if (e.key === 's' || e.key === 'S') {
+    e.preventDefault();
+    transformControls.setMode('scale');
+    resetAxesConstraints();
+    transformControls.visible = true;
+    showStatus('变换手柄: 缩放 (S) · 拖拽手柄缩放');
+  } else if (e.key === 'x' || e.key === 'X') {
+    if (transformControls.visible) {
+      e.preventDefault();
+      transformControls.showX = true;
+      transformControls.showY = false;
+      transformControls.showZ = false;
+      showStatus('已锁定 X 轴向约束');
+    }
+  } else if (e.key === 'y' || e.key === 'Y') {
+    if (transformControls.visible) {
+      e.preventDefault();
+      transformControls.showX = false;
+      transformControls.showY = true;
+      transformControls.showZ = false;
+      showStatus('已锁定 Y 轴向约束');
+    }
+  } else if (e.key === 'z' || e.key === 'Z') {
+    if (transformControls.visible) {
+      e.preventDefault();
+      transformControls.showX = false;
+      transformControls.showY = false;
+      transformControls.showZ = true;
+      showStatus('已锁定 Z 轴向约束');
+    }
+  } else if (e.key === 'Escape') {
+    resetAxesConstraints();
+    showStatus('已重置轴向约束');
   }
 });
 
@@ -1164,6 +1437,18 @@ const RIGHT_TOOLS_SCHEMA = {
     fields: [
       { key: 'factor', label: '缩放系数 (如 1.5 放大, 0.8 缩小)', default: 1.25 }
     ]
+  },
+  'remove_fillets': {
+    title: '去特征化 (消除圆角)',
+    desc: '一键擦除模型上的微小圆角曲面，将相邻平面自动延伸缝合为锐边，防止网格爆炸',
+    allowBaseOnCurrent: true,
+    fields: []
+  },
+  'cavity_extraction': {
+    title: '内流体域提取 (Cavity)',
+    desc: '对机械阀体/管道外壳执行反向包络差集，一键提取封闭水密流体域',
+    allowBaseOnCurrent: true,
+    fields: []
   }
 };
 
@@ -1455,6 +1740,12 @@ function performSelectionPick() {
       else if (Math.abs(normal.y) > 0.95) orient = normal.y > 0 ? '侧面 (+Y)' : '侧面 (-Y)';
       else if (Math.abs(normal.x) > 0.95) orient = normal.x > 0 ? '右侧面 (+X)' : '左侧面 (-X)';
 
+      state.currentHitFace = {
+        index: hit.faceIndex,
+        normal: [round2(normal.x), round2(normal.y), round2(normal.z)],
+        area: 0.0
+      };
+
       if (selBadgeMode) selBadgeMode.textContent = `拾取: 面 (Face #${hit.faceIndex})`;
       if (selSubInfo) selSubInfo.textContent = orient;
       if (selectionFields) {
@@ -1462,7 +1753,18 @@ function performSelectionPick() {
           <div class="stat-row"><span class="stat-name">法向量 (X,Y,Z):</span><span class="stat-value">[${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}]</span></div>
           <div class="stat-row"><span class="stat-name">面取向特征:</span><span class="stat-value">${orient}</span></div>
           <div class="stat-row"><span class="stat-name">击中坐标 (XYZ):</span><span class="stat-value">${hit.point.x.toFixed(1)}, ${hit.point.y.toFixed(1)}, ${hit.point.z.toFixed(1)}</span></div>
+          <div style="margin-top:6px;font-size:10px;color:#abb2bf">物理边界标注 (CFD):</div>
+          <div class="cfd-patch-toolbar" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+            <button class="btn-text-sm btn-mark-patch" data-ptype="inlet" style="color:#3a86ff;border:1px solid #3a86ff;border-radius:3px;padding:2px 5px;background:rgba(58,134,255,0.1)">+ 入口 (Inlet)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="outlet" style="color:#ff006e;border:1px solid #ff006e;border-radius:3px;padding:2px 5px;background:rgba(255,0,110,0.1)">+ 出口 (Outlet)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="wall" style="color:#a0aab8;border:1px solid #a0aab8;border-radius:3px;padding:2px 5px;background:rgba(160,170,184,0.1)">+ 壁面 (Wall)</button>
+            <button class="btn-text-sm btn-mark-patch" data-ptype="interface" style="color:#fb5607;border:1px solid #fb5607;border-radius:3px;padding:2px 5px;background:rgba(251,86,7,0.1)">+ 交界 (Interface)</button>
+          </div>
         `;
+
+        selectionFields.querySelectorAll('.btn-mark-patch').forEach(btn => {
+          btn.onclick = () => markCurrentFaceAs(btn.dataset.ptype);
+        });
       }
       showStatus(`选中面 #${hit.faceIndex} · 法向: [${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}] · ${orient}`);
     }
@@ -1600,7 +1902,124 @@ async function fetchInfo() {
   }
 }
 
+// --- CFD 表面物理语义系统 ---
+const btnToggleBoundary = document.getElementById('btn-toggle-boundary-mode');
+const btnExportCfd = document.getElementById('btn-export-cfd');
+
+if (btnExportCfd) {
+  btnExportCfd.onclick = () => {
+    downloadFile('/api/export/cfd_meta');
+    showStatus('正在生成并下载 CFD 物理边界字典 (JSON)…');
+  };
+}
+
+let isBoundaryMode = false;
+let boundaryPatches = [];
+
+if (btnToggleBoundary) {
+  btnToggleBoundary.onclick = () => {
+    isBoundaryMode = !isBoundaryMode;
+    btnToggleBoundary.classList.toggle('active', isBoundaryMode);
+    boundaryGroup.visible = isBoundaryMode;
+    showStatus(isBoundaryMode ? '已开启【🌊 物理边界模式】：高亮显示各物理边界补丁颜色' : '已退出边界模式：恢复标准 CAD 天蓝色实体外观');
+  };
+}
+
+async function markCurrentFaceAs(semanticType) {
+  if (!state.currentHitFace) return;
+  try {
+    const res = await fetch('/api/semantic/patch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        face_index: state.currentHitFace.index,
+        semantic_type: semanticType,
+        normal: state.currentHitFace.normal,
+        area: 0.0
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      boundaryPatches = data.all_patches;
+      updateBoundaryVisuals();
+      if (!isBoundaryMode && btnToggleBoundary) {
+        btnToggleBoundary.click();
+      }
+      showStatus(`已将面 #${state.currentHitFace.index} 标记为【${data.patch.name}】(${semanticType})`);
+      appendChatBubble('assistant', `🌊 物理边界标注成功：已将面 #${state.currentHitFace.index} 设为 **${data.patch.name}** [类型: ${semanticType.toUpperCase()}]`);
+    }
+  } catch(err) {
+    showStatus(`打标失败: ${err.message}`, true);
+  }
+}
+
+function updateBoundaryVisuals() {
+  while (boundaryGroup.children.length > 0) {
+    const obj = boundaryGroup.children[0];
+    boundaryGroup.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+  }
+
+  if (!state.currentPartGroup) return;
+
+  let mainMesh = null;
+  state.currentPartGroup.traverse(child => {
+    if (child.isMesh && child.name !== 'cad-edge-line' && !mainMesh) mainMesh = child;
+  });
+  if (!mainMesh) return;
+
+  const posAttr = mainMesh.geometry.attributes.position;
+  const idx = mainMesh.geometry.index;
+
+  boundaryPatches.forEach(p => {
+    const colorHex = parseInt(p.color_hex.replace('#', '0x'));
+    p.face_indices.forEach(fIdx => {
+      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
+      if (idx) {
+        if (fIdx * 3 + 2 >= idx.count) return;
+        pA.fromBufferAttribute(posAttr, idx.getX(fIdx * 3));
+        pB.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 1));
+        pC.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 2));
+      } else {
+        if (fIdx * 3 + 2 >= posAttr.count) return;
+        pA.fromBufferAttribute(posAttr, fIdx * 3);
+        pB.fromBufferAttribute(posAttr, fIdx * 3 + 1);
+        pC.fromBufferAttribute(posAttr, fIdx * 3 + 2);
+      }
+
+      mainMesh.localToWorld(pA);
+      mainMesh.localToWorld(pB);
+      mainMesh.localToWorld(pC);
+
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute([
+        pA.x, pA.y, pA.z,
+        pB.x, pB.y, pB.z,
+        pC.x, pC.y, pC.z
+      ], 3));
+      geom.computeVertexNormals();
+
+      const patchMat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
+      });
+
+      const patchMesh = new THREE.Mesh(geom, patchMat);
+      boundaryGroup.add(patchMesh);
+    });
+  });
+}
+
 // 页面初始化加载
 renderParamForm('flange');
 triggerParametricBuild();
 fetchInfo();
+
+// 暴露全局引用以便调试与测试
+window.transformControls = transformControls;
+window.state = state;
+window.__getIsXray = () => isXrayMode;
+window.__getIsBoundaryMode = () => isBoundaryMode;

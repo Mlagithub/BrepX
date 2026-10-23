@@ -276,7 +276,35 @@ def execute_right_tool(tool: str, params: Dict[str, Any], current_part=None, cur
         code = base_script.rstrip() + f"\n# 复制实体副本并平移偏移\npart = part + part.translate({dx}, {dy}, 0)\n"
         return part, code, f"已复制实体并平移 ({dx}, {dy}) mm"
 
-    # ================= 4. 草图曲线与轮廓 =================
+    # ================= 4. CFD 工业流体前处理算子 =================
+    elif tool == "remove_fillets":
+        # 去特征化·反圆角 (将圆滑边恢复为锐角)
+        base = current_part if current_part is not None else Box(60, 40, 20).fillet(Box(60, 40, 20).edges().parallel_to(Z), 5)
+        base_script = current_script if current_part is not None else "part = Box(60, 40, 20).fillet(Box(60, 40, 20).edges().parallel_to(Z), 5)"
+        try:
+            non_planar = list(base.faces().filter(lambda f: not f.is_planar))
+            if not non_planar:
+                return base, base_script, "当前实体上未检测到圆角曲面，无需去特征。"
+            part = base.remove_fillets(non_planar)
+            code = base_script.rstrip() + "\n# [CFD去特征] 擦除微小圆角，恢复锐角棱边\nfillet_faces = part.faces().filter(lambda f: not f.is_planar)\npart = part.remove_fillets(fillet_faces)\n"
+            return part, code, f"去特征化成功：已消除 {len(non_planar)} 处圆角面并自动延伸缝合为锐边"
+        except Exception as e:
+            return base, base_script, f"去圆角失败: {str(e)}"
+
+    elif tool == "cavity_extraction":
+        # 提取内部水密流体域 (反向包络差集)
+        base = current_part if current_part is not None else (Box(60, 60, 40) - Cylinder(15, 50))
+        base_script = current_script if current_part is not None else "part = Box(60, 60, 40) - Cylinder(15, 50)"
+        try:
+            bbox = base.bbox()
+            envelope = Box(bbox.size[0], bbox.size[1], bbox.size[2])
+            part = envelope - base
+            code = base_script.rstrip() + "\n# [CFD流体域提取] 反向包络盒差集提取内流道水密实体\nbbox = part.bbox()\nenvelope = Box(bbox.size[0], bbox.size[1], bbox.size[2])\npart = envelope - part\n"
+            return part, code, f"流体域提取成功：已从实体空腔中提取出纯净水密流道，体积 {part.volume:.2f} mm³"
+        except Exception as e:
+            return base, base_script, f"流体域提取失败: {str(e)}"
+
+    # ================= 5. 草图曲线与轮廓 =================
     elif tool in ["line", "rectangle", "circle", "arc", "polyline", "bspline", "profile"]:
         dim1 = get_num("dim1", 40)
         dim2 = get_num("dim2", 30)

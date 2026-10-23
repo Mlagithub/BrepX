@@ -15,6 +15,7 @@ import smlibpy
 from smlibpy import *
 from agent import cad_agent
 from tools_handler import execute_right_tool
+from semantic_manager import semantic_manager, BoundarySemanticType
 
 app = FastAPI(title="SMLib Web Studio", description="smlibpy x cax-viewer integration")
 
@@ -451,6 +452,48 @@ def api_model_topology():
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+class SemanticPatchRequest(BaseModel):
+    face_index: int
+    semantic_type: str
+    name: Optional[str] = None
+    normal: Optional[List[float]] = None
+    area: Optional[float] = 0.0
+
+
+@app.post("/api/semantic/patch")
+def api_set_semantic_patch(req: SemanticPatchRequest):
+    patch = semantic_manager.set_patch(
+        face_index=req.face_index,
+        semantic_type=req.semantic_type,
+        name=req.name,
+        normal=req.normal,
+        area=req.area
+    )
+    return {"ok": True, "patch": patch, "all_patches": semantic_manager.get_all_patches()}
+
+
+@app.get("/api/semantic/patches")
+def api_get_semantic_patches():
+    return {"ok": True, "patches": semantic_manager.get_all_patches()}
+
+
+@app.delete("/api/semantic/patch/{patch_id}")
+def api_delete_semantic_patch(patch_id: str):
+    ok = semantic_manager.remove_patch(patch_id)
+    return {"ok": ok, "all_patches": semantic_manager.get_all_patches()}
+
+
+@app.get("/api/export/cfd_meta")
+def api_export_cfd_meta():
+    import json
+    meta = semantic_manager.export_cfd_metadata()
+    return Response(
+        content=json.dumps(meta, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="cfd_boundaries.json"'}
+    )
 
 
 @app.get("/api/export/{fmt}")
