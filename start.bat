@@ -1,8 +1,8 @@
-﻿@echo off
+@echo off
 chcp 65001 > nul
-title SMLib Web Studio
+title SMLib Studio Next
 echo =======================================================
-echo          SMLib Web Studio 
+echo          SMLib Studio Next (AI + CAD + CAE)
 echo =======================================================
 echo Checking Python env...
 python -m pip install -r requirements.txt --quiet
