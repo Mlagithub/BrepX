@@ -1,108 +1,128 @@
+/**
+ * CFD Physical Boundary Surface Coloring & Patch Manager for SMLib Studio Next.
+ * Switches face colors only in Boundary Mode and renders patch cards.
+ */
+
 import * as THREE from 'three';
-import { scene } from './viewport.js';
+import { modelGroup } from './viewport.js';
+import { ctx } from './context.js';
 
-export const boundaryGroup = new THREE.Group();
-boundaryGroup.visible = false;
-scene.add(boundaryGroup);
+const patchListEl = document.getElementById('cfd-patch-list');
 
-let isBoundaryMode = false;
-let boundaryPatches = [];
-
-export function getIsBoundaryMode() {
-  return isBoundaryMode;
-}
-
-export function setBoundaryMode(active, currentPartGroup) {
-  isBoundaryMode = active;
-  boundaryGroup.visible = active;
-  if (active) {
-    updateBoundaryVisuals(currentPartGroup);
+const boundaryMaterialCache = new Map();
+function getBoundaryMaterial(colorHex) {
+  if (!boundaryMaterialCache.has(colorHex)) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: parseInt(colorHex.replace('#', '0x'), 16),
+      metalness: 0.1,
+      roughness: 0.35,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1,
+    });
+    boundaryMaterialCache.set(colorHex, mat);
   }
+  return boundaryMaterialCache.get(colorHex);
 }
 
-export function setBoundaryPatches(patches, currentPartGroup) {
-  boundaryPatches = patches || [];
-  if (isBoundaryMode) {
-    updateBoundaryVisuals(currentPartGroup);
-  }
+const defaultCADMaterial = new THREE.MeshStandardMaterial({
+  color: 0x80baff,
+  metalness: 0.15,
+  roughness: 0.45,
+  side: THREE.DoubleSide,
+  polygonOffset: true,
+  polygonOffsetFactor: 1,
+  polygonOffsetUnits: 1,
+});
+
+/**
+ * Update face mesh materials according to boundary mode status.
+ */
+export function updateBoundaryVisuals() {
+  const isBoundaryActive = ctx.isBoundaryMode;
+  const patches = ctx.patches || [];
+
+  // Build a fast lookup: face_index -> color_hex
+  const faceColorMap = new Map();
+  patches.forEach((p) => {
+    (p.face_indices || []).forEach((fIdx) => {
+      faceColorMap.set(fIdx, p.color_hex);
+    });
+  });
+
+  modelGroup.traverse((child) => {
+    if (child.isMesh && child.userData.type === 'face') {
+      const fIdx = child.userData.index;
+      if (isBoundaryActive && faceColorMap.has(fIdx)) {
+        child.material = getBoundaryMaterial(faceColorMap.get(fIdx));
+      } else {
+        child.material = defaultCADMaterial.clone();
+      }
+    }
+  });
+
+  renderPatchList(patches);
 }
 
-export async function markFaceSemantic(faceIndex, semanticType, normal, currentPartGroup) {
+export function toggleBoundaryMode() {
+  ctx.isBoundaryMode = !ctx.isBoundaryMode;
+  updateBoundaryVisuals();
+  return ctx.isBoundaryMode;
+}
+
+export async function assignFacePatch(faceIndex, semanticType, name = null) {
   const res = await fetch('/api/semantic/patch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      face_index: faceIndex,
+      face_indices: [faceIndex],
       semantic_type: semanticType,
-      normal: normal || [0, 0, 1],
-      area: 0.0
-    })
+      name,
+    }),
   });
   const data = await res.json();
-  if (data.ok) {
-    boundaryPatches = data.all_patches;
-    setBoundaryMode(true, currentPartGroup);
-    return data.patch;
+  if (!res.ok) throw new Error(data.detail || '标注失败');
+
+  ctx.setPatches(data.patches);
+  if (!ctx.isBoundaryMode) {
+    toggleBoundaryMode();
+  } else {
+    updateBoundaryVisuals();
   }
-  throw new Error('物理边界打标失败');
+  return data.patch;
 }
 
-export function updateBoundaryVisuals(currentPartGroup) {
-  while (boundaryGroup.children.length > 0) {
-    const obj = boundaryGroup.children[0];
-    boundaryGroup.remove(obj);
-    if (obj.geometry) obj.geometry.dispose();
+export async function deletePatch(patchId) {
+  const res = await fetch(`/api/semantic/patch/${patchId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (res.ok) {
+    ctx.setPatches(data.patches);
+    updateBoundaryVisuals();
+  }
+}
+
+function renderPatchList(patches) {
+  if (!patchListEl) return;
+  if (!patches.length) {
+    patchListEl.innerHTML = '<div class="empty-hint">暂无已标注边界。在 3D 视口中点击拓扑面并标记为对应边界类型。</div>';
+    return;
   }
 
-  if (!currentPartGroup) return;
+  patchListEl.innerHTML = patches.map((p) => `
+    <div class="patch-card">
+      <div class="patch-card-info">
+        <div class="patch-title" style="color:${p.color_hex}">● ${p.name} (${p.semantic_type.toUpperCase()})</div>
+        <div class="patch-sub">面索引: [${p.face_indices.join(', ')}] · 面积: ${p.area} mm² · 法向: [${p.normal.join(', ')}]</div>
+      </div>
+      <button class="btn-icon-subtle btn-del-patch" data-patch-id="${p.id}" title="删除此边界标注">✕</button>
+    </div>
+  `).join('');
 
-  let mainMesh = null;
-  currentPartGroup.traverse(child => {
-    if (child.isMesh && child.name !== 'cad-edge-line' && !mainMesh) mainMesh = child;
-  });
-  if (!mainMesh) return;
-
-  const posAttr = mainMesh.geometry.attributes.position;
-  const idx = mainMesh.geometry.index;
-
-  boundaryPatches.forEach(p => {
-    const colorHex = parseInt(p.color_hex.replace('#', '0x'));
-    p.face_indices.forEach(fIdx => {
-      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-      if (idx) {
-        if (fIdx * 3 + 2 >= idx.count) return;
-        pA.fromBufferAttribute(posAttr, idx.getX(fIdx * 3));
-        pB.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 1));
-        pC.fromBufferAttribute(posAttr, idx.getX(fIdx * 3 + 2));
-      } else {
-        if (fIdx * 3 + 2 >= posAttr.count) return;
-        pA.fromBufferAttribute(posAttr, fIdx * 3);
-        pB.fromBufferAttribute(posAttr, fIdx * 3 + 1);
-        pC.fromBufferAttribute(posAttr, fIdx * 3 + 2);
-      }
-
-      mainMesh.localToWorld(pA);
-      mainMesh.localToWorld(pB);
-      mainMesh.localToWorld(pC);
-
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute([
-        pA.x, pA.y, pA.z,
-        pB.x, pB.y, pB.z,
-        pC.x, pC.y, pC.z
-      ], 3));
-      geom.computeVertexNormals();
-
-      const patchMat = new THREE.MeshBasicMaterial({
-        color: colorHex,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2
-      });
-
-      const patchMesh = new THREE.Mesh(geom, patchMat);
-      boundaryGroup.add(patchMesh);
-    });
+  patchListEl.querySelectorAll('.btn-del-patch').forEach((btn) => {
+    btn.onclick = () => deletePatch(btn.dataset.patchId);
   });
 }
+
+ctx.on('patches:updated', () => updateBoundaryVisuals());
+ctx.on('scene:updated', () => updateBoundaryVisuals());
