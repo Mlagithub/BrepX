@@ -1,209 +1,247 @@
-import * as THREE from 'three';
-import { scene, activeCamera } from './viewport.js';
+/**
+ * Native B-Rep Topological Raycaster & Multi-Selection System.
+ * Supports Hover Pre-highlighting, Shift Multi-selection, and topological HUD inspection.
+ */
 
-export const highlightGroup = new THREE.Group();
-scene.add(highlightGroup);
+import * as THREE from 'three';
+import { activeCamera, container, modelGroup, scene } from './viewport.js';
+import { ctx } from './context.js';
 
 const raycaster = new THREE.Raycaster();
-const mousePos = new THREE.Vector2();
+const mouse = new THREE.Vector2();
 
-// 顶点标靶指示小球
-export const vertexMarker = new THREE.Mesh(
-  new THREE.SphereGeometry(1.2, 16, 16),
-  new THREE.MeshBasicMaterial({ color: 0xffd885, depthTest: false })
-);
-vertexMarker.renderOrder = 999;
-vertexMarker.visible = false;
-highlightGroup.add(vertexMarker);
+// Group for active selection and hover highlights
+export const selectionGroup = new THREE.Group();
+selectionGroup.name = 'selection-highlight-root';
+scene.add(selectionGroup);
 
-// 面高亮网格
-let highlightFaceMesh = null;
-const faceHighlightMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffc766,
+// Highlight materials
+const hoverFaceMat = new THREE.MeshBasicMaterial({
+  color: 0xffd885,
   side: THREE.DoubleSide,
   transparent: true,
-  opacity: 0.65,
+  opacity: 0.35,
+  depthTest: true,
   polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1
+  polygonOffsetFactor: -2,
+  polygonOffsetUnits: -2,
 });
 
-// 边高亮线条
-let highlightEdgeLine = null;
-const edgeHighlightMaterial = new THREE.LineBasicMaterial({
+const selectedFaceMat = new THREE.MeshBasicMaterial({
+  color: 0xffa116,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.7,
+  depthTest: true,
+  polygonOffset: true,
+  polygonOffsetFactor: -3,
+  polygonOffsetUnits: -3,
+});
+
+const hoverEdgeMat = new THREE.LineBasicMaterial({
   color: 0xffea00,
   linewidth: 3,
-  depthTest: false
+  depthTest: false,
 });
 
-export function clearHighlights() {
-  if (highlightFaceMesh) {
-    highlightGroup.remove(highlightFaceMesh);
-    if (highlightFaceMesh.geometry) highlightFaceMesh.geometry.dispose();
-    highlightFaceMesh = null;
-  }
-  if (highlightEdgeLine) {
-    highlightGroup.remove(highlightEdgeLine);
-    if (highlightEdgeLine.geometry) highlightEdgeLine.geometry.dispose();
-    highlightEdgeLine = null;
-  }
-  if (vertexMarker) {
-    vertexMarker.visible = false;
-  }
+const selectedEdgeMat = new THREE.LineBasicMaterial({
+  color: 0xff9900,
+  linewidth: 4,
+  depthTest: false,
+});
+
+let hoveredMesh = null;
+let hoverHighlightObj = null;
+
+// Track selection objects for fast toggle
+const activeSelectionVisuals = new Map(); // expr -> Object3D
+
+export function clearSelectionVisuals() {
+  activeSelectionVisuals.forEach((obj) => {
+    selectionGroup.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+  });
+  activeSelectionVisuals.clear();
+  clearHoverHighlight();
 }
 
-function round2(v) {
-  return Math.round(v * 100) / 100;
+function clearHoverHighlight() {
+  if (hoverHighlightObj) {
+    selectionGroup.remove(hoverHighlightObj);
+    if (hoverHighlightObj.geometry) hoverHighlightObj.geometry.dispose();
+    hoverHighlightObj = null;
+  }
+  hoveredMesh = null;
 }
 
-// 执行射线拾取
-export function performSelectionPick(clientX, clientY, container, currentPartGroup, selectionMode, callbacks = {}) {
-  if (!currentPartGroup) return null;
-
+function updateMouseCoords(clientX, clientY) {
   const rect = container.getBoundingClientRect();
-  mousePos.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  mousePos.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+}
 
-  raycaster.setFromCamera(mousePos, activeCamera);
-  const meshes = [];
-  currentPartGroup.traverse(child => {
-    if (child.isMesh && child.name !== 'cad-edge-line') meshes.push(child);
+/**
+ * Handle hover motion to pre-highlight B-Rep faces or edges.
+ */
+export function handlePointerMove(clientX, clientY) {
+  if (ctx.mode === 'OBJECT') {
+    clearHoverHighlight();
+    return;
+  }
+  updateMouseCoords(clientX, clientY);
+  raycaster.setFromCamera(mouse, activeCamera);
+
+  const level = ctx.selectionLevel;
+  const targets = [];
+  modelGroup.traverse((child) => {
+    if (level === 'face' && child.isMesh && child.userData.type === 'face') {
+      targets.push(child);
+    } else if (level === 'edge' && child.isLine && child.userData.type === 'edge') {
+      targets.push(child);
+    }
   });
 
-  const intersects = raycaster.intersectObjects(meshes, true);
-  clearHighlights();
-
+  const intersects = raycaster.intersectObjects(targets, false);
   if (!intersects.length) {
-    if (callbacks.onClear) callbacks.onClear();
-    return null;
+    clearHoverHighlight();
+    return;
   }
 
-  const hit = intersects[0];
+  const hit = intersects[0].object;
+  if (hit === hoveredMesh) return;
 
-  if (selectionMode === 'solid') {
-    if (callbacks.onSolidPick) callbacks.onSolidPick(hit);
-    return { type: 'solid', hit };
+  clearHoverHighlight();
+  hoveredMesh = hit;
 
-  } else if (selectionMode === 'face') {
-    if (hit.face) {
-      const geom = new THREE.BufferGeometry();
-      const posAttr = hit.object.geometry.attributes.position;
-      const idx = hit.object.geometry.index;
-
-      const pA = new THREE.Vector3(), pB = new THREE.Vector3(), pC = new THREE.Vector3();
-      if (idx) {
-        const iA = idx.getX(hit.faceIndex * 3);
-        const iB = idx.getX(hit.faceIndex * 3 + 1);
-        const iC = idx.getX(hit.faceIndex * 3 + 2);
-        pA.fromBufferAttribute(posAttr, iA);
-        pB.fromBufferAttribute(posAttr, iB);
-        pC.fromBufferAttribute(posAttr, iC);
-      } else {
-        pA.fromBufferAttribute(posAttr, hit.faceIndex * 3);
-        pB.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 1);
-        pC.fromBufferAttribute(posAttr, hit.faceIndex * 3 + 2);
-      }
-
-      hit.object.localToWorld(pA);
-      hit.object.localToWorld(pB);
-      hit.object.localToWorld(pC);
-
-      geom.setAttribute('position', new THREE.Float32BufferAttribute([
-        pA.x, pA.y, pA.z,
-        pB.x, pB.y, pB.z,
-        pC.x, pC.y, pC.z
-      ], 3));
-      geom.computeVertexNormals();
-
-      highlightFaceMesh = new THREE.Mesh(geom, faceHighlightMaterial);
-      highlightGroup.add(highlightFaceMesh);
-
-      const normal = hit.face.normal.clone().applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
-      let orient = '空间倾斜面';
-      if (Math.abs(normal.z) > 0.95) orient = normal.z > 0 ? '顶面 (+Z)' : '底面 (-Z)';
-      else if (Math.abs(normal.y) > 0.95) orient = normal.y > 0 ? '侧面 (+Y)' : '侧面 (-Y)';
-      else if (Math.abs(normal.x) > 0.95) orient = normal.x > 0 ? '右侧面 (+X)' : '左侧面 (-X)';
-
-      const res = {
-        type: 'face',
-        index: hit.faceIndex,
-        normal: [round2(normal.x), round2(normal.y), round2(normal.z)],
-        orient,
-        point: hit.point
-      };
-      if (callbacks.onFacePick) callbacks.onFacePick(res);
-      return res;
-    }
-
-  } else if (selectionMode === 'edge') {
-    const geom = hit.object.geometry;
-    let closestLine = null;
-    let minD = Infinity;
-
-    const pos = geom.attributes.position;
-    const v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
-    const hitPt = hit.object.worldToLocal(hit.point.clone());
-
-    for (let i = 0; i < pos.count; i += 3) {
-      for (let j = 0; j < 3; j++) {
-        v1.fromBufferAttribute(pos, i + j);
-        v2.fromBufferAttribute(pos, i + ((j + 1) % 3));
-        const line = new THREE.Line3(v1, v2);
-        const closestPt = new THREE.Vector3();
-        line.closestPointToPoint(hitPt, true, closestPt);
-        const d = closestPt.distanceTo(hitPt);
-        if (d < minD) {
-          minD = d;
-          closestLine = [v1.clone(), v2.clone()];
-        }
-      }
-    }
-
-    if (closestLine) {
-      const p1 = hit.object.localToWorld(closestLine[0]);
-      const p2 = hit.object.localToWorld(closestLine[1]);
-      const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
-      highlightEdgeLine = new THREE.LineSegments(lineGeom, edgeHighlightMaterial);
-      highlightGroup.add(highlightEdgeLine);
-
-      const length = p1.distanceTo(p2);
-      const res = { type: 'edge', length, p1, p2 };
-      if (callbacks.onEdgePick) callbacks.onEdgePick(res);
-      return res;
-    }
-
-  } else if (selectionMode === 'vertex') {
-    const geom = hit.object.geometry;
-    const pos = geom.attributes.position;
-    const idx = geom.index;
-    let closestV = null;
-    let minD = Infinity;
-
-    const testIndices = idx ? [
-      idx.getX(hit.faceIndex * 3),
-      idx.getX(hit.faceIndex * 3 + 1),
-      idx.getX(hit.faceIndex * 3 + 2)
-    ] : [hit.faceIndex * 3, hit.faceIndex * 3 + 1, hit.faceIndex * 3 + 2];
-
-    for (const i of testIndices) {
-      const v = new THREE.Vector3().fromBufferAttribute(pos, i);
-      hit.object.localToWorld(v);
-      const d = v.distanceTo(hit.point);
-      if (d < minD) {
-        minD = d;
-        closestV = v;
-      }
-    }
-
-    if (closestV) {
-      vertexMarker.position.copy(closestV);
-      vertexMarker.visible = true;
-
-      const res = { type: 'vertex', vertex: closestV };
-      if (callbacks.onVertexPick) callbacks.onVertexPick(res);
-      return res;
-    }
+  if (level === 'face') {
+    const cloneGeom = hit.geometry.clone();
+    cloneGeom.applyMatrix4(hit.matrixWorld);
+    hoverHighlightObj = new THREE.Mesh(cloneGeom, hoverFaceMat);
+    hoverHighlightObj.renderOrder = 9;
+    selectionGroup.add(hoverHighlightObj);
+  } else if (level === 'edge') {
+    const cloneGeom = hit.geometry.clone();
+    cloneGeom.applyMatrix4(hit.matrixWorld);
+    hoverHighlightObj = new THREE.Line(cloneGeom, hoverEdgeMat);
+    hoverHighlightObj.renderOrder = 10;
+    selectionGroup.add(hoverHighlightObj);
   }
-
-  return null;
 }
+
+/**
+ * Handle click selection with optional Shift multi-selection.
+ */
+export function handlePointerClick(clientX, clientY, isShiftKey = false) {
+  updateMouseCoords(clientX, clientY);
+  raycaster.setFromCamera(mouse, activeCamera);
+
+  if (ctx.selectionLevel === 'solid') {
+    const meshes = [];
+    modelGroup.traverse(c => { if (c.isMesh) meshes.push(c); });
+    const hits = raycaster.intersectObjects(meshes, true);
+    if (!hits.length) {
+      ctx.clearSelections();
+      return;
+    }
+    const hitObj = hits[0].object;
+    let rootBody = hitObj;
+    while (rootBody.parent && rootBody.parent !== modelGroup) {
+      rootBody = rootBody.parent;
+    }
+    ctx.setSelections([{
+      type: 'solid',
+      body: rootBody.userData.bodyName || 'part',
+      expr: rootBody.userData.bodyExpr || 'part',
+      meta: rootBody.userData,
+    }]);
+    return;
+  }
+
+  const level = ctx.selectionLevel;
+  const targets = [];
+  modelGroup.traverse((child) => {
+    if (level === 'face' && child.isMesh && child.userData.type === 'face') {
+      targets.push(child);
+    } else if (level === 'edge' && child.isLine && child.userData.type === 'edge') {
+      targets.push(child);
+    }
+  });
+
+  const intersects = raycaster.intersectObjects(targets, false);
+  if (!intersects.length) {
+    if (!isShiftKey) {
+      ctx.clearSelections();
+    }
+    return;
+  }
+
+  const hit = intersects[0].object;
+  const data = {
+    type: hit.userData.type,
+    body: hit.userData.bodyName,
+    index: hit.userData.index,
+    expr: hit.userData.expr,
+    meta: hit.userData.meta,
+  };
+
+  if (isShiftKey) {
+    ctx.toggleSelection(data);
+  } else {
+    ctx.setSelections([data]);
+  }
+}
+
+// React to context selection changes and rebuild visual highlight meshes
+ctx.on('selections:changed', (selections) => {
+  clearSelectionVisuals();
+  selections.forEach((sel) => {
+    let targetObj = null;
+    modelGroup.traverse((c) => {
+      if (c.userData.expr === sel.expr) targetObj = c;
+    });
+    if (!targetObj) return;
+
+    if (sel.type === 'face' && targetObj.isMesh) {
+      const g = targetObj.geometry.clone();
+      g.applyMatrix4(targetObj.matrixWorld);
+      const mesh = new THREE.Mesh(g, selectedFaceMat);
+      mesh.renderOrder = 10;
+      selectionGroup.add(mesh);
+      activeSelectionVisuals.set(sel.expr, mesh);
+    } else if (sel.type === 'edge' && targetObj.isLine) {
+      const g = targetObj.geometry.clone();
+      g.applyMatrix4(targetObj.matrixWorld);
+      const line = new THREE.Line(g, selectedEdgeMat);
+      line.renderOrder = 11;
+      selectionGroup.add(line);
+      activeSelectionVisuals.set(sel.expr, line);
+    }
+  });
+
+  // Update floating face action pill in DOM
+  const pill = document.getElementById('face-action-pill');
+  if (pill) {
+    if (selections.length === 1 && selections[0].type === 'face') {
+      const s = selections[0];
+      document.getElementById('pill-face-title').textContent = `Face #${s.index} (${s.meta.geom_type})`;
+      pill.classList.remove('hidden');
+    } else {
+      pill.classList.add('hidden');
+    }
+  }
+
+  // Update selection context bar in Right Panel
+  const ctxSummary = document.getElementById('ctx-summary');
+  const ctxPills = document.getElementById('ctx-pills');
+  if (ctxSummary && ctxPills) {
+    if (!selections.length) {
+      ctxSummary.textContent = '未选中（点击视口中的面或边）';
+      ctxPills.innerHTML = '';
+    } else {
+      ctxSummary.textContent = `已选 ${selections.length} 项 (Shift 可多选)`;
+      ctxPills.innerHTML = selections.map(s => `
+        <span class="sel-tag" title="${s.expr}">${s.type.toUpperCase()} #${s.index}</span>
+      `).join('');
+    }
+  }
+});
