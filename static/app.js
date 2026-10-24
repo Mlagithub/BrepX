@@ -1,5 +1,5 @@
-/**
- * SMLib Studio Next · Main Controller (< 250 lines)
+﻿/**
+ * BrepX · Main Controller (< 250 lines)
  * Assembles viewport, selection, modal ops, sketcher, boundary, and agent modules.
  */
 

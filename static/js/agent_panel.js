@@ -1,5 +1,5 @@
-/**
- * Embodied Agent Panel Controller for SMLib Studio Next.
+﻿/**
+ * Embodied Agent Panel Controller for BrepX.
  * Synchronizes viewport topological selections, LLM config, and chat stream.
  */
 

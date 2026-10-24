@@ -1,1 +1,1 @@
-"""SMLib Studio Next backend package."""
+﻿"""BrepX backend package."""

@@ -1,4 +1,4 @@
-"""End-to-end integration tests for SMLib Studio Next backend & API."""
+﻿"""End-to-end integration tests for BrepX backend & API."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class TestApiE2E(unittest.TestCase):
         resp = self.client.get("/api/info")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data["product"], "SMLib Studio Next")
+        self.assertEqual(data["product"], "BrepX")
         self.assertEqual(data["status"], "ready")
 
     def test_workspace_state_and_clear(self) -> None:

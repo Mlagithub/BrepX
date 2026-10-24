@@ -1,4 +1,4 @@
-# Implementation Plan: SMLib Studio Next 深度架构重构 (B-Rep 拓扑管线、Blender 模态交互与统一 Agent 会话)
+﻿# Implementation Plan: BrepX 深度架构重构 (B-Rep 拓扑管线、Blender 模态交互与统一 Agent 会话)
 
 ## Overview
 本执行计划基于 [`docs/spec/REFACTORING_ARCHITECTURE_PLAN.md`](../docs/spec/REFACTORING_ARCHITECTURE_PLAN.md) 与 [`docs/CODE_STANDARDS.md`](../docs/CODE_STANDARDS.md) 制定，旨在将现有原型彻底重构为工业级 **AI + CAD + CAE (CFD)** 几何工作台。核心工作包含：清理所有过期文件与早期 Demo 痕迹、建立 `backend/` 与 `static/js/` 标准工程结构、落地基于 `smlibpy` 原生 `face_meshes` 与 `tessellate_boundaries` 的真实 B-Rep 拓扑级图形管线、实现真正的选区敏感几何算子与 Blender 式鼠标模态操作符（`E` 选面交互拉伸、`Ctrl+B` 选边交互倒角、3D 视口直接点击绘制 2D 草图、左下角 `Adjust Last Operation` 实时微调浮窗），以及打通人机共享 `WorkspaceSession` 的具身 Agent 协同架构。

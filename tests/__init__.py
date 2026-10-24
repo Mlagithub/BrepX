@@ -1,1 +1,1 @@
-"""SMLib Studio Next automated test suite."""
+﻿"""BrepX automated test suite."""

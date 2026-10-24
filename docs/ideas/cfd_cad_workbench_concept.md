@@ -1,4 +1,4 @@
-# CFD CAD Workbench Concept: SMLib Studio Next
+﻿# CFD CAD Workbench Concept: BrepX
 
 > 本文档由 `/idea-refine` 基于与负责人的定向发散与压力测试收敛后正式确立，定义了产品核心理念、MVP 范畴与“坚决不做清单 (Not Doing)”。
 

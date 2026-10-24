@@ -1,5 +1,5 @@
-/**
- * CFD Physical Boundary Surface Coloring & Patch Manager for SMLib Studio Next.
+﻿/**
+ * CFD Physical Boundary Surface Coloring & Patch Manager for BrepX.
  * Switches face colors only in Boundary Mode and renders patch cards.
  */
 

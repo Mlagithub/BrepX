@@ -1,11 +1,11 @@
-# SMLib Studio Next 代码与架构规范 (Code Standards & Architectural Contract)
+﻿# BrepX 代码与架构规范 (Code Standards & Architectural Contract)
 
-> 本规范适用于 **SMLib Studio Next** 全栈代码库（`backend/` 与 `static/`），所有新增或重构代码必须严格遵守。
+> 本规范适用于 **BrepX** 全栈代码库（`backend/` 与 `static/`），所有新增或重构代码必须严格遵守。
 
 ---
 
 ## 1. 品牌与术语规范 (Naming & Terminology)
-* **唯一产品名称**：全局统一使用 **SMLib Studio Next**。
+* **唯一产品名称**：全局统一使用 **BrepX**。
 * **历史清理禁令**：严禁在任何源码、HTML 标题、UI 徽章、注释、接口字段或文档中出现任何早期参考 Demo 的名称或旧目录引用。
 * **领域术语对齐**：
   - 拓扑层级严格使用 B-Rep 标准术语：`Body` (`Part`/`Shell`/`Sketch`)、`Face` (`face_index`)、`Edge` (`edge_index`)、`Vertex` (`vertex_index`)；

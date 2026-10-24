@@ -1,4 +1,4 @@
-"""Selection-Aware Native SMLib Geometry Operators for SMLib Studio Next.
+﻿"""Selection-Aware Native SMLib Geometry Operators for BrepX.
 
 All operators generate clean, reproducible, idempotent `smlibpy` Python code
 that acts directly on the user's B-Rep topological selections (`face_indices`,

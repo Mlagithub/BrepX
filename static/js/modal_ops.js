@@ -1,5 +1,5 @@
-/**
- * Blender-Style Modal Operator State Machine for SMLib Studio Next.
+﻿/**
+ * Blender-Style Modal Operator State Machine for BrepX.
  * Implements interactive Face Extrude (E), Edge Fillet/Chamfer (Ctrl+B),
  * G/R/S transforms, X deletion, and Blender F9 Adjust Last Operation panel.
  */

@@ -1,4 +1,4 @@
-"""B-Rep topological graphic serializer for SMLib Studio Next.
+﻿"""B-Rep topological graphic serializer for BrepX.
 
 Serializes SMLib Part, Shell, Sketch, Wire, and Edge objects into structured
 B-Rep graphic containers with independent per-face meshes (face_index),

@@ -1,4 +1,4 @@
-# Implementation Task List: SMLib Studio Next 深度架构重构
+﻿# Implementation Task List: BrepX 深度架构重构
 
 > 本任务清单严格遵循 [`docs/spec/REFACTORING_ARCHITECTURE_PLAN.md`](../docs/spec/REFACTORING_ARCHITECTURE_PLAN.md) 与 [`docs/CODE_STANDARDS.md`](../docs/CODE_STANDARDS.md) 拆解，采用自底向上、垂直切片验证的方式执行。
 

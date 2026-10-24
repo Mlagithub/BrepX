@@ -1,4 +1,4 @@
-"""Unified Workspace Session Engine for SMLib Studio Next.
+﻿"""Unified Workspace Session Engine for BrepX.
 
 Maintains the persistent Python modeling namespace, AST security sandbox,
 history steps, Undo/Redo stack, and Adjust Last Operation replay.

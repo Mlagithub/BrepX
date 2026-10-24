@@ -1,5 +1,5 @@
-/**
- * Interactive 3D Viewport Workplane Sketcher for SMLib Studio Next.
+﻿/**
+ * Interactive 3D Viewport Workplane Sketcher for BrepX.
  * Allows clicking on the XY ground plane or a selected B-Rep face to draw
  * Line, Rectangle, Circle, Arc, Polyline, and Spline with rubber-band previews.
  */

@@ -1,4 +1,4 @@
-"""SMLib Studio Next Application Entrypoint."""
+﻿"""BrepX Application Entrypoint."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.router import router
 
 app = FastAPI(
-    title="SMLib Studio Next",
+    title="BrepX",
     description="AI + CAD + CAE (CFD) Interactive B-Rep Geometry Workbench",
     version="2.0.0",
 )

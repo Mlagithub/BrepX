@@ -1,6 +1,6 @@
-# SMLib Studio Next
+﻿# BrepX
 
-**SMLib Studio Next** 是专为 **AI + CAD + CAE (特别是 CFD 工业流体仿真全栈体系)** 设计的现代化、Blender 式流体交互、Agent 原生的三维 B-Rep 几何建模工作台。
+**BrepX** 是专为 **AI + CAD + CAE (特别是 CFD 工业流体仿真全栈体系)** 设计的现代化、Blender 式流体交互、Agent 原生的三维 B-Rep 几何建模工作台。
 
 本系统基于瑞士 **SMLib NURBS 工业几何内核 (`smlibpy`)** 构建，将精确的 B-Rep 拓扑边界表示（点、边、环、面、壳、体）、Blender 5.1.2 级视口模态交互手感（`G/R/S` 空间变换、`E` 选面交互拉伸、`Ctrl+B` 选边交互倒角、3D 视口直接绘制 2D 草图、左下角 `Adjust Last Operation` 实时参数微调）与共享统一工作区 (`WorkspaceSession`) 的具身 AI Agent 深度融合，支持一键去特征化 (`remove_fillets` / `remove_faces`)、内流道水密提取 (`cavity_extraction`) 以及表面物理边界语义 (`Inlet` / `Outlet` / `Wall` / `Interface`) 标注与工业标准 **STEP AP242** 交付。
 
@@ -28,7 +28,7 @@ python server.py
 
 | Command | Description |
 |---------|-------------|
-| `python server.py` | 启动 SMLib Studio Next Web 服务 (`http://127.0.0.1:8080`) |
+| `python server.py` | 启动 BrepX Web 服务 (`http://127.0.0.1:8080`) |
 | `python -m unittest discover -s tests` | 运行全部后端单元测试与 API 端到端集成测试 |
 | `python -m unittest tests/test_workspace_and_brep.py` | 单独运行统一工作区与 B-Rep 拓扑图形容器测试 |
 | `python -m unittest tests/test_api_e2e.py` | 单独运行全算子、Agent 协同与 CFD 边界导出测试 |

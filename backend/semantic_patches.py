@@ -1,4 +1,4 @@
-"""CFD Boundary Surface Semantic Patch Manager for SMLib Studio Next.
+﻿"""CFD Boundary Surface Semantic Patch Manager for BrepX.
 
 Binds physical CFD boundary conditions (inlet, outlet, wall, symmetry,
 interface, internal) to B-Rep topological faces with geometric fingerprint

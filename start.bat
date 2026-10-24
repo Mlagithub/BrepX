@@ -1,8 +1,8 @@
-@echo off
+﻿@echo off
 chcp 65001 > nul
-title SMLib Studio Next
+title BrepX
 echo =======================================================
-echo          SMLib Studio Next (AI + CAD + CAE)
+echo          BrepX (AI + CAD + CAE)
 echo =======================================================
 echo Checking Python env...
 python -m pip install -r requirements.txt --quiet

@@ -1,4 +1,4 @@
-"""Embodied CAD & CFD Agent Engine for SMLib Studio Next.
+﻿"""Embodied CAD & CFD Agent Engine for BrepX.
 
 Shares the unified WorkspaceSession namespace, injects active B-Rep topological
 selections (`part.faces()[j]`, `part.edges()[n]`) and `smlibpy.mcp.discovery`
@@ -19,7 +19,7 @@ from smlibpy.mcp import discovery
 from .operators import build_operator_code
 from .workspace import WorkspaceSession, workspace_session
 
-SYSTEM_PROMPT = """你是 SMLib Studio Next 的具身 CAD 与 CFD 几何建模工程师。
+SYSTEM_PROMPT = """你是 BrepX 的具身 CAD 与 CFD 几何建模工程师。
 你与人类工程师共享同一个实时 3D 视口与持久化 Python 工作区 (`part` 是当前场景中的主几何体)。
 
 【核心建模规则】

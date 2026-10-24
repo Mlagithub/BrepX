@@ -1,4 +1,4 @@
-# SMLib Studio Next 彻底重构方案：去除 Demo 痕迹、落地真实 B-Rep 拓扑管线、Blender 模态交互与统一 Agent 会话
+﻿# BrepX 彻底重构方案：去除 Demo 痕迹、落地真实 B-Rep 拓扑管线、Blender 模态交互与统一 Agent 会话
 
 > 本文档定义了从早期原型向工业级 **AI + CAD + CAE (CFD)** 几何建模工作台演进的完整架构重构方案，彻底解决历史遗留的脏文件、Demo 痕迹、假三角面片拾取、工具硬编码以及 Agent 上下文割裂五大核心痛点。
 
@@ -154,7 +154,7 @@ C:\Users\keep_\work\smlib\
 ## 四、 代码规范契约 (`docs/CODE_STANDARDS.md`)
 
 1. **命名与术语规范**：
-   - 全局统一产品名称为 **SMLib Studio Next**，禁止在任何代码、注释或文档中出现旧参考项目的名称；
+   - 全局统一产品名称为 **BrepX**，禁止在任何代码、注释或文档中出现旧参考项目的名称；
    - Python 遵循 PEP 8，`snake_case` 函数/变量，`PascalCase` 类名；JavaScript 遵循 ES2022 Modules，`camelCase` 函数/变量。
 2. **模块体积与职责边界**：
    - 任何单个前端 JS 模块不超过 350 行；任何单个后端 Python 模块不超过 400 行；

@@ -1,5 +1,5 @@
-/**
- * Global reactive CADContext bus for SMLib Studio Next.
+﻿/**
+ * Global reactive CADContext bus for BrepX.
  * Maintains scene data, selections, active mode, and listeners.
  */
 

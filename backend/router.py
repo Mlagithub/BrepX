@@ -1,4 +1,4 @@
-"""FastAPI REST API Router for SMLib Studio Next."""
+﻿"""FastAPI REST API Router for BrepX."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def _ensure_initial_model() -> None:
 def api_info() -> dict[str, Any]:
     return {
         "status": "ready",
-        "product": "SMLib Studio Next",
+        "product": "BrepX",
         "smlibpy_version": getattr(smlibpy, "__version__", "0.4.0"),
         "kernel": "SMLib NURBS B-Rep Kernel",
         "platform": sys.platform,

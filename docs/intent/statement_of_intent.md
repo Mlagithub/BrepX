@@ -1,6 +1,6 @@
-# 产品最终愿景声明 (Statement of Intent)
+﻿# 产品最终愿景声明 (Statement of Intent)
 
-> 本文档由 `/interview-me` 经过与业务负责人的深度对齐后正式确立，作为本项目（SMLib Studio Next）后续所有架构设计、API 制定与功能实现的顶层意图宪章。
+> 本文档由 `/interview-me` 经过与业务负责人的深度对齐后正式确立，作为本项目（BrepX）后续所有架构设计、API 制定与功能实现的顶层意图宪章。
 
 ---
 
