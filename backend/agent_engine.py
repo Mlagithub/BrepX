@@ -1,4 +1,4 @@
-﻿"""Embodied CAD & CFD Agent Engine for BrepX.
+"""Embodied CAD & CFD Agent Engine for BrepX.
 
 Shares the unified WorkspaceSession namespace, injects active B-Rep topological
 selections (`part.faces()[j]`, `part.edges()[n]`) and `smlibpy.mcp.discovery`
@@ -80,7 +80,7 @@ class LocalEmbodiedResolver:
         nums = [float(x) for x in re.findall(r"([+-]?\d+(?:\.\d+)?)", prompt)]
         ev = _extract_num
 
-        # 1. Selection-driven commands when the user has picked faces or edges in the viewport
+        # 基于视口当前拓扑选区（面/边）的上下文感知增量几何操作
         if selections and has_existing_part:
             if any(k in p_low for k in ["圆角", "fillet", "倒圆"]):
                 r = ev(prompt, ["r", "半径", "圆角"], nums[0] if nums else 4.0)
@@ -118,7 +118,7 @@ class LocalEmbodiedResolver:
                 code, lbl, rep = build_operator_code("extrude", {"height": h_val}, selections, True)
                 return f"已沿您选中的拓扑面法向执行 {h_val} mm 拉伸变换。", code, rep
 
-        # 2. CFD Flow Domain Templates & Pre-processing
+        # 面向 CFD 典型流体域形态模板与前处理算子快速生成
         if any(k in p_low for k in ["文丘里", "喷嘴", "渐缩", "喉部", "venturi", "nozzle"]):
             r_in = ev(prompt, ["入口", "大端", "外径"], 25.0)
             r_th = ev(prompt, ["喉部", "喉径", "小端"], 12.0)
@@ -151,7 +151,7 @@ class LocalEmbodiedResolver:
             code, lbl, _ = build_operator_code("remove_fillets", {}, selections, has_existing_part)
             return "已执行 CFD 去特征化：自动识别并擦除圆角面，延伸恢复锐边。", code, False
 
-        # 3. Incremental modifications on existing part
+        # 针对工作区现有主几何实体的二次增量建模修改
         if has_existing_part and any(k in p_low for k in ["再", "增加", "加个", "打个", "开个", "倒个", "把", "改成", "修改"]):
             if any(k in p_low for k in ["圆角", "fillet"]):
                 r = ev(prompt, ["圆角", "r", "半径"], nums[0] if nums else 5.0)
@@ -163,7 +163,7 @@ class LocalEmbodiedResolver:
                 code = f"part = part - Cylinder({abs(r_val)}, 120)"
                 return f"已在现有模型上贯穿切削半径 R{abs(r_val)} mm 的通孔。", code, False
 
-        # 4. Standard mechanical parts (Flange, Bracket, Bushing, Box, Cylinder, Sphere)
+        # 常见标准机械零部件参数化样板自动求解
         if any(k in p_low for k in ["法兰", "flange", "圆盘"]):
             d_out = ev(prompt, ["外径", "直径"], 80.0)
             d_in = ev(prompt, ["内孔", "内径", "通孔"], 30.0)

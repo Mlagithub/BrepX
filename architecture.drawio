@@ -1,0 +1,146 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="BrepX-Architecture" name="BrepX 系统整体架构图">
+    <mxGraphModel dx="2138" dy="1159" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1320" pageHeight="1220" background="light-dark(#ffffff, #121212)" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" parent="1" style="swimlane;startSize=28;fontFamily=Arial;fontSize=13;fontStyle=1;fillColor=#e3f2fd;strokeColor=#1565c0;collapsible=0;container=1;whiteSpace=wrap;html=1;" value="前端客户端与视口交互层 (Client Viewport &amp;amp; Interaction Tier)" vertex="1">
+          <mxGeometry height="240" width="1240" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_ui_shell" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;UI Shell 外壳与状态栏&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;• 顶部工具栏 (模式/视图/快照)&lt;br/&gt;• 左侧 T-Panel (图元/草图/特征)&lt;br/&gt;• 底部模态状态 HUD&lt;br/&gt;• 右侧 Agent 抽屉与代码编辑器&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="250" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_cad_context" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0288d1;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;CADContext 响应式状态总线&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;• Mode: OBJECT / EDIT&lt;br/&gt;• Selection Level: 面 / 边 / 点&lt;br/&gt;• Active Selection 拓扑表达式&lt;br/&gt;• Event Bus (scene:updated, sel:change)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="270" x="300" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_viewport_engine" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;Three.js 真实 B-Rep 视口渲染引擎&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;• 独立 Face Meshes (face_index 拓扑映射)&lt;br/&gt;• 独立 Edge Polylines (接缝线过滤)&lt;br/&gt;• 独立 Vertex 点集渲染&lt;br/&gt;• 显存生命周期回收 (.dispose())&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="310" x="600" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_selection" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;Selection 拓扑拾取&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;Raycasting 射线拾取&lt;br/&gt;Face/Edge/Vertex 预高亮&lt;br/&gt;Shift 累加多选&lt;/font&gt;" vertex="1">
+          <mxGeometry height="75" width="200" x="20" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="node_modal_ops" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;ModalOps 模态操作符&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;E 面拉伸 / Ctrl+B 边倒角&lt;br/&gt;G/R/S 空间变换手柄&lt;br/&gt;Adjust Last (F9) 参数微调&lt;/font&gt;" vertex="1">
+          <mxGeometry height="75" width="230" x="240" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="node_sketcher" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;Sketcher 交互式草图&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;工作平面/面基准对齐&lt;br/&gt;直线/矩形/圆/弧线绘制&lt;br/&gt;草图实时几何投影&lt;/font&gt;" vertex="1">
+          <mxGeometry height="75" width="220" x="490" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="node_boundary_ui" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;Boundary 物理边界着色&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;Inlet/Outlet/Wall 识别&lt;br/&gt;物理补丁实时着色&lt;br/&gt;CFD 边界浮动标签分配&lt;/font&gt;" vertex="1">
+          <mxGeometry height="75" width="230" x="730" y="150" as="geometry" />
+        </mxCell>
+        <mxCell id="node_agent_panel" parent="2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;Agent 交互抽屉面板&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#546e7a&#39;&gt;自然语言对话流&lt;br/&gt;选区胶囊实时同步&lt;br/&gt;流体设计意图转译&lt;/font&gt;" vertex="1">
+          <mxGeometry height="185" width="240" x="980" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="3" parent="1" style="swimlane;startSize=28;fontFamily=Arial;fontSize=13;fontStyle=1;fillColor=#eceff1;strokeColor=#455a64;collapsible=0;container=1;whiteSpace=wrap;html=1;" value="通信与路由网关层 (FastAPI REST API Gateway)" vertex="1">
+          <mxGeometry height="100" width="1240" x="40" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="node_gw_workspace" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;工作区与算子路由&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#37474f&#39;&gt;/api/workspace/state&lt;br/&gt;/api/workspace/execute_operator&lt;br/&gt;/api/workspace/adjust_last&lt;br/&gt;/api/workspace/undo | redo&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="270" x="20" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_gw_agent" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;具身 Agent 交互路由&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#37474f&#39;&gt;/api/agent/chat&lt;br/&gt;• 选区与历史上下文注入&lt;br/&gt;• 自动化纠错重试机制&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="270" x="320" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_gw_semantic" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;CFD 物理语义路由&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#37474f&#39;&gt;/api/semantic/patches&lt;br/&gt;/api/semantic/assign&lt;br/&gt;/api/semantic/remove&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="270" x="620" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_gw_export" parent="3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=10;align=center;" value="&lt;b&gt;工程标准导出路由&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#37474f&#39;&gt;/api/export/step (AP242)&lt;br/&gt;/api/export/cfd_meta&lt;br/&gt;/api/export/stl | gltf | py&lt;/font&gt;" vertex="1">
+          <mxGeometry height="55" width="290" x="920" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="4" parent="1" style="swimlane;startSize=28;fontFamily=Arial;fontSize=13;fontStyle=1;fillColor=#f1f8e9;strokeColor=#2e7d32;collapsible=0;container=1;whiteSpace=wrap;html=1;" value="后端核心建模与工作区引擎 (Backend Core Modeling &amp;amp; Workspace Engine)" vertex="1">
+          <mxGeometry height="330" width="1240" x="40" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="node_workspace_session" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;WorkspaceSession 统一工作区中枢&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#33691e&#39;&gt;• &lt;b&gt;持久化 Python 命名空间&lt;/b&gt;: 持有当前主几何实体 (part)&lt;br/&gt;• &lt;b&gt;AST 安全沙盒审计&lt;/b&gt;: 限制模块白名单，拦截危险内置函数与系统调用&lt;br/&gt;• &lt;b&gt;无损撤销重做栈&lt;/b&gt;: HistoryStep 快照链、Undo/Redo 状态同步&lt;br/&gt;• &lt;b&gt;Adjust Last 操作重放&lt;/b&gt;: 原地参数更新并重新执行最后算子&lt;br/&gt;• &lt;b&gt;代码即原始定义 (Code-as-Original)&lt;/b&gt;: 增量生成纯净可复现的 Python 脚本&lt;/font&gt;" vertex="1">
+          <mxGeometry height="130" width="570" x="20" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_operators" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;operators.py 选区敏感几何算子库&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#33691e&#39;&gt;• &lt;b&gt;解析图元与样板&lt;/b&gt;: Box, Cylinder, Sphere, Flange...&lt;br/&gt;• &lt;b&gt;草图成型算子&lt;/b&gt;: Extrude (拉伸/开槽), Revolve, Sweep, Loft&lt;br/&gt;• &lt;b&gt;拓扑特征算子&lt;/b&gt;: Fillet (倒圆角), Chamfer (倒角), Hole, Shell, Draft&lt;br/&gt;• &lt;b&gt;布尔与变换&lt;/b&gt;: Union, Difference, Intersection, Split, Mirror, Array&lt;br/&gt;• &lt;b&gt;CFD 直接建模与去特征&lt;/b&gt;: remove_fillets (去圆角), remove_faces (填平愈合), cavity_extraction (水密流道提取), heal (拓扑修复)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="130" width="570" x="20" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="node_agent_engine" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;agent_engine.py 具身 CAD/CFD Agent&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#e65100&#39;&gt;• &lt;b&gt;实时视口选区感知&lt;/b&gt;: 解析注入当前选中面/边表达式 (如 part.faces()[j])&lt;br/&gt;• &lt;b&gt;smlibpy.mcp.discovery RAG&lt;/b&gt;: 动态检索 SMLib 原生 API 签名与设计用法&lt;br/&gt;• &lt;b&gt;LocalEmbodiedResolver&lt;/b&gt;: 针对打孔、拉伸、倒角、流道抽取的离线零延迟解析&lt;br/&gt;• &lt;b&gt;LLM 云端智能协同&lt;/b&gt;: 支持 DeepSeek / OpenAI / Ollama 协议&lt;br/&gt;• &lt;b&gt;闭环自愈重试&lt;/b&gt;: 捕获内核异常 Traceback，驱动模型自动修正重试&lt;/font&gt;" vertex="1">
+          <mxGeometry height="130" width="600" x="610" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="node_semantic_patches" parent="4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;semantic_patches.py CFD 物理边界语义管理&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#e65100&#39;&gt;• &lt;b&gt;物理边界分类&lt;/b&gt;: Inlet (入口), Outlet (出口), Wall (壁面), Symmetry (对称), Interface (交界), Internal (内流道)&lt;br/&gt;• &lt;b&gt;几何指纹跟踪&lt;/b&gt;: 记录面积、中心坐标、法向向量、曲面几何类型 (geom_type)&lt;br/&gt;• &lt;b&gt;拓扑重绑定算法&lt;/b&gt;: 几何体参数变化导致 face_index 变化时，按几何指纹最接近原则自动重新关联&lt;br/&gt;• &lt;b&gt;标准属性生成&lt;/b&gt;: 面向 STEP AP242 属性写入与 OpenFOAM 边界字典序列化&lt;/font&gt;" vertex="1">
+          <mxGeometry height="130" width="600" x="610" y="185" as="geometry" />
+        </mxCell>
+        <mxCell id="5" parent="1" style="swimlane;startSize=28;fontFamily=Arial;fontSize=13;fontStyle=1;fillColor=#e0f2f1;strokeColor=#00796b;collapsible=0;container=1;whiteSpace=wrap;html=1;" value="真实 B-Rep 拓扑图形序列化管线 (brep_graphic.py)" vertex="1">
+          <mxGeometry height="130" width="1240" x="40" y="795" as="geometry" />
+        </mxCell>
+        <mxCell id="node_pipe_face" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00796b;fontFamily=Arial;fontSize=10;align=left;spacingLeft=6;" value="&lt;b&gt;独立面网格 (Face Meshes)&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#004d40&#39;&gt;• 严格保留 face_index 对应 part.faces()[j]&lt;br/&gt;• 解析几何元数据 (类型/法向/中心/面积/曲率半径)&lt;br/&gt;• 高保真三角网格顶点与法向离散&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="360" x="20" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_pipe_edge" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00796b;fontFamily=Arial;fontSize=10;align=left;spacingLeft=6;" value="&lt;b&gt;独立边折线 (Edge Polylines)&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#004d40&#39;&gt;• 严格保留 edge_index 对应 part.edges()[n]&lt;br/&gt;• 直线、圆弧、高阶 NURBS 样条曲线采样&lt;br/&gt;• 自动识别并过滤圆柱/环体假特征接缝线 (Seam Edges)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="410" x="410" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_pipe_vertex" parent="5" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#00796b;fontFamily=Arial;fontSize=10;align=left;spacingLeft=6;" value="&lt;b&gt;独立拓扑顶点 (Vertex Points)&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#004d40&#39;&gt;• 严格保留 vertex_index 对应 part.vertices()[k]&lt;br/&gt;• 精确三维坐标几何点集采样&lt;br/&gt;• 供前端测量与捕捉辅助&lt;/font&gt;" vertex="1">
+          <mxGeometry height="80" width="360" x="850" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="6" parent="1" style="swimlane;startSize=28;fontFamily=Arial;fontSize=13;fontStyle=1;fillColor=#fffde7;strokeColor=#fbc02d;collapsible=0;container=1;whiteSpace=wrap;html=1;" value="底层工业几何内核与工业物理标准交付 (Geometry Kernel &amp;amp; Engineering Deliverables)" vertex="1">
+          <mxGeometry height="140" width="1240" x="40" y="950" as="geometry" />
+        </mxCell>
+        <mxCell id="node_smlib_kernel" parent="6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fbc02d;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;SMLib NURBS C++ Kernel (smlibpy 0.4.0)&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#f57f17&#39;&gt;• &lt;b&gt;B-Rep 真实拓扑结构&lt;/b&gt;: Part, Shell, Face, Wire, Edge, Vertex, Sketch&lt;br/&gt;• &lt;b&gt;高精度几何算法&lt;/b&gt;: NURBS 曲面构建、连续性倒圆角、修剪曲面布尔运算&lt;br/&gt;• &lt;b&gt;工业内核三角化引擎&lt;/b&gt;: C++ 级边界网格划分与离散曲率控制&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="570" x="20" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="node_engineering_delivery" parent="6" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#fbc02d;fontFamily=Arial;fontSize=11;align=left;spacingLeft=8;" value="&lt;b&gt;工业标准与 CFD 仿真全栈交付&lt;/b&gt;&lt;br/&gt;&lt;font color=&#39;#f57f17&#39;&gt;• &lt;b&gt;STEP AP242 标准文件&lt;/b&gt;: 携带面级装配与物理边界属性 (Inlet/Outlet/Wall)&lt;br/&gt;• &lt;b&gt;OpenFOAM 仿真边界字典&lt;/b&gt;: 导出零网格歧义的边界条件配置&lt;br/&gt;• &lt;b&gt;工程三维资产&lt;/b&gt;: 高精度 STL 流体域表面网格、glTF 实时预览模型&lt;/font&gt;" vertex="1">
+          <mxGeometry height="90" width="600" x="610" y="35" as="geometry" />
+        </mxCell>
+        <mxCell id="7" edge="1" parent="1" source="node_modal_ops" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2;entryY=0.0;entryDx=0;entryDy=0" target="node_gw_workspace" value="确认操作 (operator, params, selections)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="8" edge="1" parent="1" source="node_agent_panel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_gw_agent" value="意图提示词 + 视口选区">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="9" edge="1" parent="1" source="node_boundary_ui" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_gw_semantic" value="边界补丁分配 (face_indices, type)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="10" edge="1" parent="1" source="node_gw_workspace" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.3;exitY=1.0;exitDx=0;exitDy=0;entryX=0.2;entryY=0.0;entryDx=0;entryDy=0" target="node_operators" value="分发算子参数构建代码">
+          <mxGeometry relative="1" x="-0.0374" y="-4" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="141" y="474.5" />
+              <mxPoint x="174" y="474.5" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="11" edge="1" parent="1" source="node_operators" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0" target="node_workspace_session" value="返回 Python 执行代码与标签">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="12" edge="1" parent="1" source="node_gw_agent" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_agent_engine" value="自然语言转译与调用">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="13" edge="1" parent="1" source="node_agent_engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0" target="node_workspace_session" value="提交增量建模代码与执行">
+          <mxGeometry relative="1" x="0.333" y="17" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="14" edge="1" parent="1" source="node_gw_semantic" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_semantic_patches" value="更新/重绑定边界补丁">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="15" edge="1" parent="1" source="node_workspace_session" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.3;exitY=1.0;exitDx=0;exitDy=0;entryX=0.3;entryY=0.0;entryDx=0;entryDy=0" target="node_smlib_kernel" value="Python AST 沙盒执行驱动 SMLib 内核">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="16" edge="1" parent="1" source="node_smlib_kernel" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.1;exitY=0.0;exitDx=0;exitDy=0;entryX=0.1;entryY=1.0;entryDx=0;entryDy=0" target="node_pipe_face" value="传递生成好的 Part / Shell 拓扑实体">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="17" edge="1" parent="1" source="node_pipe_edge" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0" target="node_viewport_engine" value="结构化 B-Rep 场景数据包 (Face/Edge/Vertex 独立缓冲)">
+          <mxGeometry relative="1" x="0.0356" y="22" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="18" edge="1" parent="1" source="node_viewport_engine" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.0;exitY=0.5;exitDx=0;exitDy=0;entryX=1.0;entryY=0.5;entryDx=0;entryDy=0" target="node_cad_context" value="拾取命中事件与拓扑序号同步">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="19" edge="1" parent="1" source="node_cad_context" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.1;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_selection" value="分发拓扑选区更新">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="20" edge="1" parent="1" source="node_cad_context" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=1.0;exitY=0.2;exitDx=0;exitDy=0;entryX=0.0;entryY=0.2;entryDx=0;entryDy=0" target="node_agent_panel" value="选区表达式注入 Agent 上下文">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="21" edge="1" parent="1" source="node_semantic_patches" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0" target="node_engineering_delivery" value="注入几何指纹与边界语义元数据">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="22" edge="1" parent="1" source="node_gw_export" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#455a64;strokeWidth=1.5;fontFamily=Arial;fontSize=10;fontColor=#37474f;;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;entryX=0.8;entryY=0.0;entryDx=0;entryDy=0" target="node_engineering_delivery" value="触发工业标准 STEP AP242 / CFD 文件生成">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,14 +1,10 @@
-﻿/**
- * CFD Physical Boundary Surface Coloring & Patch Manager for BrepX.
- * Switches face colors only in Boundary Mode and renders patch cards.
- */
-
 import * as THREE from 'three';
 import { modelGroup } from './viewport.js';
 import { ctx } from './context.js';
 
 const patchListEl = document.getElementById('cfd-patch-list');
 
+// 物理边界材质缓存池，避免重复创建材质导致显存泄漏
 const boundaryMaterialCache = new Map();
 function getBoundaryMaterial(colorHex) {
   if (!boundaryMaterialCache.has(colorHex)) {
@@ -26,6 +22,7 @@ function getBoundaryMaterial(colorHex) {
   return boundaryMaterialCache.get(colorHex);
 }
 
+// 标准 CAD 天蓝色默认材质
 const defaultCADMaterial = new THREE.MeshStandardMaterial({
   color: 0x80baff,
   metalness: 0.15,
@@ -37,13 +34,13 @@ const defaultCADMaterial = new THREE.MeshStandardMaterial({
 });
 
 /**
- * Update face mesh materials according to boundary mode status.
+ * 根据边界模式状态与补丁映射更新所有拓扑面的网格材质
  */
 export function updateBoundaryVisuals() {
   const isBoundaryActive = ctx.isBoundaryMode;
   const patches = ctx.patches || [];
 
-  // Build a fast lookup: face_index -> color_hex
+  // 构建面索引到物理颜色映射表
   const faceColorMap = new Map();
   patches.forEach((p) => {
     (p.face_indices || []).forEach((fIdx) => {
@@ -65,18 +62,33 @@ export function updateBoundaryVisuals() {
   renderPatchList(patches);
 }
 
+/**
+ * 切换物理边界模式与标准 CAD 实体着色模式
+ */
 export function toggleBoundaryMode() {
   ctx.isBoundaryMode = !ctx.isBoundaryMode;
   updateBoundaryVisuals();
   return ctx.isBoundaryMode;
 }
 
-export async function assignFacePatch(faceIndex, semanticType, name = null) {
+/**
+ * 支持单面或多选面批量赋予物理边界语义属性
+ * @param {number|number[]} faceIndices 选中的拓扑面索引或索引列表
+ * @param {string} semanticType 边界类型 (inlet, outlet, wall, interface, symmetry)
+ * @param {string|null} name 自定义边界名称
+ */
+export async function assignFacePatch(faceIndices, semanticType, name = null) {
+  const cleanIndices = Array.isArray(faceIndices)
+    ? faceIndices.map(i => parseInt(i, 10)).filter(i => !isNaN(i))
+    : [parseInt(faceIndices, 10)];
+
+  if (!cleanIndices.length) return null;
+
   const res = await fetch('/api/semantic/patch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      face_indices: [faceIndex],
+      face_indices: cleanIndices,
       semantic_type: semanticType,
       name,
     }),
@@ -93,6 +105,9 @@ export async function assignFacePatch(faceIndex, semanticType, name = null) {
   return data.patch;
 }
 
+/**
+ * 移除指定的物理边界补丁并同步视口显示
+ */
 export async function deletePatch(patchId) {
   const res = await fetch(`/api/semantic/patch/${patchId}`, { method: 'DELETE' });
   const data = await res.json();
@@ -102,25 +117,87 @@ export async function deletePatch(patchId) {
   }
 }
 
+/**
+ * 清除模型上所有的物理边界标注
+ */
+export async function clearAllPatches() {
+  const patches = ctx.patches || [];
+  for (const p of patches) {
+    await fetch(`/api/semantic/patch/${p.id}`, { method: 'DELETE' });
+  }
+  ctx.setPatches([]);
+  updateBoundaryVisuals();
+}
+
+/**
+ * 渲染右侧面板中的物理边界卡片列表与面积统计
+ */
 function renderPatchList(patches) {
   if (!patchListEl) return;
   if (!patches.length) {
-    patchListEl.innerHTML = '<div class="empty-hint">暂无已标注边界。在 3D 视口中点击拓扑面并标记为对应边界类型。</div>';
+    patchListEl.innerHTML = `
+      <div class="empty-hint">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:6px;opacity:0.6;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        <div>暂无物理边界标注</div>
+        <div style="font-size:10px;margin-top:4px;color:var(--text-muted)">在 3D 视口中选中面，点击浮动打标条赋予物理边界</div>
+      </div>
+    `;
     return;
   }
 
-  patchListEl.innerHTML = patches.map((p) => `
-    <div class="patch-card">
+  const totalArea = patches.reduce((sum, p) => sum + (p.area || 0), 0);
+
+  let html = `
+    <div class="cfd-patch-summary-bar">
+      <span>已定义 <b>${patches.length}</b> 个边界</span>
+      <span>总面积: <b>${Math.round(totalArea)}</b> mm²</span>
+    </div>
+  `;
+
+  html += patches.map((p) => `
+    <div class="patch-card" data-patch-id="${p.id}">
       <div class="patch-card-info">
-        <div class="patch-title" style="color:${p.color_hex}">● ${p.name} (${p.semantic_type.toUpperCase()})</div>
-        <div class="patch-sub">面索引: [${p.face_indices.join(', ')}] · 面积: ${p.area} mm² · 法向: [${p.normal.join(', ')}]</div>
+        <div class="patch-title" style="color:${p.color_hex}">
+          <span class="patch-dot" style="background:${p.color_hex}"></span>
+          <b>${p.name}</b>
+          <span class="patch-type-pill" style="border-color:${p.color_hex};color:${p.color_hex}">${p.semantic_type.toUpperCase()}</span>
+        </div>
+        <div class="patch-sub">
+          面 [${p.face_indices.join(', ')}] · 面积: ${p.area} mm²
+        </div>
       </div>
-      <button class="btn-icon-subtle btn-del-patch" data-patch-id="${p.id}" title="删除此边界标注">✕</button>
+      <button class="btn-icon-subtle btn-del-patch" data-patch-id="${p.id}" title="删除此边界标注" aria-label="删除 ${p.name}">✕</button>
     </div>
   `).join('');
 
-  patchListEl.querySelectorAll('.btn-del-patch').forEach((btn) => {
-    btn.onclick = () => deletePatch(btn.dataset.patchId);
+  patchListEl.innerHTML = html;
+}
+
+// 物理边界补丁列表事件委托，避免频繁增删 DOM 节点时重复绑定事件
+if (patchListEl) {
+  patchListEl.addEventListener('click', (e) => {
+    const delBtn = e.target.closest('.btn-del-patch');
+    if (delBtn) {
+      e.stopPropagation();
+      deletePatch(delBtn.dataset.patchId);
+      return;
+    }
+    const card = e.target.closest('.patch-card');
+    if (card) {
+      const pid = card.dataset.patchId;
+      const targetPatch = (ctx.patches || []).find(p => p.id === pid);
+      if (!targetPatch) return;
+      const newSels = targetPatch.face_indices.map(fIdx => ({
+        type: 'face',
+        body: 'part',
+        index: fIdx,
+        expr: `part.faces()[${fIdx}]`,
+        meta: {},
+      }));
+      ctx.setMode('EDIT');
+      ctx.setSelectionLevel('face');
+      ctx.setSelections(newSels);
+    }
   });
 }
 

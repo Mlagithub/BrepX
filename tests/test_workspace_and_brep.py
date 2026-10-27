@@ -109,6 +109,40 @@ class TestWorkspaceAndBrep(unittest.TestCase):
         st_shell = self.ws.execute_step(code, lbl, "shell")
         self.assertLess(st_shell["scene"]["summary"]["volume"], 20000.0)
 
+    def test_cavity_extraction_manifold(self) -> None:
+        """验证内流体域水密提取算子生成闭合流形实体"""
+        code_init, _, _ = build_operator_code("box", {"length": 50, "width": 50, "height": 20})
+        self.ws.execute_step(code_init, "init", replace_all=True)
+        code_hole, _, _ = build_operator_code("hole", {"radius": 8.0, "depth": 30.0}, selections=["part.faces()[0]"], has_existing_part=True)
+        self.ws.execute_step(code_hole, "hole")
+
+        code_cavity, lbl, _ = build_operator_code("cavity_extraction", {}, has_existing_part=True)
+        st_cavity = self.ws.execute_step(code_cavity, lbl, "cavity_extraction")
+        part = self.ws.primary_part()
+        self.assertIsNotNone(part)
+        self.assertTrue(part.is_valid())
+        self.assertGreater(st_cavity["scene"]["summary"]["volume"], 0.0)
+
+    def test_draft_adaptive_neutral_plane(self) -> None:
+        """验证拔模算子在中性面方向上的自适应求解与流形有效性"""
+        code_init, _, _ = build_operator_code("box", {"length": 50, "width": 50, "height": 20})
+        self.ws.execute_step(code_init, "init", replace_all=True)
+        code_draft, lbl, _ = build_operator_code("draft", {"angle": 5.0}, selections=["part.faces()[0]"], has_existing_part=True)
+        st_draft = self.ws.execute_step(code_draft, lbl, "draft")
+        part = self.ws.primary_part()
+        self.assertIsNotNone(part)
+        self.assertTrue(part.is_valid())
+
+    def test_remove_faces_resilience(self) -> None:
+        """验证特征面消除算子在复杂边界下的容错求解与自愈"""
+        code_init, _, _ = build_operator_code("box", {"length": 50, "width": 50, "height": 20})
+        self.ws.execute_step(code_init, "init", replace_all=True)
+        code_remove, lbl, _ = build_operator_code("remove_faces", {}, selections=["part.faces()[0]"], has_existing_part=True)
+        st_remove = self.ws.execute_step(code_remove, lbl, "remove_faces")
+        part = self.ws.primary_part()
+        self.assertIsNotNone(part)
+        self.assertTrue(part.is_valid())
+
 
 if __name__ == "__main__":
     unittest.main()

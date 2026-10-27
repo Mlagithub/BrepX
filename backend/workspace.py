@@ -1,4 +1,4 @@
-﻿"""Unified Workspace Session Engine for BrepX.
+"""Unified Workspace Session Engine for BrepX.
 
 Maintains the persistent Python modeling namespace, AST security sandbox,
 history steps, Undo/Redo stack, and Adjust Last Operation replay.
@@ -269,7 +269,7 @@ class WorkspaceSession:
                 if not ln.strip().startswith("from smlibpy import") and ln.strip() != "import math"
             ).strip()
             if clean:
-                lines.append(f"# --- Step {idx}: {step.label} ---")
+                lines.append(f"# {step.label}")
                 lines.append(clean)
                 lines.append("")
         return "\n".join(lines).strip() + "\n"

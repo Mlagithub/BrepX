@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -27,8 +27,11 @@
 <body>
   <div id="app">
     <!-- 顶部主导航栏 -->
-    <header class="navbar">
+    <header class="navbar" role="banner">
       <div class="nav-brand">
+        <button class="nav-btn icon-only" id="btn-toggle-left-panel" title="折叠/展开左侧建模工具箱 (快捷键: T)" aria-label="折叠左侧建模工具箱">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
           <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
@@ -38,32 +41,32 @@
         <span class="brand-badge">B-Rep Native × CFD</span>
       </div>
 
-      <div class="nav-toolbar">
+      <div class="nav-toolbar" role="toolbar" aria-label="建模与视口主工具栏">
         <!-- 拾取层级分级切换 (点/边/面/体) -->
-        <div class="btn-group select-mode-group" id="selection-mode-group">
+        <div class="btn-group select-mode-group" id="selection-mode-group" role="group" aria-label="拓扑拾取层级">
           <button class="nav-btn active" data-sel-mode="solid" title="实体模式 (拾取整个模型)">实体</button>
           <button class="nav-btn" data-sel-mode="face" title="面模式 (快捷键: 3 · 拾取 CAD 拓扑曲面)">面 [3]</button>
           <button class="nav-btn" data-sel-mode="edge" title="边模式 (快捷键: 2 · 拾取 CAD 特征边线)">边 [2]</button>
           <button class="nav-btn" data-sel-mode="vertex" title="点模式 (快捷键: 1 · 捕捉拓扑端点)">点 [1]</button>
         </div>
 
-        <div class="btn-group cfd-mode-group">
+        <div class="btn-group cfd-mode-group" role="group" aria-label="物理边界模式">
           <button class="nav-btn" id="btn-toggle-boundary-mode" title="切换物理边界模式 (进入后彩色高亮显示 Inlet/Outlet/Wall，退出恢复纯色)">🌊 边界模式</button>
         </div>
 
-        <div class="btn-divider"></div>
+        <div class="btn-divider" role="separator"></div>
 
         <!-- 典型空间变换手柄 (G/R/S) -->
-        <div class="btn-group transform-group">
+        <div class="btn-group transform-group" role="group" aria-label="空间变换控制">
           <button class="nav-btn" id="btn-tool-move" title="平移变换手柄 (快捷键: G · 拖拽移动，按 X/Y/Z 锁定轴)">平移 [G]</button>
           <button class="nav-btn" id="btn-tool-rotate" title="旋转变换手柄 (快捷键: R · 绕轴旋转)">旋转 [R]</button>
           <button class="nav-btn" id="btn-tool-scale" title="缩放手柄 (快捷键: S)">缩放 [S]</button>
         </div>
 
-        <div class="btn-divider"></div>
+        <div class="btn-divider" role="separator"></div>
 
         <!-- 标准视图切换 -->
-        <div class="btn-group">
+        <div class="btn-group" role="group" aria-label="标准视图切换">
           <button class="nav-btn active" id="btn-iso" title="等轴测视图">等轴测</button>
           <button class="nav-btn" id="btn-front" title="正视图">正视</button>
           <button class="nav-btn" id="btn-top" title="俯视图">俯视</button>
@@ -71,21 +74,21 @@
           <button class="nav-btn" id="btn-fit" title="全景居中适应">适应</button>
         </div>
 
-        <div class="btn-divider"></div>
+        <div class="btn-divider" role="separator"></div>
 
         <!-- 视口渲染开关 -->
-        <div class="btn-group">
-          <button class="nav-btn" id="btn-camera-toggle" title="切换正交/透视相机">透视</button>
+        <div class="btn-group" role="group" aria-label="视口显示开关">
+          <button class="nav-btn" id="btn-camera-toggle" title="切换相机投影方式：透视 (Perspective) / 正交 (Orthographic)" aria-label="切换正交透视相机">📐 透视</button>
           <button class="nav-btn active" id="btn-grid-toggle" title="网格开关">网格</button>
           <button class="nav-btn active" id="btn-axes-toggle" title="基准轴开关">坐标轴</button>
           <button class="nav-btn active" id="btn-edges-toggle" title="特征轮廓线开关">边线</button>
-          <button class="nav-btn" id="btn-xray-toggle" title="X-Ray 半透明透视 (快捷键: Alt+Z)">透视 [Alt+Z]</button>
+          <button class="nav-btn" id="btn-xray-toggle" title="X-Ray 半透明透视视图 (快捷键: Alt+Z)" aria-label="X-Ray 透视模式">⚡ X-Ray [Alt+Z]</button>
         </div>
 
-        <div class="btn-divider"></div>
+        <div class="btn-divider" role="separator"></div>
 
         <!-- 工业交付中心 -->
-        <div class="btn-group export-group">
+        <div class="btn-group export-group" role="group" aria-label="工业导出交付">
           <button class="nav-btn btn-highlight" id="btn-export-step" title="导出工业级标准 STEP AP242 (含命名物理边界)">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             导出 STEP
@@ -95,13 +98,17 @@
           <button class="nav-btn" id="btn-export-gltf" title="导出 glTF 3D 文件">glTF</button>
           <button class="nav-btn" id="btn-export-py" title="导出完整可复现 Python 建模脚本">Python 源码</button>
         </div>
+
+        <button class="nav-btn icon-only" id="btn-toggle-right-panel" title="折叠/展开右侧工作区面板 (快捷键: N)" aria-label="折叠右侧面板">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+        </button>
       </div>
     </header>
 
     <!-- 工作台主体区域 -->
     <main class="main-container">
       <!-- 左侧交互工具箱 (T-Panel) 与场景特征树 -->
-      <aside class="sidebar left-toolbar-panel">
+      <aside class="sidebar left-toolbar-panel" id="left-sidebar" role="region" aria-label="建模工具箱与几何统计">
         <div class="panel-section-title">🛠️ 建模工具箱 (T-Panel)</div>
         <div class="toolbar-category">
           <div class="cat-label">3D 图元</div>
@@ -160,24 +167,37 @@
 
         <!-- 实时拓扑与外形统计 -->
         <div class="stats-card">
-          <div class="stat-header">📐 几何测量统计</div>
-          <div class="stat-row"><span class="stat-name">包围盒外形：</span><span class="stat-value" id="stat-bbox">- mm</span></div>
-          <div class="stat-row"><span class="stat-name">实体体积：</span><span class="stat-value" id="stat-volume">- mm³</span></div>
-          <div class="stat-row"><span class="stat-name">实体表面积：</span><span class="stat-value" id="stat-area">- mm²</span></div>
-          <div class="stat-row"><span class="stat-name">B-Rep 拓扑面：</span><span class="stat-value" id="stat-faces">-</span></div>
-          <div class="stat-row"><span class="stat-name">B-Rep 特征边：</span><span class="stat-value" id="stat-edges">-</span></div>
-          <div class="stat-row"><span class="stat-name">内核计算耗时：</span><span class="stat-value" id="stat-time">- ms</span></div>
+          <div class="stat-header">
+            <span class="stat-header-title">📐 几何拓扑统计</span>
+            <span class="stat-status-badge">● 拓扑有效</span>
+          </div>
+          <div class="stat-grid">
+            <div class="stat-row"><span class="stat-name">外形包围盒</span><span class="stat-value" id="stat-bbox">- mm</span></div>
+            <div class="stat-row"><span class="stat-name">实体净体积</span><span class="stat-value" id="stat-volume">- mm³</span></div>
+            <div class="stat-row"><span class="stat-name">总表面积</span><span class="stat-value" id="stat-area">- mm²</span></div>
+            <div class="stat-row"><span class="stat-name">B-Rep 曲面数</span><span class="stat-value" id="stat-faces">-</span></div>
+            <div class="stat-row"><span class="stat-name">特征线框数</span><span class="stat-value" id="stat-edges">-</span></div>
+            <div class="stat-row"><span class="stat-name">内核计算耗时</span><span class="stat-value" id="stat-time">- ms</span></div>
+          </div>
         </div>
       </aside>
 
       <!-- 中央全屏 3D 视口画布区域 -->
-      <section class="viewport-wrapper">
+      <section class="viewport-wrapper" role="region" aria-label="3D 视口画布">
         <div id="viewport" class="canvas-container"></div>
 
         <!-- 3D 视口顶部 HUD 指示 -->
         <div class="viewport-hud">
-          <div class="hud-mode" id="hud-interaction-info">左键：旋转视角 | 中键：平移 | 滚轮：缩放 | G/R/S：变换手柄 | Shift+A：快速添加</div>
-          <div class="hud-mode" id="hud-mode-tag" style="margin-top:4px;color:#ffd885">模式: 对象模式 [Tab 切换]</div>
+          <div class="hud-mode" id="hud-mode-tag">
+            <span class="hud-pill hud-pill-object">● 对象模式 [Tab]</span>
+          </div>
+          <div class="hud-shortcuts" id="hud-interaction-info">
+            <span class="hud-key-hint"><kbd>左键</kbd> 旋转</span>
+            <span class="hud-key-hint"><kbd>中键</kbd> 平移</span>
+            <span class="hud-key-hint"><kbd>滚轮</kbd> 缩放</span>
+            <span class="hud-key-hint"><kbd>G/R/S</kbd> 变换</span>
+            <span class="hud-key-hint"><kbd>Shift+A</kbd> 添加</span>
+          </div>
         </div>
 
         <!-- 模态操作中屏幕顶部显眼状态提示 (如拉伸或倒角进行中) -->
@@ -225,15 +245,15 @@
       </section>
 
       <!-- 右侧综合工作区面板 (N-Panel)：Agent 对话 / 物理边界 / 脚本编辑器 -->
-      <aside class="sidebar right-panel">
-        <div class="tab-header">
-          <button class="tab-btn active" data-tab="agent">🤖 具身 Agent</button>
-          <button class="tab-btn" data-tab="cfd">🌊 物理边界</button>
-          <button class="tab-btn" data-tab="script">🐍 Python 脚本</button>
+      <aside class="sidebar right-panel" id="right-sidebar" role="region" aria-label="Agent 与物理边界工作区">
+        <div class="tab-header" role="tablist" aria-label="工作区视图切换">
+          <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-agent" id="tab-btn-agent" data-tab="agent">🤖 具身 Agent</button>
+          <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-cfd" id="tab-btn-cfd" data-tab="cfd">🌊 物理边界</button>
+          <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-script" id="tab-btn-script" data-tab="script">🐍 Python 脚本</button>
         </div>
 
         <!-- Tab 1: 具身 Agent 协同面板 -->
-        <div class="tab-pane active" id="tab-agent">
+        <div class="tab-pane active" id="tab-agent" role="tabpanel" aria-labelledby="tab-btn-agent">
           <!-- 当前视口拓扑选区感知栏 -->
           <div class="selection-context-bar" id="selection-context-bar">
             <div class="ctx-header">
@@ -299,7 +319,7 @@
         </div>
 
         <!-- Tab 2: CFD 物理边界管理面板 -->
-        <div class="tab-pane" id="tab-cfd">
+        <div class="tab-pane" id="tab-cfd" role="tabpanel" aria-labelledby="tab-btn-cfd">
           <div class="panel-section-title">🌊 物理边界补丁列表 (Boundary Patches)</div>
           <div class="cfd-legend-bar">
             <span class="legend-chip" style="background:#3a86ff">Inlet 入口</span>
@@ -314,7 +334,7 @@
         </div>
 
         <!-- Tab 3: Python 建模脚本编辑器 -->
-        <div class="tab-pane" id="tab-script">
+        <div class="tab-pane" id="tab-script" role="tabpanel" aria-labelledby="tab-btn-script">
           <div class="script-toolbar">
             <button id="btn-run-script" class="btn btn-primary btn-sm" title="运行当前脚本更新模型 (Ctrl+Enter)">▶ 运行脚本 (Ctrl+Enter)</button>
             <button id="btn-copy-script" class="btn btn-secondary btn-sm" title="复制完整脚本">📋 复制</button>

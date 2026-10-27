@@ -1,4 +1,4 @@
-﻿"""Selection-Aware Native SMLib Geometry Operators for BrepX.
+"""Selection-Aware Native SMLib Geometry Operators for BrepX.
 
 All operators generate clean, reproducible, idempotent `smlibpy` Python code
 that acts directly on the user's B-Rep topological selections (`face_indices`,
@@ -62,7 +62,7 @@ def build_operator_code(
     if "edge_indices" in params and isinstance(params["edge_indices"], list):
         edge_ids = [int(i) for i in params["edge_indices"]]
 
-    # 1. 3D Primitives & Templates
+    # 基础解析三维图元与工程特征样板生成
     if op == "box":
         l, w, h = _num(params, "length", 60), _num(params, "width", 40), _num(params, "height", 20)
         return f"part = Box({l}, {w}, {h})", f"长方体 ({l}×{w}×{h})", not has_existing_part
@@ -117,7 +117,7 @@ def build_operator_code(
         )
         return code, f"草图凸台驱动件 ({l}×{w})", True
 
-    # 2. 2D Interactive Sketches (on plane or selected face)
+    # 二维草图构造与工作平面/基准面投影映射
     if op in ("line", "rectangle", "circle", "arc", "polyline", "bspline", "spline", "sketch_draw"):
         sketch_kind = _str(params, "sketch_kind", op)
         plane_name = _str(params, "plane", "XY").upper()
@@ -185,7 +185,7 @@ def build_operator_code(
             return f"sketch = {sk_expr}", lbl, False
         return f"sketch = {sk_expr}\npart = sketch", lbl, False
 
-    # 3. Selection-Sensitive Extrude, Revolve, Sweep, Loft
+    # 基于选区或工作平面的扫描、旋转与放样生成算子
     if op == "extrude":
         amount = _num(params, "height", _num(params, "amount", 20.0))
         mode = _str(params, "mode", "auto")  # auto | join | cut | new
@@ -233,7 +233,7 @@ def build_operator_code(
         code = f"s1 = Circle({r1})\ns2 = Circle({r2}).translate(0, 0, {h})\npart = loft([s1, s2])"
         return code, f"多截面放样 (R{r1}→R{r2}, H{h})", not has_existing_part
 
-    # 4. Selection-Sensitive Edge Fillet & Chamfer
+    # 针对拓扑特征边的局部圆角与倒角算子
     if op == "fillet":
         r = max(0.1, _num(params, "radius", 4.0))
         if edge_ids:
@@ -252,7 +252,7 @@ def build_operator_code(
         code = f"part = part.chamfer(part.edges().parallel_to(Z), {d})"
         return code, f"竖边倒角 (D{d})", False
 
-    # 5. Selection-Sensitive Hole, Shell, Offset, Draft
+    # 基于特征面的打孔、抽壳、等距偏移与拔模算子
     if op in ("hole", "counterbore", "countersink"):
         r = _num(params, "radius", 6.0)
         depth = _num(params, "depth", 40.0)
@@ -300,13 +300,21 @@ def build_operator_code(
     if op == "draft":
         angle = _num(params, "angle", 5.0)
         if face_ids:
-            faces_str = ", ".join(f"_faces[{i}]" for i in face_ids)
-            code = f"_faces = list(part.faces())\npart = part.draft([{faces_str}], {angle}, Plane.XY)"
+            code = (
+                f"_faces = list(part.faces())\n"
+                f"_targets = [_faces[i] for i in {face_ids} if i < len(_faces)]\n"
+                f"_norm = _targets[0].normal_at() if _targets else None\n"
+                f"_plane = Plane.XZ if (_norm and abs(_norm.z) > 0.6) else Plane.XY\n"
+                f"part = part.draft(_targets, {angle}, _plane) if _targets else part"
+            )
             return code, f"选面拔模 ({angle}°, 面 {face_ids})", False
-        code = f"_walls = [f for f in part.faces() if abs(f.normal_at().z) < 0.1]\npart = part.draft(_walls, {angle}, Plane.XY)"
+        code = (
+            f"_walls = [f for f in part.faces() if abs(f.normal_at().z) < 0.6]\n"
+            f"part = part.draft(_walls, {angle}, Plane.XY) if _walls else part"
+        )
         return code, f"侧壁拔模斜度 ({angle}°)", False
 
-    # 6. Booleans, Split, Mirror, Arrays, Transforms
+    # 全局布尔运算、空间切分、特征镜像与坐标变换算子
     if op in ("boolean-union", "boolean-subtract", "boolean-intersection", "boolean"):
         mode = _str(params, "operation", "union" if "union" in op else "difference" if "subtract" in op else "intersection")
         tk = _str(params, "tool_kind", "cylinder")
@@ -371,7 +379,7 @@ def build_operator_code(
         dx, dy = _num(params, "offset_x", 50.0), _num(params, "offset_y", 0.0)
         return f"part = part + part.translate({dx}, {dy}, 0)", f"复制并平移 ({dx}, {dy})", False
 
-    # 7. CFD Direct Modeling & Defeaturing Operators
+    # 面向流体仿真的直接建模与几何去特征化算子
     if op == "remove_fillets":
         if face_ids:
             f_str = ", ".join(f"_faces[{i}]" for i in face_ids)
@@ -387,15 +395,24 @@ def build_operator_code(
     if op == "remove_faces":
         if not face_ids:
             raise ValueError("请先在视口中选择要移除并愈合的特征面（如孔内壁面或凹槽面）")
-        f_str = ", ".join(f"_faces[{i}]" for i in face_ids)
-        code = f"_faces = list(part.faces())\npart = part.remove_faces([{f_str}])"
+        code = (
+            f"_faces = list(part.faces())\n"
+            f"_targets = [_faces[i] for i in {face_ids} if i < len(_faces)]\n"
+            f"try:\n"
+            f"    part = part.remove_faces(_targets)\n"
+            f"except Exception:\n"
+            f"    part = part.remove_faces(_targets, partial=True)"
+        )
         return code, f"移除特征面并愈合 ({face_ids})", False
 
     if op == "cavity_extraction":
         code = (
             "_bb = part.bbox()\n"
-            "_env = Box(_bb.size[0], _bb.size[1], _bb.size[2]).translate(_bb.center.x, _bb.center.y, _bb.center.z)\n"
-            "part = _env - part"
+            "_pad = max(max(_bb.size) * 0.1, 5.0)\n"
+            "_env = Box(_bb.size[0] + _pad * 2, _bb.size[1] + _pad * 2, _bb.size[2] + _pad * 2).translate(_bb.center.x, _bb.center.y, _bb.center.z)\n"
+            "_m = merge(_env, part)\n"
+            "_cells = list(_m.cells())\n"
+            "part = _cells[0] if len(_cells) > 1 else (_env - part)"
         )
         return code, "CFD 内流体域水密提取 (Cavity Extraction)", False
 

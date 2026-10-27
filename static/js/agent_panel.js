@@ -1,8 +1,3 @@
-﻿/**
- * Embodied Agent Panel Controller for BrepX.
- * Synchronizes viewport topological selections, LLM config, and chat stream.
- */
-
 import { ctx } from './context.js';
 
 const chatMessages = document.getElementById('chat-messages');
@@ -40,12 +35,13 @@ export function getLlmConfig() {
 
 if (btnToggleLlm && llmSettingsPanel) {
   btnToggleLlm.onclick = () => {
-    llmSettingsPanel.classList.toggle('hidden');
-    btnToggleLlm.textContent = llmSettingsPanel.classList.contains('hidden') ? '展开配置 ▾' : '收起配置 ▴';
+    const isHidden = llmSettingsPanel.classList.toggle('hidden');
+    btnToggleLlm.textContent = isHidden ? '展开配置 ▾' : '收起配置 ▴';
+    btnToggleLlm.setAttribute('aria-expanded', !isHidden);
   };
 }
 
-// LLM Connectivity test
+// 大模型端点连通性测试
 const btnTestLlm = document.getElementById('btn-test-llm');
 const llmTestResult = document.getElementById('llm-test-result');
 if (btnTestLlm) {
@@ -77,6 +73,13 @@ if (btnTestLlm) {
 
 let chatHistory = [];
 
+function escapeHtml(str) {
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * 插入消息气泡并绑定代码快捷操作
+ */
 export function appendMessageBubble(role, content, meta = {}) {
   const bubble = document.createElement('div');
   bubble.className = `chat-bubble ${role}`;
@@ -92,28 +95,75 @@ export function appendMessageBubble(role, content, meta = {}) {
       <div class="bubble-body">${escapeHtml(content).replace(/\n/g, '<br>')}</div>
     `;
     if (meta.code) {
-      html += `<pre class="bubble-code"><code>${escapeHtml(meta.code)}</code></pre>`;
+      html += `
+        <div class="code-block-wrapper">
+          <div class="code-block-bar">
+            <span class="code-lang">Python (smlibpy)</span>
+            <div class="code-actions">
+              <button class="btn-code-action btn-copy-code" title="复制代码">📋 复制</button>
+              <button class="btn-code-action btn-run-code" title="载入并执行">▶ 运行</button>
+            </div>
+          </div>
+          <pre class="bubble-code"><code>${escapeHtml(meta.code)}</code></pre>
+        </div>
+      `;
     }
     if (meta.error) {
       html += `<div style="color:#e06c75;margin-top:4px;font-size:11px;">⚠️ 执行提示: ${escapeHtml(meta.error)}</div>`;
     }
     bubble.innerHTML = html;
+
+    // 绑定代码块操作
+    const btnCopy = bubble.querySelector('.btn-copy-code');
+    if (btnCopy) {
+      btnCopy.onclick = async () => {
+        await navigator.clipboard.writeText(meta.code);
+        btnCopy.textContent = '已复制！';
+        setTimeout(() => { btnCopy.textContent = '📋 复制'; }, 1500);
+      };
+    }
+    const btnRun = bubble.querySelector('.btn-run-code');
+    if (btnRun) {
+      btnRun.onclick = async () => {
+        const editor = document.getElementById('script-editor');
+        if (editor) editor.value = meta.code;
+        const res = await fetch('/api/workspace/run_script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: meta.code, replace_all: false }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          ctx.setSceneData(data.scene);
+          ctx.setPatches(data.patches);
+        }
+      };
+    }
   }
 
   chatMessages.appendChild(bubble);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function escapeHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
+/**
+ * 驱动多轮具身 Agent 交互循环并派发场景变更
+ */
 export async function sendAgentTurn(userPrompt = '') {
   const text = (userPrompt || (agentInput ? agentInput.value : '')).trim();
   if (!text) return;
 
   if (agentInput) agentInput.value = '';
   appendMessageBubble('user', text);
+
+  // 展示思考等待脉冲
+  const loadingBubble = document.createElement('div');
+  loadingBubble.className = 'chat-bubble assistant typing-bubble';
+  loadingBubble.innerHTML = `
+    <div class="bubble-header"><span>🤖 SMLib 具身 Agent</span></div>
+    <div class="typing-indicator"><span></span><span></span><span></span></div>
+  `;
+  chatMessages.appendChild(loadingBubble);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 
   const reqSels = ctx.getSelectedExpressions();
   const cfg = getLlmConfig();
@@ -131,6 +181,7 @@ export async function sendAgentTurn(userPrompt = '') {
     });
 
     const data = await res.json();
+    loadingBubble.remove();
     if (!res.ok) throw new Error(data.detail || 'Agent 请求失败');
 
     appendMessageBubble('assistant', data.reply, {
@@ -147,6 +198,7 @@ export async function sendAgentTurn(userPrompt = '') {
       ctx.setLastOperation(data.state.last_operation);
     }
   } catch (err) {
+    loadingBubble.remove();
     appendMessageBubble('assistant', '网络或执行异常: ' + err.message);
   }
 }
@@ -175,7 +227,7 @@ export function initAgentPanel() {
     };
   }
 
-  // Quick prompt pills
+  // 快捷 Prompt 标签点击触发
   document.querySelectorAll('.prompt-pill').forEach((pill) => {
     pill.onclick = () => {
       const p = pill.dataset.prompt;

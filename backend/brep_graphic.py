@@ -1,4 +1,4 @@
-﻿"""B-Rep topological graphic serializer for BrepX.
+"""B-Rep topological graphic serializer for BrepX.
 
 Serializes SMLib Part, Shell, Sketch, Wire, and Edge objects into structured
 B-Rep graphic containers with independent per-face meshes (face_index),
@@ -137,7 +137,7 @@ def serialize_body(name: str, expr: str, shape: Any) -> dict[str, Any]:
     edges_out: list[dict[str, Any]] = []
     vertices_out: list[dict[str, Any]] = []
 
-    # 1. Vertices
+    # 提取拓扑顶点几何坐标与表达式映射
     try:
         verts = list(shape.vertices())
         for v_idx, v in enumerate(verts):
@@ -150,7 +150,7 @@ def serialize_body(name: str, expr: str, shape: Any) -> dict[str, Any]:
     except Exception:
         verts = []
 
-    # 2. Curve-only shapes (Wire / Edge) or 2D Sketches without faces
+    # 纯曲线拓扑实体（Wire/Edge）或无面草图的离散采样
     has_faces = hasattr(shape, "faces") and len(list(shape.faces())) > 0
     if isinstance(shape, (Edge, Wire)) or (isinstance(shape, Sketch) and not has_faces):
         from smlibpy.exporters import _curve_points
@@ -161,7 +161,7 @@ def serialize_body(name: str, expr: str, shape: Any) -> dict[str, Any]:
             e_meta["points"] = _flat_list(pts, 4)
             edges_out.append(e_meta)
     else:
-        # 3. Solid / Shell / Face-backed Sketch
+        # 实体表面（Solid/Shell/Face）的边界曲面与特征线离散解构
         actual_shape = shape.to_shell() if isinstance(shape, Face) else shape
         tol = max(bb.diagonal, 1e-6) * 1e-3
 

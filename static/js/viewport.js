@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { ctx } from './context.js';
+import { initViewCube, updateViewCube } from './view_cube.js';
 
 export const container = document.getElementById('viewport');
 const width = container.clientWidth;
@@ -116,7 +117,7 @@ export function buildBrepScene(sceneData) {
     bodyRoot.name = `body_${body.name}`;
     bodyRoot.userData = { bodyName: body.name, bodyExpr: body.expr, kind: body.kind, bbox: body.bbox };
 
-    // 1. Construct independent Face Meshes
+    // 构造具备独立拓扑面索引与几何元数据的可拾取曲面网格
     (body.faces || []).forEach((faceData) => {
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(faceData.vertices, 3));
@@ -142,7 +143,7 @@ export function buildBrepScene(sceneData) {
       bodyRoot.add(faceMesh);
     });
 
-    // 2. Construct independent Edge Lines
+    // 构造具备独立拓扑边索引的特征折线渲染对象
     (body.edges || []).forEach((edgeData) => {
       if (!edgeData.points || edgeData.points.length < 6) return;
       const geom = new THREE.BufferGeometry();
@@ -247,9 +248,10 @@ export function setXrayMode(enable) {
   });
 }
 
-window.addEventListener('resize', () => {
+export function resizeViewport() {
   const w = container.clientWidth;
   const h = container.clientHeight;
+  if (!w || !h) return;
   const asp = w / h;
 
   perspCamera.aspect = asp;
@@ -262,12 +264,16 @@ window.addEventListener('resize', () => {
   orthoCamera.updateProjectionMatrix();
 
   renderer.setSize(w, h);
-});
+}
+
+window.addEventListener('resize', resizeViewport);
 
 export function startAnimationLoop() {
+  initViewCube();
   function animate() {
     requestAnimationFrame(animate);
     controls.update();
+    updateViewCube();
     renderer.render(scene, activeCamera);
   }
   animate();

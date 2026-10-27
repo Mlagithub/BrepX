@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Blender-Style Modal Operator State Machine for BrepX.
  * Implements interactive Face Extrude (E), Edge Fillet/Chamfer (Ctrl+B),
  * G/R/S transforms, X deletion, and Blender F9 Adjust Last Operation panel.
@@ -8,19 +8,14 @@ import * as THREE from 'three';
 import { TransformControls } from 'three/addons/TransformControls.js';
 import { activeCamera, container, controls, modelGroup, previewGroup, renderer, scene } from './viewport.js';
 import { ctx } from './context.js';
+import { renderAdjustLastPanel, adjustLastOperation } from './adjust_last.js';
+
+export { renderAdjustLastPanel, adjustLastOperation };
 
 // Top banner indicator in viewport
 const modalStatusBar = document.getElementById('modal-status-bar');
-const adjustLastPanel = document.getElementById('adjust-last-panel');
-const adjustLastTitle = document.getElementById('adjust-last-title');
-const adjustLastBody = document.getElementById('adjust-last-body');
-const adjustLastClose = document.getElementById('adjust-last-close');
 
-if (adjustLastClose) {
-  adjustLastClose.onclick = () => adjustLastPanel.classList.add('hidden');
-}
-
-// 1. TransformControls integration for G/R/S
+// 空间交互变换手柄集成与约束轴配置
 export const transformControls = new TransformControls(activeCamera, renderer.domElement);
 transformControls.size = 0.85;
 scene.add(transformControls.getHelper ? transformControls.getHelper() : transformControls);
@@ -83,17 +78,26 @@ transformControls.addEventListener('mouseUp', async () => {
   }
 });
 
-// 2. Active Modal Operator State
+// 视口模态交互操作符运行时状态与临时网格预览容器
 let activeModalOp = null; // { type, startPointer, normal, baseCenter, previewMesh, value, ... }
 
 export function isModalActive() {
   return activeModalOp !== null;
 }
 
+let modalStatusRaf = null;
+let pendingStatusText = null;
+
 function showModalStatus(text) {
-  if (modalStatusBar) {
-    modalStatusBar.textContent = text;
-    modalStatusBar.classList.remove('hidden');
+  pendingStatusText = text;
+  if (!modalStatusRaf) {
+    modalStatusRaf = requestAnimationFrame(() => {
+      modalStatusRaf = null;
+      if (modalStatusBar && pendingStatusText) {
+        modalStatusBar.textContent = pendingStatusText;
+        modalStatusBar.classList.remove('hidden');
+      }
+    });
   }
 }
 
@@ -256,55 +260,6 @@ export async function executeOperator(opName, params = {}, selections = null) {
   return data;
 }
 
-/**
- * Render Blender F9 Adjust Last Operation floating panel
- */
-export function renderAdjustLastPanel(lastOp) {
-  if (!lastOp || !lastOp.operator_id || !adjustLastPanel) return;
-
-  adjustLastTitle.textContent = `微调: ${lastOp.label}`;
-  adjustLastBody.innerHTML = '';
-
-  const params = lastOp.params || {};
-  Object.keys(params).forEach((key) => {
-    const val = params[key];
-    const row = document.createElement('div');
-    row.className = 'f9-row';
-
-    if (typeof val === 'number') {
-      row.innerHTML = `
-        <label class="f9-label">${key}</label>
-        <input type="number" class="f9-input" data-param-key="${key}" value="${val}" step="any">
-      `;
-      const input = row.querySelector('input');
-      input.onchange = async () => {
-        const newParams = {};
-        adjustLastBody.querySelectorAll('input[data-param-key]').forEach(inp => {
-          newParams[inp.dataset.paramKey] = parseFloat(inp.value);
-        });
-        await adjustLastOperation(newParams);
-      };
-    }
-    adjustLastBody.appendChild(row);
-  });
-
-  adjustLastPanel.classList.remove('hidden');
-}
-
-export async function adjustLastOperation(newParams) {
-  const res = await fetch('/api/workspace/adjust_last', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ params: newParams }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || '微调失败');
-
-  ctx.setSceneData(data.scene);
-  ctx.setPatches(data.patches);
-  ctx.setLastOperation(data.last_operation);
-}
-
 // Global modal hotkeys: E, Ctrl+B, M, Enter, Esc
 window.addEventListener('keydown', (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
@@ -345,16 +300,5 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     invokeFilletModal('fillet');
     return;
-  }
-
-  // X or Delete key: Remove selected feature faces (defeaturing)
-  if (e.key === 'x' || e.key === 'X' || e.key === 'Delete') {
-    if (ctx.selections.length > 0 && ctx.selections[0].type === 'face') {
-      e.preventDefault();
-      if (confirm(`确定要移除选中的 ${ctx.selections.length} 个特征面并自动延伸缝合实体吗？`)) {
-        executeOperator('remove_faces');
-      }
-      return;
-    }
   }
 });
