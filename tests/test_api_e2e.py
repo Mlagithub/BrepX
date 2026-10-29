@@ -1,4 +1,4 @@
-﻿"""End-to-end integration tests for BrepX backend & API."""
+"""End-to-end integration tests for BrepX backend & API."""
 
 from __future__ import annotations
 
@@ -103,6 +103,11 @@ class TestApiE2E(unittest.TestCase):
         resp_step = self.client.get("/api/export/step")
         self.assertEqual(resp_step.status_code, 200)
         self.assertGreater(len(resp_step.content), 100)
+
+        # Clear all semantic patches
+        resp_del_all = self.client.delete("/api/semantic/patches")
+        self.assertEqual(resp_del_all.status_code, 200)
+        self.assertEqual(len(resp_del_all.json()["patches"]), 0)
 
     def test_agent_embodied_chat(self) -> None:
         # Initial cylinder

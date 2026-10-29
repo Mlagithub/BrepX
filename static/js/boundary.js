@@ -121,12 +121,12 @@ export async function deletePatch(patchId) {
  * 清除模型上所有的物理边界标注
  */
 export async function clearAllPatches() {
-  const patches = ctx.patches || [];
-  for (const p of patches) {
-    await fetch(`/api/semantic/patch/${p.id}`, { method: 'DELETE' });
+  const res = await fetch('/api/semantic/patches', { method: 'DELETE' });
+  const data = await res.json();
+  if (res.ok) {
+    ctx.setPatches(data.patches || []);
+    updateBoundaryVisuals();
   }
-  ctx.setPatches([]);
-  updateBoundaryVisuals();
 }
 
 /**

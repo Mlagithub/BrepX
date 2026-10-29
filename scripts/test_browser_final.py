@@ -38,17 +38,26 @@ async def run_final_e2e_audit():
             res = await call('Runtime.evaluate', {'expression': expr, 'awaitPromise': True})
             return res.get('result', {}).get('result', {}).get('value')
 
-        await asyncio.sleep(2)
+        # 等待应用初始化加载完成
+        for _ in range(30):
+            has_ctx = await eval_js('typeof window.ctx !== "undefined"')
+            has_scene = await eval_js('window.ctx && window.ctx.sceneData !== null')
+            status_val = await eval_js('document.getElementById("status-text").textContent')
+            print(f"   wait: has_ctx={has_ctx}, has_scene={has_scene}, status={status_val.encode('ascii', 'ignore').decode()}")
+            if has_scene:
+                break
+            await asyncio.sleep(0.5)
 
         # 1. 验证初始模型 B-Rep 容器正确渲染
         vol = await eval_js('document.getElementById("stat-volume").textContent')
         faces_cnt = await eval_js('document.getElementById("stat-faces").textContent')
         print(f"1. Initial B-Rep Scene: Volume = {vol.encode('ascii', 'ignore').decode()}, Faces = {faces_cnt}")
-        assert vol and '0' not in vol
+        assert vol and '-' not in vol
 
         # 2. 验证 Shift + A 浮动菜单
         print("2. Testing Shift + A menu...")
-        await eval_js("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'A', shiftKey: true }));")
+        await eval_js("window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', shiftKey: true, bubbles: true }));")
+        await asyncio.sleep(0.2)
         menu_hidden = await eval_js("document.getElementById('add-menu-popup').classList.contains('hidden')")
         print("   Add menu visible:", not menu_hidden)
         assert not menu_hidden

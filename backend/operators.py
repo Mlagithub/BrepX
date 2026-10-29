@@ -1,8 +1,7 @@
 """Selection-Aware Native SMLib Geometry Operators for BrepX.
 
-All operators generate clean, reproducible, idempotent `smlibpy` Python code
-that acts directly on the user's B-Rep topological selections (`face_indices`,
-`edge_indices`) or active workspace entities.
+Generates reproducible and idempotent Python code acting on active topological
+selections or base entities for parametric modeling and CFD flow domain construction.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ def build_operator_code(
     if "edge_indices" in params and isinstance(params["edge_indices"], list):
         edge_ids = [int(i) for i in params["edge_indices"]]
 
-    # 基础解析三维图元与工程特征样板生成
+    # 基础三维解析图元与典型特征板
     if op == "box":
         l, w, h = _num(params, "length", 60), _num(params, "width", 40), _num(params, "height", 20)
         return f"part = Box({l}, {w}, {h})", f"长方体 ({l}×{w}×{h})", not has_existing_part
@@ -93,10 +92,8 @@ def build_operator_code(
         fr, hr = _num(params, "fillet_r", 10), _num(params, "hole_r", 15)
         code = (
             f"part = Box({l}, {w}, {t})\n"
-            f"if {fr} > 0:\n"
-            f"    part = part.fillet(part.edges().parallel_to(Z), {fr})\n"
-            f"if {hr} > 0:\n"
-            f"    part = part - Cylinder({hr}, {t + 4})\n"
+            f"if {fr} > 0:\n    part = part.fillet(part.edges().parallel_to(Z), {fr})\n"
+            f"if {hr} > 0:\n    part = part - Cylinder({hr}, {t + 4})\n"
             f"for dx in [-{round(l*0.35, 1)}, {round(l*0.35, 1)}]:\n"
             f"    for dy in [-{round(w*0.31, 1)}, {round(w*0.31, 1)}]:\n"
             f"        part = part - Cylinder(4.0, {t + 4}).translate(dx, dy, 0)"
@@ -109,15 +106,13 @@ def build_operator_code(
         hd, fr = _num(params, "hole_d", 14), _num(params, "fillet_r", 6)
         code = (
             f"part = Box({l}, {w}, {h})\n"
-            f"if {fr} > 0:\n"
-            f"    part = part.fillet(part.edges().parallel_to(Z), {fr})\n"
+            f"if {fr} > 0:\n    part = part.fillet(part.edges().parallel_to(Z), {fr})\n"
             f"part = part + Cylinder({bd / 2.0}, {bh}).translate(0, 0, {(h + bh) / 2.0})\n"
-            f"if {hd} > 0:\n"
-            f"    part = part - Cylinder({hd / 2.0}, {h + bh + 6}).translate(0, 0, {bh / 2.0})"
+            f"if {hd} > 0:\n    part = part - Cylinder({hd / 2.0}, {h + bh + 6}).translate(0, 0, {bh / 2.0})"
         )
         return code, f"草图凸台驱动件 ({l}×{w})", True
 
-    # 二维草图构造与工作平面/基准面投影映射
+    # 二维草图构造与工作平面映射
     if op in ("line", "rectangle", "circle", "arc", "polyline", "bspline", "spline", "sketch_draw"):
         sketch_kind = _str(params, "sketch_kind", op)
         plane_name = _str(params, "plane", "XY").upper()
@@ -137,129 +132,95 @@ def build_operator_code(
             sk_expr = f"Rectangle({w}, {h}).translate({cx}, {cy}, 0).on({on_face_expr})"
             lbl = f"矩形草图 ({w}×{h})"
         elif sketch_kind == "line":
-            if len(pts) >= 2:
-                p1, p2 = tuple(pts[0]), tuple(pts[1])
-            else:
-                d = _num(params, "dim1", 40)
-                p1, p2 = (-d / 2.0, 0.0, 0.0), (d / 2.0, 0.0, 0.0)
+            p1, p2 = (tuple(pts[0]), tuple(pts[1])) if len(pts) >= 2 else ((-20.0, 0.0, 0.0), (20.0, 0.0, 0.0))
             sk_expr = f"Line({p1}, {p2}).on({on_face_expr})"
-            lbl = "直线草图 (Line)"
+            lbl = "直线草图"
         elif sketch_kind == "arc":
-            if len(pts) >= 3:
-                p1, p2, p3 = tuple(pts[0]), tuple(pts[1]), tuple(pts[2])
-            else:
-                r = _num(params, "dim1", 20)
-                p1, p2, p3 = (-r, 0.0, 0.0), (0.0, r, 0.0), (r, 0.0, 0.0)
+            p1, p2, p3 = (tuple(pts[0]), tuple(pts[1]), tuple(pts[2])) if len(pts) >= 3 else ((-20.0, 0.0, 0.0), (0.0, 10.0, 0.0), (20.0, 0.0, 0.0))
             sk_expr = f"ThreePointArc({p1}, {p2}, {p3}).on({on_face_expr})"
-            lbl = "三点圆弧草图 (ThreePointArc)"
+            lbl = "三点圆弧草图"
         elif sketch_kind in ("bspline", "spline"):
             closed = bool(params.get("closed", True))
-            if len(pts) >= 3:
-                pts_str = ", ".join(str(tuple(p)) for p in pts)
-            else:
-                w, h = _num(params, "dim1", 35), _num(params, "dim2", 18)
-                pts_str = f"(-{w}, 0, 0), (0, {h}, 0), ({w}, 0, 0), (0, -{h}, 0)"
+            pts_str = ", ".join(str(tuple(p)) for p in pts) if len(pts) >= 3 else "(-20, 0, 0), (0, 15, 0), (20, 0, 0)"
             wire_expr = f"Spline({pts_str}, closed={closed})"
             sk_expr = f"make_face({wire_expr}).on({on_face_expr})" if closed else f"{wire_expr}.on({on_face_expr})"
-            lbl = "样条曲线草图 (Spline)"
-        else:  # polyline
+            lbl = "样条曲线草图"
+        else:
             closed = bool(params.get("closed", True))
-            if len(pts) >= 3:
-                pts_str = ", ".join(str(tuple(p)) for p in pts)
-            else:
-                w, h = _num(params, "dim1", 35), _num(params, "dim2", 22)
-                pts_str = f"(-{w/2}, -{h/2}, 0), ({w/2}, -{h/2}, 0), ({w/2}, {h/2}, 0), (0, {h*0.8}, 0), (-{w/2}, {h/2}, 0)"
+            pts_str = ", ".join(str(tuple(p)) for p in pts) if len(pts) >= 3 else "(-15, -10, 0), (15, -10, 0), (15, 10, 0), (-15, 10, 0)"
             wire_expr = f"Polyline({pts_str}, close={closed})"
             sk_expr = f"make_face({wire_expr}).on({on_face_expr})" if closed else f"{wire_expr}.on({on_face_expr})"
-            lbl = "多段折线草图 (Polyline)"
+            lbl = "多段折线草图"
 
         if extrude_h != 0.0:
-            if has_existing_part and face_ids:
-                op_sym = "+" if extrude_h > 0 else "-"
-                code = f"sketch = {sk_expr}\npart = part {op_sym} extrude(sketch, {extrude_h})"
-            else:
-                code = f"sketch = {sk_expr}\npart = extrude(sketch, {abs(extrude_h)})"
+            op_sym = "+" if extrude_h > 0 else "-"
+            code = f"sketch = {sk_expr}\npart = part {op_sym} extrude(sketch, {abs(extrude_h)})" if has_existing_part and face_ids else f"sketch = {sk_expr}\npart = extrude(sketch, {abs(extrude_h)})"
             return code, f"{lbl} 并拉伸 ({extrude_h} mm)", False
 
-        if has_existing_part:
-            return f"sketch = {sk_expr}", lbl, False
-        return f"sketch = {sk_expr}\npart = sketch", lbl, False
+        return (f"sketch = {sk_expr}", lbl, False) if has_existing_part else (f"sketch = {sk_expr}\npart = sketch", lbl, False)
 
-    # 基于选区或工作平面的扫描、旋转与放样生成算子
+    # 扫描成型与放样算子
     if op == "extrude":
         amount = _num(params, "height", _num(params, "amount", 20.0))
-        mode = _str(params, "mode", "auto")  # auto | join | cut | new
+        mode = _str(params, "mode", "auto")
         taper = _num(params, "taper", 0.0)
         taper_arg = f", taper={taper}" if taper != 0 else ""
 
         if has_existing_part and face_ids:
             f_idx = face_ids[0]
-            if mode == "new":
-                code = f"part = extrude(part.faces()[{f_idx}], {amount}{taper_arg})"
-            elif mode == "cut" or (mode == "auto" and amount < 0):
-                code = f"part = part - extrude(part.faces()[{f_idx}], {-abs(amount)}{taper_arg})"
-            else:
-                code = f"part = part + extrude(part.faces()[{f_idx}], {abs(amount)}{taper_arg})"
+            code = (
+                f"_f = part.faces()[{f_idx}]\n"
+                f"if not _f.is_planar:\n"
+                f"    part = part.offset({amount})\n"
+                f"else:\n"
+                f"    _h = {amount}\n"
+                f"    _cut = ({mode == 'cut'} or ({mode == 'auto'} and _h < 0))\n"
+                f"    part = (part - extrude(_f, -abs(_h){taper_arg})) if _cut else (part + extrude(_f, abs(_h){taper_arg}))"
+            )
             return code, f"选面拉伸 Face #{f_idx} ({amount} mm)", False
 
-        shape = _str(params, "profile", "rectangle")
+        prof = _str(params, "profile", "rectangle")
         d1, d2 = _num(params, "dim1", 40), _num(params, "dim2", 30)
-        prof_code = f"Circle({d1})" if shape == "circle" else f"Rectangle({d1}, {d2})"
-        code = f"sketch = {prof_code}\npart = extrude(sketch, {amount}{taper_arg})"
-        return code, f"草图拉伸 ({amount} mm)", not has_existing_part
+        prof_code = f"Circle({d1})" if prof == "circle" else f"Rectangle({d1}, {d2})"
+        return f"sketch = {prof_code}\npart = extrude(sketch, {amount}{taper_arg})", f"草图拉伸 ({amount} mm)", not has_existing_part
 
     if op == "revolve":
         angle = _num(params, "angle", 360.0)
-        r = _num(params, "radius", 10.0)
-        off_x = _num(params, "offset_x", 25.0)
+        r, off_x = _num(params, "radius", 10.0), _num(params, "offset_x", 25.0)
         if has_existing_part and face_ids:
-            code = f"part = revolve(part.faces()[{face_ids[0]}], Z, {angle})"
-            return code, f"选面旋转 Face #{face_ids[0]} ({angle}°)", False
-        code = f"sketch = Circle({r}).on(Plane.XZ).translate({off_x}, 0, 0)\npart = revolve(sketch, Z, {angle})"
-        return code, f"旋转成型 ({angle}°)", not has_existing_part
+            return f"part = revolve(part.faces()[{face_ids[0]}], Z, {angle})", f"选面旋转 Face #{face_ids[0]} ({angle}°)", False
+        return f"sketch = Circle({r}).on(Plane.XZ).translate({off_x}, 0, 0)\npart = revolve(sketch, Z, {angle})", f"旋转体 ({angle}°)", not has_existing_part
 
     if op == "sweep":
-        r = _num(params, "radius", 4.0)
-        hr = _num(params, "helix_radius", 25.0)
-        pitch = _num(params, "pitch", 20.0)
-        h = _num(params, "height", 60.0)
-        code = f"path = Helix(pitch={pitch}, height={h}, radius={hr})\npart = sweep(Circle({r}), path)"
-        return code, f"螺旋扫掠 (R{r}, 螺距{pitch})", not has_existing_part
+        r, hr = _num(params, "radius", 4.0), _num(params, "helix_radius", 25.0)
+        p, h = _num(params, "pitch", 20.0), _num(params, "height", 60.0)
+        return f"path = Helix(pitch={p}, height={h}, radius={hr})\npart = sweep(Circle({r}), path)", f"螺旋扫掠 (R{r})", not has_existing_part
 
     if op == "loft":
-        r1 = _num(params, "bottom_radius", 25.0)
-        r2 = _num(params, "top_radius", 12.0)
-        h = _num(params, "height", 40.0)
-        code = f"s1 = Circle({r1})\ns2 = Circle({r2}).translate(0, 0, {h})\npart = loft([s1, s2])"
-        return code, f"多截面放样 (R{r1}→R{r2}, H{h})", not has_existing_part
+        r1, r2, h = _num(params, "bottom_radius", 25.0), _num(params, "top_radius", 12.0), _num(params, "height", 40.0)
+        return f"s1 = Circle({r1})\ns2 = Circle({r2}).translate(0, 0, {h})\npart = loft([s1, s2])", f"放样体 (R{r1}→R{r2})", not has_existing_part
 
-    # 针对拓扑特征边的局部圆角与倒角算子
+    # 拓扑边局部圆角与倒角
     if op == "fillet":
         r = max(0.1, _num(params, "radius", 4.0))
         if edge_ids:
             idx_list = ", ".join(f"_edges[{i}]" for i in edge_ids)
-            code = f"_edges = list(part.edges())\npart = part.fillet([{idx_list}], {r})"
-            return code, f"选边圆角 ({len(edge_ids)} 条边, R{r})", False
-        code = f"part = part.fillet(part.edges().parallel_to(Z), {r})"
-        return code, f"竖边倒圆角 (R{r})", False
+            return f"_edges = list(part.edges())\npart = part.fillet([{idx_list}], {r})", f"局部圆角 ({len(edge_ids)}边, R{r})", False
+        return f"part = part.fillet(part.edges().parallel_to(Z), {r})", f"特征圆角 (R{r})", False
 
     if op == "chamfer":
         d = max(0.1, _num(params, "distance", _num(params, "radius", 3.0)))
         if edge_ids:
             idx_list = ", ".join(f"_edges[{i}]" for i in edge_ids)
-            code = f"_edges = list(part.edges())\npart = part.chamfer([{idx_list}], {d})"
-            return code, f"选边倒角 ({len(edge_ids)} 条边, D{d})", False
-        code = f"part = part.chamfer(part.edges().parallel_to(Z), {d})"
-        return code, f"竖边倒角 (D{d})", False
+            return f"_edges = list(part.edges())\npart = part.chamfer([{idx_list}], {d})", f"局部倒角 ({len(edge_ids)}边, D{d})", False
+        return f"part = part.chamfer(part.edges().parallel_to(Z), {d})", f"特征倒角 (D{d})", False
 
-    # 基于特征面的打孔、抽壳、等距偏移与拔模算子
+    # 打孔、薄壁抽壳与拔模
     if op in ("hole", "counterbore", "countersink"):
-        r = _num(params, "radius", 6.0)
-        depth = _num(params, "depth", 40.0)
+        r, depth = _num(params, "radius", 6.0), _num(params, "depth", 40.0)
         x, y = _num(params, "x", 0.0), _num(params, "y", 0.0)
         if op == "counterbore":
-            cb_r = _num(params, "cb_radius", r * 1.8)
-            cb_d = _num(params, "cb_depth", 4.0)
+            cb_r, cb_d = _num(params, "cb_radius", r * 1.8), _num(params, "cb_depth", 4.0)
             tool_expr = f"CounterBoreHole({r}, {cb_r}, {cb_d}, {depth})"
             lbl = f"沉头孔 (R{r}/R{cb_r})"
         elif op == "countersink":
@@ -268,7 +229,7 @@ def build_operator_code(
             lbl = f"埋头孔 (R{r}/R{cs_r})"
         else:
             tool_expr = f"Hole({r}, {depth})"
-            lbl = f"定位孔 (R{r}, 深{depth})"
+            lbl = f"定位孔 (R{r})"
 
         if face_ids:
             f_idx = face_ids[0]
@@ -277,25 +238,22 @@ def build_operator_code(
                 f"if _f.is_planar:\n"
                 f"    part = part - {tool_expr}.translate({x}, {y}, 0).on(_f)\n"
                 f"else:\n"
-                f"    _c, _n = _f.center(), _f.normal_at()\n"
-                f"    part = part - Cylinder({r}, {depth}).rotate(Z, 0).translate(_c.x + {x}, _c.y + {y}, _c.z)"
+                f"    _c = _f.center()\n"
+                f"    part = part - Cylinder({r}, {depth}).translate(_c.x + {x}, _c.y + {y}, _c.z)"
             )
             return code, f"{lbl} @ Face #{f_idx}", False
-        code = f"part = part - Cylinder({r}, {depth}).translate({x}, {y}, 0)"
-        return code, lbl, False
+        return f"part = part - Cylinder({r}, {depth}).translate({x}, {y}, 0)", lbl, False
 
     if op == "shell":
         t = _num(params, "thickness", 2.0)
         if face_ids:
             openings_str = ", ".join(f"_faces[{i}]" for i in face_ids)
-            code = f"_faces = list(part.faces())\npart = part.shell({t}, openings=[{openings_str}])"
-            return code, f"开口抽壳 (壁厚 {t} mm, 开口面 {face_ids})", False
-        code = f"part = part.shell({t}, openings=part.faces().top())"
-        return code, f"顶面开口抽壳 (壁厚 {t} mm)", False
+            return f"_faces = list(part.faces())\npart = part.shell({t}, openings=[{openings_str}])", f"开口抽壳 ({t} mm)", False
+        return f"part = part.shell({t}, openings=part.faces().top())", f"抽壳 ({t} mm)", False
 
     if op == "offset":
         dist = _num(params, "distance", 2.0)
-        return f"part = part.offset({dist})", f"实体等距偏移 ({dist} mm)", False
+        return f"part = part.offset({dist})", f"等距偏移 ({dist} mm)", False
 
     if op == "draft":
         angle = _num(params, "angle", 5.0)
@@ -307,14 +265,14 @@ def build_operator_code(
                 f"_plane = Plane.XZ if (_norm and abs(_norm.z) > 0.6) else Plane.XY\n"
                 f"part = part.draft(_targets, {angle}, _plane) if _targets else part"
             )
-            return code, f"选面拔模 ({angle}°, 面 {face_ids})", False
+            return code, f"选面拔模 ({angle}°)", False
         code = (
             f"_walls = [f for f in part.faces() if abs(f.normal_at().z) < 0.6]\n"
             f"part = part.draft(_walls, {angle}, Plane.XY) if _walls else part"
         )
-        return code, f"侧壁拔模斜度 ({angle}°)", False
+        return code, f"侧壁拔模 ({angle}°)", False
 
-    # 全局布尔运算、空间切分、特征镜像与坐标变换算子
+    # 布尔与阵列变换
     if op in ("boolean-union", "boolean-subtract", "boolean-intersection", "boolean"):
         mode = _str(params, "operation", "union" if "union" in op else "difference" if "subtract" in op else "intersection")
         tk = _str(params, "tool_kind", "cylinder")
@@ -334,31 +292,19 @@ def build_operator_code(
     if op == "mirror":
         plane_name = _str(params, "plane", "YZ").upper()
         join = bool(params.get("join", True))
-        if join:
-            return f"part = part + mirror(part, Plane.{plane_name})", f"对称镜像合并 (Plane.{plane_name})", False
-        return f"part = mirror(part, Plane.{plane_name})", f"对称镜像 (Plane.{plane_name})", False
+        return (f"part = part + mirror(part, Plane.{plane_name})", f"镜像合并 (Plane.{plane_name})", False) if join else (f"part = mirror(part, Plane.{plane_name})", f"镜像 (Plane.{plane_name})", False)
 
     if op == "array":
         nx, ny = _int(params, "count_x", 2), _int(params, "count_y", 2)
         dx, dy = _num(params, "step_x", 35.0), _num(params, "step_y", 35.0)
-        code = (
-            f"_items = list(GridLocations({dx}, {dy}, {nx}, {ny}) * part)\n"
-            f"part = _items[0]\n"
-            f"for _it in _items[1:]:\n"
-            f"    part = part + _it"
-        )
+        code = f"_items = list(GridLocations({dx}, {dy}, {nx}, {ny}) * part)\npart = _items[0]\nfor _it in _items[1:]:\n    part = part + _it"
         return code, f"矩形阵列 ({nx}×{ny})", False
 
     if op == "circular":
         n = _int(params, "count", 6)
         rad = _num(params, "radius", 30.0)
-        code = (
-            f"_items = list(PolarLocations({rad}, {n}) * part)\n"
-            f"part = _items[0]\n"
-            f"for _it in _items[1:]:\n"
-            f"    part = part + _it"
-        )
-        return code, f"圆周环形阵列 ({n} 个, R{rad})", False
+        code = f"_items = list(PolarLocations({rad}, {n}) * part)\npart = _items[0]\nfor _it in _items[1:]:\n    part = part + _it"
+        return code, f"环形阵列 ({n}个, R{rad})", False
 
     if op in ("translate", "move"):
         dx, dy, dz = _num(params, "dx", 0.0), _num(params, "dy", 0.0), _num(params, "dz", 0.0)
@@ -366,10 +312,8 @@ def build_operator_code(
 
     if op in ("rotate", "rotate3d"):
         axis = _str(params, "axis", "Z").upper()
-        if axis not in ("X", "Y", "Z"):
-            axis = "Z"
         angle = _num(params, "angle", 45.0)
-        return f"part = part.rotate({axis}, {angle})", f"绕 {axis} 轴旋转 ({angle}°)", False
+        return f"part = part.rotate({axis if axis in ('X', 'Y', 'Z') else 'Z'}, {angle})", f"旋转 ({axis}轴, {angle}°)", False
 
     if op == "scale":
         factor = max(0.01, _num(params, "factor", 1.25))
@@ -377,46 +321,43 @@ def build_operator_code(
 
     if op == "copy":
         dx, dy = _num(params, "offset_x", 50.0), _num(params, "offset_y", 0.0)
-        return f"part = part + part.translate({dx}, {dy}, 0)", f"复制并平移 ({dx}, {dy})", False
+        return f"part = part + part.translate({dx}, {dy}, 0)", f"复制平移 ({dx}, {dy})", False
 
-    # 面向流体仿真的直接建模与几何去特征化算子
+    # CFD 几何前处理与去特征化
     if op == "remove_fillets":
         if face_ids:
             f_str = ", ".join(f"_faces[{i}]" for i in face_ids)
-            code = f"_faces = list(part.faces())\npart = part.remove_fillets([{f_str}])"
-            return code, f"擦除选定圆角面 ({face_ids})", False
-        code = (
-            "_fillets = [f for f in part.faces() if not f.is_planar]\n"
-            "if _fillets:\n"
-            "    part = part.remove_fillets(_fillets)"
-        )
-        return code, "一键去圆角特征 (Remove Fillets)", False
+            return f"_faces = list(part.faces())\npart = part.remove_fillets([{f_str}])", f"擦除圆角面 ({face_ids})", False
+        code = "_fillets = [f for f in part.faces() if not f.is_planar]\nif _fillets:\n    part = part.remove_fillets(_fillets)"
+        return code, "一键去圆角特征", False
 
     if op == "remove_faces":
         if not face_ids:
-            raise ValueError("请先在视口中选择要移除并愈合的特征面（如孔内壁面或凹槽面）")
+            raise ValueError("请先在视口中选择要移除并愈合的特征面")
         code = (
             f"_faces = list(part.faces())\n"
             f"_targets = [_faces[i] for i in {face_ids} if i < len(_faces)]\n"
-            f"try:\n"
-            f"    part = part.remove_faces(_targets)\n"
-            f"except Exception:\n"
-            f"    part = part.remove_faces(_targets, partial=True)"
+            f"try:\n    part = part.remove_faces(_targets)\n"
+            f"except Exception:\n    part = part.remove_faces(_targets, partial=True)"
         )
-        return code, f"移除特征面并愈合 ({face_ids})", False
+        return code, f"特征面消除与愈合 ({face_ids})", False
 
     if op == "cavity_extraction":
         code = (
             "_bb = part.bbox()\n"
-            "_pad = max(max(_bb.size) * 0.1, 5.0)\n"
-            "_env = Box(_bb.size[0] + _pad * 2, _bb.size[1] + _pad * 2, _bb.size[2] + _pad * 2).translate(_bb.center.x, _bb.center.y, _bb.center.z)\n"
-            "_m = merge(_env, part)\n"
-            "_cells = list(_m.cells())\n"
-            "part = _cells[0] if len(_cells) > 1 else (_env - part)"
+            "_tight = Box(_bb.size[0], _bb.size[1], _bb.size[2]).translate(_bb.center.x, _bb.center.y, _bb.center.z)\n"
+            "_flow = _tight - part\n"
+            "if _flow.is_valid() and _flow.volume > 1e-4:\n"
+            "    part = _flow\n"
+            "else:\n"
+            "    _pad = max(max(_bb.size) * 0.1, 5.0)\n"
+            "    _env = Box(_bb.size[0] + _pad * 2, _bb.size[1] + _pad * 2, _bb.size[2] + _pad * 2).translate(_bb.center.x, _bb.center.y, _bb.center.z)\n"
+            "    _cells = sorted(merge(_env, part).cells(), key=lambda c: c.volume)\n"
+            "    part = _cells[0] if _cells else (_tight - part)"
         )
-        return code, "CFD 内流体域水密提取 (Cavity Extraction)", False
+        return code, "CFD 流体域提取", False
 
     if op == "heal":
-        return "part = part.heal()", "几何拓扑自动修复与缝合 (Heal)", False
+        return "part = part.heal()", "几何拓扑自动修复", False
 
     raise ValueError(f"未知的几何建模算子: {operator_id}")

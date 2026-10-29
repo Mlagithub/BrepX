@@ -131,6 +131,11 @@ export function invokeExtrudeModal() {
   }
 
   const faceData = selectedFaces[0];
+  if (!faceData.meta.is_planar) {
+    alert('拉伸算子要求选中平面；若需法向扩展曲面，请在左侧工具栏使用【偏移 (Offset)】或【抽壳 (Shell)】');
+    return;
+  }
+
   controls.enabled = false;
 
   const normal = new THREE.Vector3(...(faceData.meta.normal || [0, 0, 1])).normalize();
@@ -216,12 +221,21 @@ export async function confirmModalOperation() {
   const op = activeModalOp;
   cancelModalOperation();
 
-  if (op.type === 'extrude') {
-    await executeOperator('extrude', { height: op.value }, [op.faceData.expr]);
-  } else if (op.type === 'fillet') {
-    await executeOperator('fillet', { radius: op.value }, op.edges.map(e => e.expr));
-  } else if (op.type === 'chamfer') {
-    await executeOperator('chamfer', { distance: op.value }, op.edges.map(e => e.expr));
+  try {
+    if (op.type === 'extrude') {
+      await executeOperator('extrude', { height: op.value }, [op.faceData.expr]);
+    } else if (op.type === 'fillet') {
+      await executeOperator('fillet', { radius: op.value }, op.edges.map(e => e.expr));
+    } else if (op.type === 'chamfer') {
+      await executeOperator('chamfer', { distance: op.value }, op.edges.map(e => e.expr));
+    }
+    ctx.clearSelections();
+  } catch (err) {
+    const status = document.getElementById('status-text');
+    if (status) {
+      status.textContent = `操作未完成: ${err.message}`;
+      status.style.color = '#e06c75';
+    }
   }
 }
 

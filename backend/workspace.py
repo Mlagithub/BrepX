@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import os
 import tempfile
+import threading
 import time
 import traceback
 import uuid
@@ -79,6 +80,7 @@ class WorkspaceSession:
     """Single source of truth for CAD geometry state, history, and B-Rep scene."""
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self.ns: dict[str, Any] = {}
         self.shown_names: list[str] | None = None
         self.history: list[HistoryStep] = []
@@ -102,10 +104,11 @@ class WorkspaceSession:
 
     def clear(self) -> None:
         """Reset workspace to an empty scene."""
-        self._reset_namespace()
-        self.history.clear()
-        self.redo_stack.clear()
-        self.last_compute_ms = 0.0
+        with self._lock:
+            self._reset_namespace()
+            self.history.clear()
+            self.redo_stack.clear()
+            self.last_compute_ms = 0.0
 
     def _rebuild_from_history(self, steps: list[HistoryStep]) -> None:
         """Replay a sequence of validated history steps from a clean namespace."""
@@ -131,38 +134,39 @@ class WorkspaceSession:
         tree = validate_code_ast(code)
         t0 = time.perf_counter()
 
-        prev_history = list(self.history)
-        try:
-            if replace_all:
-                self._reset_namespace()
-                self.history.clear()
-            exec(compile(tree, "<workspace>", "exec"), self.ns)
-            items = self.active_items()
-            if not items:
-                raise ValueError("执行后未生成有效的几何对象（请将模型赋值给 `part` 或其他几何变量）")
-            # Validate manifold solid integrity for Parts
-            for _, _, obj in items:
-                if isinstance(obj, Part) and not obj.is_valid():
-                    raise ValueError("生成的实体未通过流形封闭性检验 (non-manifold or invalid solid)")
-        except Exception as exc:
-            self._rebuild_from_history(prev_history)
-            self.history = prev_history
-            raise ValueError(f"{type(exc).__name__}: {exc}") from exc
+        with self._lock:
+            prev_history = list(self.history)
+            try:
+                if replace_all:
+                    self._reset_namespace()
+                    self.history.clear()
+                exec(compile(tree, "<workspace>", "exec"), self.ns)
+                items = self.active_items()
+                if not items:
+                    raise ValueError("执行后未生成有效的几何对象（请将模型赋值给 `part` 或其他几何变量）")
+                # Validate manifold solid integrity for Parts
+                for _, _, obj in items:
+                    if isinstance(obj, Part) and not obj.is_valid():
+                        raise ValueError("生成的实体未通过流形封闭性检验 (non-manifold or invalid solid)")
+            except Exception as exc:
+                self._rebuild_from_history(prev_history)
+                self.history = prev_history
+                raise ValueError(f"{type(exc).__name__}: {exc}") from exc
 
-        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-        self.last_compute_ms = elapsed_ms
-        step = HistoryStep(
-            step_id=f"step_{uuid.uuid4().hex[:8]}",
-            label=label,
-            code=code,
-            operator_id=operator_id,
-            params=params or {},
-            selections=selections or [],
-            elapsed_ms=elapsed_ms,
-        )
-        self.history.append(step)
-        self.redo_stack.clear()
-        return self.get_state()
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            self.last_compute_ms = elapsed_ms
+            step = HistoryStep(
+                step_id=f"step_{uuid.uuid4().hex[:8]}",
+                label=label,
+                code=code,
+                operator_id=operator_id,
+                params=params or {},
+                selections=selections or [],
+                elapsed_ms=elapsed_ms,
+            )
+            self.history.append(step)
+            self.redo_stack.clear()
+            return self.get_state()
 
     def adjust_last_step(
         self,
@@ -171,53 +175,56 @@ class WorkspaceSession:
         label: str | None = None,
     ) -> dict[str, Any]:
         """Roll back the last step and re-execute with updated operator parameters (Blender F9)."""
-        if not self.history:
-            raise ValueError("当前没有可微调的上一步操作")
+        with self._lock:
+            if not self.history:
+                raise ValueError("当前没有可微调的上一步操作")
 
-        last = self.history[-1]
-        base_steps = self.history[:-1]
-        tree = validate_code_ast(new_code)
+            last = self.history[-1]
+            base_steps = self.history[:-1]
+            tree = validate_code_ast(new_code)
 
-        t0 = time.perf_counter()
-        try:
-            self._rebuild_from_history(base_steps)
-            exec(compile(tree, "<workspace>", "exec"), self.ns)
-            items = self.active_items()
-            if not items:
-                raise ValueError("参数微调后未产生有效几何体")
-            for _, _, obj in items:
-                if isinstance(obj, Part) and not obj.is_valid():
-                    raise ValueError("该参数值导致几何拓扑自交或无效，请尝试更合理的数值")
-        except Exception as exc:
-            self._rebuild_from_history(base_steps + [last])
-            raise ValueError(f"参数调整失败: {exc}") from exc
+            t0 = time.perf_counter()
+            try:
+                self._rebuild_from_history(base_steps)
+                exec(compile(tree, "<workspace>", "exec"), self.ns)
+                items = self.active_items()
+                if not items:
+                    raise ValueError("参数微调后未产生有效几何体")
+                for _, _, obj in items:
+                    if isinstance(obj, Part) and not obj.is_valid():
+                        raise ValueError("该参数值导致几何拓扑自交或无效，请尝试更合理的数值")
+            except Exception as exc:
+                self._rebuild_from_history(base_steps + [last])
+                raise ValueError(f"参数调整失败: {exc}") from exc
 
-        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-        self.last_compute_ms = elapsed_ms
-        last.code = new_code.strip()
-        last.params = new_params
-        if label:
-            last.label = label
-        last.elapsed_ms = elapsed_ms
-        return self.get_state()
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+            self.last_compute_ms = elapsed_ms
+            last.code = new_code.strip()
+            last.params = new_params
+            if label:
+                last.label = label
+            last.elapsed_ms = elapsed_ms
+            return self.get_state()
 
     def undo(self) -> dict[str, Any]:
         """Undo the most recent modeling step."""
-        if len(self.history) <= 1:
-            raise ValueError("已到达初始状态，无法继续撤销")
-        popped = self.history.pop()
-        self.redo_stack.append(popped)
-        self._rebuild_from_history(self.history)
-        return self.get_state()
+        with self._lock:
+            if len(self.history) <= 1:
+                raise ValueError("已到达初始状态，无法继续撤销")
+            popped = self.history.pop()
+            self.redo_stack.append(popped)
+            self._rebuild_from_history(self.history)
+            return self.get_state()
 
     def redo(self) -> dict[str, Any]:
         """Redo the most recently undone modeling step."""
-        if not self.redo_stack:
-            raise ValueError("没有可重做的操作")
-        step = self.redo_stack.pop()
-        self.history.append(step)
-        self._rebuild_from_history(self.history)
-        return self.get_state()
+        with self._lock:
+            if not self.redo_stack:
+                raise ValueError("没有可重做的操作")
+            step = self.redo_stack.pop()
+            self.history.append(step)
+            self._rebuild_from_history(self.history)
+            return self.get_state()
 
     def active_items(self) -> list[tuple[str, str, Any]]:
         """Return (name, expr, shape) of active geometry objects in the workspace.
@@ -281,73 +288,75 @@ class WorkspaceSession:
 
     def get_state(self) -> dict[str, Any]:
         """Build the complete workspace state including serialized B-Rep containers and history."""
-        items = self.active_items()
-        scene_data = serialize_scene(items)
-        last_step = self.history[-1] if self.history else None
+        with self._lock:
+            items = self.active_items()
+            scene_data = serialize_scene(items)
+            last_step = self.history[-1] if self.history else None
 
-        return {
-            "ok": True,
-            "scene": scene_data,
-            "script": self.full_script(),
-            "compute_ms": self.last_compute_ms,
-            "can_undo": len(self.history) > 1,
-            "can_redo": len(self.redo_stack) > 0,
-            "history": [
-                {
-                    "step_id": s.step_id,
-                    "label": s.label,
-                    "operator_id": s.operator_id,
-                    "params": s.params,
-                    "elapsed_ms": s.elapsed_ms,
-                }
-                for s in self.history
-            ],
-            "last_operation": {
-                "step_id": last_step.step_id,
-                "label": last_step.label,
-                "operator_id": last_step.operator_id,
-                "params": last_step.params,
-                "selections": last_step.selections,
-            } if last_step and last_step.operator_id else None,
-        }
+            return {
+                "ok": True,
+                "scene": scene_data,
+                "script": self.full_script(),
+                "compute_ms": self.last_compute_ms,
+                "can_undo": len(self.history) > 1,
+                "can_redo": len(self.redo_stack) > 0,
+                "history": [
+                    {
+                        "step_id": s.step_id,
+                        "label": s.label,
+                        "operator_id": s.operator_id,
+                        "params": s.params,
+                        "elapsed_ms": s.elapsed_ms,
+                    }
+                    for s in self.history
+                ],
+                "last_operation": {
+                    "step_id": last_step.step_id,
+                    "label": last_step.label,
+                    "operator_id": last_step.operator_id,
+                    "params": last_step.params,
+                    "selections": last_step.selections,
+                } if last_step and last_step.operator_id else None,
+            }
 
     def export_bytes(self, fmt: str) -> tuple[bytes, str, str]:
         """Export active geometry to STEP, STL, glTF, DXF, or Python script."""
-        fmt = fmt.lower()
-        if fmt == "py":
-            return self.full_script().encode("utf-8"), "text/x-python", "model_script.py"
+        with self._lock:
+            fmt = fmt.lower()
+            if fmt == "py":
+                return self.full_script().encode("utf-8"), "text/x-python", "model_script.py"
 
-        part = self.primary_part()
-        if part is None:
-            raise ValueError("当前工作区没有可导出的几何模型")
+            part = self.primary_part()
+            if part is None:
+                raise ValueError("当前工作区没有可导出的几何模型")
 
-        ext_map = {
-            "step": (".step", "application/step"),
-            "stp": (".step", "application/step"),
-            "stl": (".stl", "model/stl"),
-            "gltf": (".gltf", "model/gltf+json"),
-            "dxf": (".dxf", "application/dxf"),
-        }
-        if fmt not in ext_map:
-            raise ValueError(f"不支持的导出格式: {fmt}")
+            ext_map = {
+                "step": (".step", "application/step"),
+                "stp": (".step", "application/step"),
+                "stl": (".stl", "model/stl"),
+                "gltf": (".gltf", "model/gltf+json"),
+                "dxf": (".dxf", "application/dxf"),
+            }
+            if fmt not in ext_map:
+                raise ValueError(f"不支持的导出格式: {fmt}")
 
-        ext_suffix, mime = ext_map[fmt]
-        out_path = os.path.join(TEMP_EXPORT_DIR, f"export_{uuid.uuid4().hex[:8]}{ext_suffix}")
-        try:
-            if fmt == "dxf":
-                target = part.section(smlibpy.Plane.XY) if isinstance(part, Part) else part
-                smlibpy.export_dxf([target], out_path)
-            else:
-                part.export(out_path)
-            with open(out_path, "rb") as f:
-                data = f.read()
-            return data, mime, f"smlib_model{ext_suffix}"
-        finally:
-            if os.path.exists(out_path):
-                try:
-                    os.remove(out_path)
-                except OSError:
-                    pass
+            ext_suffix, mime = ext_map[fmt]
+            out_path = os.path.join(TEMP_EXPORT_DIR, f"export_{uuid.uuid4().hex[:8]}{ext_suffix}")
+            try:
+                if fmt == "dxf":
+                    target = part.section(smlibpy.Plane.XY) if isinstance(part, Part) else part
+                    smlibpy.export_dxf([target], out_path)
+                else:
+                    part.export(out_path)
+                with open(out_path, "rb") as f:
+                    data = f.read()
+                return data, mime, f"smlib_model{ext_suffix}"
+            finally:
+                if os.path.exists(out_path):
+                    try:
+                        os.remove(out_path)
+                    except OSError:
+                        pass
 
 
 workspace_session = WorkspaceSession()

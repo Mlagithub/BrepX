@@ -110,7 +110,7 @@ class TestWorkspaceAndBrep(unittest.TestCase):
         self.assertLess(st_shell["scene"]["summary"]["volume"], 20000.0)
 
     def test_cavity_extraction_manifold(self) -> None:
-        """验证内流体域水密提取算子生成闭合流形实体"""
+        """验证内流体域水密提取算子准确提取内部流道而非外部大包络"""
         code_init, _, _ = build_operator_code("box", {"length": 50, "width": 50, "height": 20})
         self.ws.execute_step(code_init, "init", replace_all=True)
         code_hole, _, _ = build_operator_code("hole", {"radius": 8.0, "depth": 30.0}, selections=["part.faces()[0]"], has_existing_part=True)
@@ -121,7 +121,21 @@ class TestWorkspaceAndBrep(unittest.TestCase):
         part = self.ws.primary_part()
         self.assertIsNotNone(part)
         self.assertTrue(part.is_valid())
-        self.assertGreater(st_cavity["scene"]["summary"]["volume"], 0.0)
+        vol = st_cavity["scene"]["summary"]["volume"]
+        # 内通孔圆柱理论体积 = pi * 8^2 * 20 ~= 4021.24 mm^3
+        self.assertAlmostEqual(vol, 4021.24, delta=50.0)
+
+    def test_extrude_non_planar_handling(self) -> None:
+        """验证针对圆柱非平面曲面拉伸时平滑降级为等距偏移而非抛错"""
+        code_cyl, _, _ = build_operator_code("cylinder", {"radius": 15.0, "height": 40.0})
+        self.ws.execute_step(code_cyl, "cyl", replace_all=True)
+        # Cylinder face 0 is non-planar cylinder side face
+        code_ext, lbl, _ = build_operator_code("extrude", {"height": 2.0}, selections=["part.faces()[0]"], has_existing_part=True)
+        st_ext = self.ws.execute_step(code_ext, lbl, "extrude")
+        part = self.ws.primary_part()
+        self.assertIsNotNone(part)
+        self.assertTrue(part.is_valid())
+        self.assertGreater(st_ext["scene"]["summary"]["volume"], 28274.33)
 
     def test_draft_adaptive_neutral_plane(self) -> None:
         """验证拔模算子在中性面方向上的自适应求解与流形有效性"""

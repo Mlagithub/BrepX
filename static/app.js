@@ -1,4 +1,4 @@
-import { ctx } from './context.js';
+import { ctx } from './js/context.js';
 import {
   buildBrepScene, container, resizeViewport, scene, setCameraType, setXrayMode, startAnimationLoop,
 } from './js/viewport.js';
@@ -79,7 +79,7 @@ function syncSelectionNavButtons() {
 // 全局 Blender 常用快捷键映射
 window.addEventListener('keydown', async (e) => {
   const tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea') return;
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
 
   if (e.key === 'Tab') {
     e.preventDefault();

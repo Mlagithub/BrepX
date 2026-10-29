@@ -1,4 +1,4 @@
-﻿"""FastAPI REST API Router for BrepX."""
+"""FastAPI REST API Router for BrepX."""
 
 from __future__ import annotations
 
@@ -220,6 +220,12 @@ def api_get_semantic_patches() -> dict[str, Any]:
 def api_delete_semantic_patch(patch_id: str) -> dict[str, Any]:
     ok = semantic_patch_manager.remove_patch(patch_id)
     return {"ok": ok, "patches": semantic_patch_manager.get_all_patches()}
+
+
+@router.delete("/semantic/patches")
+def api_clear_all_semantic_patches() -> dict[str, Any]:
+    semantic_patch_manager.clear()
+    return {"ok": True, "patches": []}
 
 
 @router.get("/export/cfd_meta")
