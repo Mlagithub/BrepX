@@ -1,18 +1,23 @@
-﻿/**
+/**
  * Global reactive CADContext bus for BrepX.
- * Maintains scene data, selections, active mode, and listeners.
+ * Maintains read-only geometric snapshots, versioning, mode, timeline, and selections.
  */
 
-class CADContext {
+export class CADContext {
   constructor() {
-    this.mode = 'OBJECT'; // 'OBJECT' | 'EDIT'
-    this.selectionLevel = 'solid'; // 'solid' | 'face' | 'edge' | 'vertex'
-    this.isBoundaryMode = false;
-    this.isXrayMode = false;
-    this.selections = []; // list of { body, type, index, expr, meta }
-    this.sceneData = null; // latest B-Rep scene from backend
-    this.lastOperation = null; // latest executed operator for F9 adjust
-    this.patches = []; // CFD boundary patches
+    this.mode = 'OBJECT';
+    this.selectionLevel = 'face';
+    this.displayMode = 'shaded_edges';
+    this.version = 1;
+    this.body = null;
+    this.scene = null;
+    this.selections = [];
+    this.journal = [];
+    this.activeStepId = null;
+    this.rollbackIndex = null;
+    this.lastCommand = null;
+    this.isSectionActive = false;
+    this.hoveredTopology = null;
     this.listeners = new Map();
   }
 
@@ -50,46 +55,58 @@ class CADContext {
     }
   }
 
-  setSelections(items) {
-    this.selections = items || [];
+  setDisplayMode(mode) {
+    if (this.displayMode !== mode) {
+      this.displayMode = mode;
+      this.emit('displayMode:changed', mode);
+    }
+  }
+
+  setSnapshot(version, body, scene) {
+    this.version = version;
+    this.body = body;
+    this.scene = scene;
+    this.emit('snapshot:changed', { version, body, scene });
+  }
+
+  setJournal(journal) {
+    this.journal = Array.isArray(journal) ? journal : [];
+    this.emit('journal:changed', this.journal);
+  }
+
+  setActiveStep(stepId) {
+    this.activeStepId = stepId;
+    this.emit('activeStep:changed', stepId);
+  }
+
+  setRollbackIndex(idx) {
+    this.rollbackIndex = idx;
+    this.emit('rollback:changed', idx);
+  }
+
+  setSelection(selectors) {
+    this.selections = Array.isArray(selectors) ? selectors : [selectors];
     this.emit('selections:changed', this.selections);
   }
 
-  toggleSelection(item) {
-    const idx = this.selections.findIndex(s => s.expr === item.expr);
-    if (idx >= 0) {
-      this.selections.splice(idx, 1);
-    } else {
-      this.selections.push(item);
-    }
-    this.emit('selections:changed', this.selections);
+  getSelection() {
+    return [...this.selections];
   }
 
   clearSelections() {
-    if (this.selections.length > 0) {
-      this.selections = [];
-      this.emit('selections:changed', this.selections);
-    }
+    this.selections = [];
+    this.emit('selections:changed', this.selections);
   }
 
-  getSelectedExpressions() {
-    return this.selections.map(s => s.expr);
+  setHoveredTopology(topo) {
+    this.hoveredTopology = topo;
+    this.emit('hover:changed', topo);
   }
 
-  setSceneData(data) {
-    this.sceneData = data;
-    this.emit('scene:updated', data);
-  }
-
-  setPatches(patches) {
-    this.patches = patches || [];
-    this.emit('patches:updated', this.patches);
-  }
-
-  setLastOperation(op) {
-    this.lastOperation = op;
-    this.emit('lastOp:updated', op);
+  setLastCommand(cmd) {
+    this.lastCommand = cmd;
+    this.emit('lastCommand:changed', cmd);
   }
 }
 
-export const ctx = new CADContext();
+export const context = new CADContext();

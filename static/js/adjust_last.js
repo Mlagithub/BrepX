@@ -1,4 +1,5 @@
-import { ctx } from './context.js';
+import { fetchScene, updateCommandParams } from './api.js';
+import { context } from './context.js';
 
 const adjustLastPanel = document.getElementById('adjust-last-panel');
 const adjustLastTitle = document.getElementById('adjust-last-title');
@@ -6,7 +7,7 @@ const adjustLastBody = document.getElementById('adjust-last-body');
 const adjustLastClose = document.getElementById('adjust-last-close');
 
 let debounceTimer = null;
-let currentOpCache = null;
+let currentCommandCache = null;
 
 if (adjustLastClose) {
   adjustLastClose.onclick = () => {
@@ -14,21 +15,17 @@ if (adjustLastClose) {
   };
 }
 
-/**
- * 渲染左下角操作微调面板并绑定防抖参数调节器
- * @param {Object} lastOp 最近执行的算子元数据与参数对象
- */
-export function renderAdjustLastPanel(lastOp) {
-  if (!lastOp || !lastOp.operator_id || !adjustLastPanel || !adjustLastBody) return;
+export function renderAdjustLastPanel(cmd) {
+  if (!cmd || !adjustLastPanel || !adjustLastBody) return;
 
-  currentOpCache = JSON.parse(JSON.stringify(lastOp));
+  currentCommandCache = JSON.parse(JSON.stringify(cmd));
 
   if (adjustLastTitle) {
-    adjustLastTitle.textContent = `${lastOp.label || lastOp.operator_id}`;
+    adjustLastTitle.textContent = `${cmd.op.toUpperCase()}`;
   }
   adjustLastBody.innerHTML = '';
 
-  const params = lastOp.params || {};
+  const params = cmd.params || {};
   const keys = Object.keys(params);
 
   if (keys.length === 0) {
@@ -66,7 +63,6 @@ export function renderAdjustLastPanel(lastOp) {
         const sliderInput = row.querySelector('.f9-slider');
         const valTag = row.querySelector(`#f9-val-tag-${key}`);
 
-        // 滑块与数值输入框双向同步绑定
         sliderInput.oninput = () => {
           numInput.value = sliderInput.value;
           if (valTag) valTag.textContent = sliderInput.value;
@@ -108,9 +104,6 @@ export function renderAdjustLastPanel(lastOp) {
   adjustLastPanel.classList.remove('hidden');
 }
 
-/**
- * 防抖调度，将参数变动合并提交至工作区后端
- */
 function debouncedTrigger() {
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(async () => {
@@ -118,36 +111,25 @@ function debouncedTrigger() {
   }, 90);
 }
 
-/**
- * 搜集面板中所有微调输入项并向后端发起重放请求
- */
 async function triggerAdjustLast() {
+  if (!currentCommandCache) return;
   const newParams = {};
   adjustLastBody.querySelectorAll('input.f9-input[data-param-key]').forEach((inp) => {
     const k = inp.dataset.paramKey;
-    newParams[k] = inp.type === 'number' ? parseFloat(inp.value) : inp.value;
+    const val = inp.type === 'number' ? parseFloat(inp.value) : inp.value;
+    if (!isNaN(val)) {
+      newParams[k] = val;
+    }
   });
+
   try {
-    await adjustLastOperation(newParams);
+    const res = await updateCommandParams(currentCommandCache.command_id, newParams);
+    const sceneData = await fetchScene();
+    currentCommandCache.params = { ...currentCommandCache.params, ...newParams };
+    if (res.journal) context.setJournal(res.journal);
+    context.setSnapshot(res.version, res.body, sceneData);
+    context.setLastCommand(currentCommandCache);
   } catch (err) {
     console.warn("微调参数执行受限:", err.message);
   }
-}
-
-/**
- * 向后端工作区提交参数，重放最后一步建模操作
- * @param {Object} newParams 修改后的算子参数字典
- */
-export async function adjustLastOperation(newParams) {
-  const res = await fetch('/api/workspace/adjust_last', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ params: newParams }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || '微调失败');
-
-  ctx.setSceneData(data.scene);
-  ctx.setPatches(data.patches);
-  ctx.setLastOperation(data.last_operation);
 }

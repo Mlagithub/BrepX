@@ -1,15 +1,15 @@
 import * as THREE from 'three';
 import { activeCamera, container, modelGroup, scene } from './viewport.js';
-import { ctx } from './context.js';
+import { context } from './context.js';
 
 const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 4.0;
 const mouse = new THREE.Vector2();
 
 export const selectionGroup = new THREE.Group();
 selectionGroup.name = 'selection-highlight-root';
 scene.add(selectionGroup);
 
-// 高亮着色材质池
 const hoverFaceMat = new THREE.MeshBasicMaterial({
   color: 0xffd885,
   side: THREE.DoubleSide,
@@ -48,7 +48,6 @@ let hoveredMesh = null;
 let hoverHighlightObj = null;
 const activeSelectionVisuals = new Map();
 
-// 视口边界尺寸与可拾取拓扑对象缓存池，消除高频 DOM 回流与递归遍历
 let containerRect = container.getBoundingClientRect();
 window.addEventListener('resize', () => {
   containerRect = container.getBoundingClientRect();
@@ -58,23 +57,29 @@ window.addEventListener('resize', () => {
 let cachedFaceTargets = [];
 let cachedEdgeTargets = [];
 
-function rebuildRaycastCache() {
+export function rebuildRaycastCache() {
   cachedFaceTargets = [];
   cachedEdgeTargets = [];
   modelGroup.traverse((child) => {
     if (child.isMesh && child.userData.type === 'face') {
+      child.updateMatrixWorld(true);
       cachedFaceTargets.push(child);
     } else if (child.isLine && child.userData.type === 'edge') {
+      child.updateMatrixWorld(true);
       cachedEdgeTargets.push(child);
     }
   });
 }
-ctx.on('scene:updated', rebuildRaycastCache);
+context.on('snapshot:changed', rebuildRaycastCache);
+context.on('scene:built', rebuildRaycastCache);
+context.on('selectionLevel:changed', () => {
+  clearHoverHighlight();
+  rebuildRaycastCache();
+});
 
 export function clearSelectionVisuals() {
   activeSelectionVisuals.forEach((obj) => {
     selectionGroup.remove(obj);
-    if (obj.geometry) obj.geometry.dispose();
   });
   activeSelectionVisuals.clear();
   clearHoverHighlight();
@@ -83,7 +88,6 @@ export function clearSelectionVisuals() {
 function clearHoverHighlight() {
   if (hoverHighlightObj) {
     selectionGroup.remove(hoverHighlightObj);
-    if (hoverHighlightObj.geometry) hoverHighlightObj.geometry.dispose();
     hoverHighlightObj = null;
   }
   hoveredMesh = null;
@@ -94,12 +98,11 @@ function updateMouseCoords(clientX, clientY) {
   mouse.y = -((clientY - containerRect.top) / containerRect.height) * 2 + 1;
 }
 
-// 射线相交计算帧调度器，避免高频鼠标移动阻塞主线程
 let moveRafId = null;
 let pendingPointer = null;
 
 export function handlePointerMove(clientX, clientY) {
-  if (ctx.mode === 'OBJECT') {
+  if (context.mode === 'OBJECT') {
     clearHoverHighlight();
     return;
   }
@@ -114,10 +117,15 @@ function processPointerMove() {
   if (!pendingPointer) return;
   const { x, y } = pendingPointer;
 
+  if (x < containerRect.left || x > containerRect.right || y < containerRect.top || y > containerRect.bottom) {
+    clearHoverHighlight();
+    return;
+  }
+
   updateMouseCoords(x, y);
   raycaster.setFromCamera(mouse, activeCamera);
 
-  const targets = ctx.selectionLevel === 'face' ? cachedFaceTargets : cachedEdgeTargets;
+  const targets = context.selectionLevel === 'face' ? cachedFaceTargets : cachedEdgeTargets;
   if (!targets.length) {
     clearHoverHighlight();
     return;
@@ -135,116 +143,80 @@ function processPointerMove() {
   clearHoverHighlight();
   hoveredMesh = hit;
 
-  const cloneGeom = hit.geometry.clone();
-  cloneGeom.applyMatrix4(hit.matrixWorld);
-
-  if (ctx.selectionLevel === 'face') {
-    hoverHighlightObj = new THREE.Mesh(cloneGeom, hoverFaceMat);
+  if (context.selectionLevel === 'face') {
+    hoverHighlightObj = new THREE.Mesh(hit.geometry, hoverFaceMat);
+    hoverHighlightObj.matrixAutoUpdate = false;
+    hoverHighlightObj.matrix.copy(hit.matrixWorld);
     hoverHighlightObj.renderOrder = 9;
   } else {
-    hoverHighlightObj = new THREE.Line(cloneGeom, hoverEdgeMat);
+    hoverHighlightObj = new THREE.Line(hit.geometry, hoverEdgeMat);
+    hoverHighlightObj.matrixAutoUpdate = false;
+    hoverHighlightObj.matrix.copy(hit.matrixWorld);
     hoverHighlightObj.renderOrder = 10;
   }
   selectionGroup.add(hoverHighlightObj);
 }
 
-/**
- * 处理视口单选与 Shift 累加多选交互
- */
 export function handlePointerClick(clientX, clientY, isShiftKey = false) {
   containerRect = container.getBoundingClientRect();
+  if (clientX < containerRect.left || clientX > containerRect.right || clientY < containerRect.top || clientY > containerRect.bottom) {
+    return;
+  }
   updateMouseCoords(clientX, clientY);
   raycaster.setFromCamera(mouse, activeCamera);
 
-  if (ctx.selectionLevel === 'solid') {
-    const hits = raycaster.intersectObjects(cachedFaceTargets, false);
-    if (!hits.length) {
-      ctx.clearSelections();
-      return;
-    }
-    let rootBody = hits[0].object;
-    while (rootBody.parent && rootBody.parent !== modelGroup) {
-      rootBody = rootBody.parent;
-    }
-    ctx.setSelections([{
-      type: 'solid',
-      body: rootBody.userData.bodyName || 'part',
-      expr: rootBody.userData.bodyExpr || 'part',
-      meta: rootBody.userData,
-    }]);
-    return;
+  if (!cachedFaceTargets.length && !cachedEdgeTargets.length) {
+    rebuildRaycastCache();
   }
 
-  const targets = ctx.selectionLevel === 'face' ? cachedFaceTargets : cachedEdgeTargets;
+  const targets = context.selectionLevel === 'face' ? cachedFaceTargets : cachedEdgeTargets;
   const intersects = raycaster.intersectObjects(targets, false);
   if (!intersects.length) {
-    if (!isShiftKey) ctx.clearSelections();
+    if (!isShiftKey) context.clearSelections();
     return;
   }
 
   const hit = intersects[0].object;
-  const data = {
-    type: hit.userData.type,
-    body: hit.userData.bodyName,
-    index: hit.userData.index,
-    expr: hit.userData.expr,
-    meta: hit.userData.meta,
-  };
+  const selector = hit.userData.selector;
+  if (!selector) return;
 
+  const current = context.getSelection();
   if (isShiftKey) {
-    ctx.toggleSelection(data);
+    const next = current.includes(selector)
+      ? current.filter(s => s !== selector)
+      : [...current, selector];
+    context.setSelection(next);
   } else {
-    ctx.setSelections([data]);
+    context.setSelection([selector]);
   }
 }
 
-// 响应全局选区变更重建拓扑高亮并同步打标栏
-ctx.on('selections:changed', (selections) => {
+context.on('selections:changed', (selections) => {
   clearSelectionVisuals();
-  selections.forEach((sel) => {
+  selections.forEach((selExpr) => {
     let targetObj = null;
     modelGroup.traverse((c) => {
-      if (c.userData.expr === sel.expr) targetObj = c;
+      if (c.userData.selector === selExpr) targetObj = c;
     });
     if (!targetObj) return;
 
-    const g = targetObj.geometry.clone();
-    g.applyMatrix4(targetObj.matrixWorld);
-
-    if (sel.type === 'face' && targetObj.isMesh) {
-      const mesh = new THREE.Mesh(g, selectedFaceMat);
+    if (targetObj.isMesh) {
+      const mesh = new THREE.Mesh(targetObj.geometry, selectedFaceMat);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(targetObj.matrixWorld);
       mesh.renderOrder = 10;
       selectionGroup.add(mesh);
-      activeSelectionVisuals.set(sel.expr, mesh);
-    } else if (sel.type === 'edge' && targetObj.isLine) {
-      const line = new THREE.Line(g, selectedEdgeMat);
+      activeSelectionVisuals.set(selExpr, mesh);
+    } else if (targetObj.isLine) {
+      const line = new THREE.Line(targetObj.geometry, selectedEdgeMat);
+      line.matrixAutoUpdate = false;
+      line.matrix.copy(targetObj.matrixWorld);
       line.renderOrder = 11;
       selectionGroup.add(line);
-      activeSelectionVisuals.set(sel.expr, line);
+      activeSelectionVisuals.set(selExpr, line);
     }
   });
 
-  // 选定面浮动快捷打标条
-  const pill = document.getElementById('face-action-pill');
-  if (pill) {
-    const faceSels = selections.filter(s => s.type === 'face');
-    if (faceSels.length > 0) {
-      const titleEl = document.getElementById('pill-face-title');
-      if (faceSels.length === 1) {
-        const s = faceSels[0];
-        const geom = (s.meta && s.meta.geom_type) ? ` (${s.meta.geom_type})` : '';
-        titleEl.textContent = `Face #${s.index}${geom}`;
-      } else {
-        const indices = faceSels.map(f => f.index).join(', ');
-        titleEl.textContent = `已选 ${faceSels.length} 个面 [${indices}]`;
-      }
-      pill.classList.remove('hidden');
-    } else {
-      pill.classList.add('hidden');
-    }
-  }
-
-  // 右侧选区胶囊状态栏同步
   const ctxSummary = document.getElementById('ctx-summary');
   const ctxPills = document.getElementById('ctx-pills');
   if (ctxSummary && ctxPills) {
@@ -253,17 +225,17 @@ ctx.on('selections:changed', (selections) => {
       ctxPills.innerHTML = '';
     } else {
       ctxSummary.textContent = `已选 ${selections.length} 项 (Shift 可多选)`;
-      ctxPills.innerHTML = selections.map(s => `
-        <span class="sel-tag" title="${s.expr}" data-sel-expr="${s.expr}">
-          ${s.type.toUpperCase()} #${s.index}
-          <button class="sel-tag-del" data-del-expr="${s.expr}" title="取消此项选中" aria-label="取消选中 ${s.expr}">✕</button>
+      ctxPills.innerHTML = selections.map(expr => `
+        <span class="sel-tag" title="${expr}">
+          ${expr}
+          <button class="sel-tag-del" data-del-expr="${expr}" title="取消选中" aria-label="取消选中 ${expr}">✕</button>
         </span>
       `).join('');
       ctxPills.querySelectorAll('.sel-tag-del').forEach((btn) => {
         btn.onclick = (e) => {
           e.stopPropagation();
-          const expr = btn.dataset.delExpr;
-          ctx.setSelections(ctx.selections.filter(item => item.expr !== expr));
+          const targetExpr = btn.dataset.delExpr;
+          context.setSelection(context.getSelection().filter(item => item !== targetExpr));
         };
       });
     }

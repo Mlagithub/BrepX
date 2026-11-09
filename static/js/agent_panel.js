@@ -1,237 +1,141 @@
-import { ctx } from './context.js';
+/**
+ * Modern Agent copilot panel with natural language interaction and LLM settings.
+ */
 
-const chatMessages = document.getElementById('chat-messages');
-const agentInput = document.getElementById('agent-input');
-const btnSendAgent = document.getElementById('btn-send-agent');
-const btnClearChat = document.getElementById('btn-clear-chat');
-const btnToggleLlm = document.getElementById('btn-toggle-llm-settings');
-const llmSettingsPanel = document.getElementById('llm-settings-panel');
+import { fetchScene, sendAgentChat, testLlmConnection } from './api.js';
+import { context } from './context.js';
 
-const settingBaseUrl = document.getElementById('setting-base-url');
-const settingApiKey = document.getElementById('setting-api-key');
-const settingModel = document.getElementById('setting-model');
+let panelEl = null;
 
-const savedConfig = JSON.parse(localStorage.getItem('smlib_llm_config') || '{}');
-if (settingBaseUrl) settingBaseUrl.value = savedConfig.baseUrl || '';
-if (settingApiKey) settingApiKey.value = savedConfig.apiKey || '';
-if (settingModel) settingModel.value = savedConfig.model || '';
+export function initAgentPanel(containerEl) {
+  panelEl = containerEl;
+  if (!panelEl) return;
 
-export function getLlmConfig() {
+  const savedCfg = JSON.parse(localStorage.getItem('brepx_llm_cfg') || '{}');
+  const defaultBaseUrl = savedCfg.base_url || 'http://127.0.0.1:8000/v1';
+
+  panelEl.innerHTML = `
+    <div class="agent-panel-wrap">
+      <div class="agent-settings-card">
+        <div class="settings-header">
+          <span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px; vertical-align:middle;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            LLM 服务配置
+          </span>
+          <button id="btn-toggle-cfg" class="btn-text-sm">展开 ▾</button>
+        </div>
+        <div id="cfg-body" class="settings-body hidden">
+          <input type="text" id="cfg-url" placeholder="API Base URL" value="${defaultBaseUrl}" />
+          <input type="password" id="cfg-key" placeholder="API Key" value="${savedCfg.api_key || ''}" />
+          <input type="text" id="cfg-model" placeholder="Model" value="${savedCfg.model || 'deepseek-chat'}" />
+          <button id="btn-test-cfg" class="btn btn-secondary btn-sm" style="width:100%">测试连通性</button>
+          <div id="cfg-status" class="cfg-status-text"></div>
+        </div>
+      </div>
+
+      <div class="agent-chat-messages" id="agent-chat-msgs">
+        <div class="chat-bubble assistant">
+          <div class="bubble-header">CAD Agent</div>
+          <div class="bubble-content">你好！我是你的 CFD 工业几何副驾。你可以直接用自然语言描述需求，例如“建一个叶轮”或“在选定面上打孔”。</div>
+        </div>
+      </div>
+
+      <div class="agent-input-box">
+        <textarea id="agent-prompt-input" rows="2" placeholder="输入建模指令 (Enter 发送)..."></textarea>
+        <button id="btn-agent-send" class="btn btn-primary btn-sm">发送 ↵</button>
+      </div>
+    </div>
+  `;
+
+  _bindEvents();
+}
+
+function _bindEvents() {
+  const toggleBtn = panelEl.querySelector('#btn-toggle-cfg');
+  const cfgBody = panelEl.querySelector('#cfg-body');
+  if (toggleBtn && cfgBody) {
+    toggleBtn.onclick = () => {
+      cfgBody.classList.toggle('hidden');
+    };
+  }
+
+  const testBtn = panelEl.querySelector('#btn-test-cfg');
+  const statusEl = panelEl.querySelector('#cfg-status');
+  if (testBtn) {
+    testBtn.onclick = async () => {
+      const cfg = _readConfig();
+      statusEl.textContent = '测试中...';
+      try {
+        const res = await testLlmConnection(cfg);
+        if (res.ok) {
+          statusEl.textContent = `连通正常 (${res.latency_ms} ms)`;
+          statusEl.style.color = '#98c379';
+        } else {
+          statusEl.textContent = `${res.error?.message || '连通失败'}`;
+          statusEl.style.color = '#e06c75';
+        }
+      } catch (err) {
+        statusEl.textContent = `${err.message}`;
+        statusEl.style.color = '#e06c75';
+      }
+    };
+  }
+
+  const sendBtn = panelEl.querySelector('#btn-agent-send');
+  const promptInput = panelEl.querySelector('#agent-prompt-input');
+  if (sendBtn && promptInput) {
+    const doSend = async () => {
+      const txt = promptInput.value.trim();
+      if (!txt) return;
+      promptInput.value = '';
+
+      _appendBubble('user', txt);
+      const cfg = _readConfig();
+      const selections = context.getSelection();
+
+      try {
+        const res = await sendAgentChat(txt, selections, cfg);
+        if (res.ok) {
+          _appendBubble('assistant', res.explanation || '已生成并提交建模命令');
+          const sceneData = await fetchScene();
+          context.setSnapshot(res.version, res.body, sceneData);
+        } else {
+          _appendBubble('assistant', `执行受限: ${res.error?.message || '命令执行失败'}`);
+        }
+      } catch (err) {
+        _appendBubble('assistant', `错误: ${err.message}`);
+      }
+    };
+
+    sendBtn.onclick = doSend;
+    promptInput.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        doSend();
+      }
+    };
+  }
+}
+
+function _readConfig() {
   const cfg = {
-    baseUrl: settingBaseUrl ? settingBaseUrl.value.trim() : '',
-    apiKey: settingApiKey ? settingApiKey.value.trim() : '',
-    model: settingModel ? settingModel.value.trim() : '',
+    base_url: panelEl.querySelector('#cfg-url').value.trim(),
+    api_key: panelEl.querySelector('#cfg-key').value.trim(),
+    model: panelEl.querySelector('#cfg-model').value.trim(),
   };
-  localStorage.setItem('smlib_llm_config', JSON.stringify(cfg));
+  localStorage.setItem('brepx_llm_cfg', JSON.stringify(cfg));
   return cfg;
 }
 
-[settingBaseUrl, settingApiKey, settingModel].forEach((el) => {
-  if (el) {
-    el.oninput = getLlmConfig;
-    el.onchange = getLlmConfig;
-  }
-});
-
-if (btnToggleLlm && llmSettingsPanel) {
-  btnToggleLlm.onclick = () => {
-    const isHidden = llmSettingsPanel.classList.toggle('hidden');
-    btnToggleLlm.textContent = isHidden ? '展开配置 ▾' : '收起配置 ▴';
-    btnToggleLlm.setAttribute('aria-expanded', !isHidden);
-  };
-}
-
-// 大模型端点连通性测试
-const btnTestLlm = document.getElementById('btn-test-llm');
-const llmTestResult = document.getElementById('llm-test-result');
-if (btnTestLlm) {
-  btnTestLlm.onclick = async () => {
-    const cfg = getLlmConfig();
-    btnTestLlm.disabled = true;
-    btnTestLlm.textContent = '测试连接中…';
-    llmTestResult.innerHTML = '<span style="color:#abb2bf">正在向大模型端点发送心跳…</span>';
-    try {
-      const res = await fetch('/api/agent/test_llm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(cfg),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        llmTestResult.innerHTML = `<span style="color:#98c379">✅ 连通成功！模型: ${data.model} · 延时: ${data.latency_ms} ms</span>`;
-      } else {
-        llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 握手失败: ${data.error}</span>`;
-      }
-    } catch (err) {
-      llmTestResult.innerHTML = `<span style="color:#e06c75">❌ 网络异常: ${err.message}</span>`;
-    } finally {
-      btnTestLlm.disabled = false;
-      btnTestLlm.textContent = '🧪 测试 API 连通性';
-    }
-  };
-}
-
-let chatHistory = [];
-
-function escapeHtml(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/**
- * 插入消息气泡并绑定代码快捷操作
- */
-export function appendMessageBubble(role, content, meta = {}) {
+function _appendBubble(role, content) {
+  const msgsEl = panelEl.querySelector('#agent-chat-msgs');
+  if (!msgsEl) return;
   const bubble = document.createElement('div');
   bubble.className = `chat-bubble ${role}`;
-
-  if (role === 'user') {
-    bubble.innerHTML = `<div class="bubble-body">${escapeHtml(content)}</div>`;
-  } else {
-    let html = `
-      <div class="bubble-header">
-        <span>🤖 SMLib 具身 Agent</span>
-        ${meta.elapsed ? `<span style="font-weight:normal;color:#676f7d">${meta.elapsed} ms</span>` : ''}
-      </div>
-      <div class="bubble-body">${escapeHtml(content).replace(/\n/g, '<br>')}</div>
-    `;
-    if (meta.code) {
-      html += `
-        <div class="code-block-wrapper">
-          <div class="code-block-bar">
-            <span class="code-lang">Python (smlibpy)</span>
-            <div class="code-actions">
-              <button class="btn-code-action btn-copy-code" title="复制代码">📋 复制</button>
-              <button class="btn-code-action btn-run-code" title="载入并执行">▶ 运行</button>
-            </div>
-          </div>
-          <pre class="bubble-code"><code>${escapeHtml(meta.code)}</code></pre>
-        </div>
-      `;
-    }
-    if (meta.error) {
-      html += `<div style="color:#e06c75;margin-top:4px;font-size:11px;">⚠️ 执行提示: ${escapeHtml(meta.error)}</div>`;
-    }
-    bubble.innerHTML = html;
-
-    // 绑定代码块操作
-    const btnCopy = bubble.querySelector('.btn-copy-code');
-    if (btnCopy) {
-      btnCopy.onclick = async () => {
-        await navigator.clipboard.writeText(meta.code);
-        btnCopy.textContent = '已复制！';
-        setTimeout(() => { btnCopy.textContent = '📋 复制'; }, 1500);
-      };
-    }
-    const btnRun = bubble.querySelector('.btn-run-code');
-    if (btnRun) {
-      btnRun.onclick = async () => {
-        const editor = document.getElementById('script-editor');
-        if (editor) editor.value = meta.code;
-        const res = await fetch('/api/workspace/run_script', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script: meta.code, replace_all: false }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          ctx.setSceneData(data.scene);
-          ctx.setPatches(data.patches);
-        }
-      };
-    }
-  }
-
-  chatMessages.appendChild(bubble);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-/**
- * 驱动多轮具身 Agent 交互循环并派发场景变更
- */
-export async function sendAgentTurn(userPrompt = '') {
-  const text = (userPrompt || (agentInput ? agentInput.value : '')).trim();
-  if (!text) return;
-
-  if (agentInput) agentInput.value = '';
-  appendMessageBubble('user', text);
-
-  // 展示思考等待脉冲
-  const loadingBubble = document.createElement('div');
-  loadingBubble.className = 'chat-bubble assistant typing-bubble';
-  loadingBubble.innerHTML = `
-    <div class="bubble-header"><span>🤖 SMLib 具身 Agent</span></div>
-    <div class="typing-indicator"><span></span><span></span><span></span></div>
+  bubble.innerHTML = `
+    <div class="bubble-header">${role === 'user' ? '工程师' : 'CAD Agent'}</div>
+    <div class="bubble-content">${content}</div>
   `;
-  chatMessages.appendChild(loadingBubble);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-
-  const reqSels = ctx.getSelectedExpressions();
-  const cfg = getLlmConfig();
-
-  try {
-    const res = await fetch('/api/agent/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: text,
-        selections: reqSels,
-        history: chatHistory,
-        config: cfg,
-      }),
-    });
-
-    const data = await res.json();
-    loadingBubble.remove();
-    if (!res.ok) throw new Error(data.detail || 'Agent 请求失败');
-
-    appendMessageBubble('assistant', data.reply, {
-      code: data.step_code || data.code,
-      error: data.error,
-    });
-
-    chatHistory.push({ role: 'user', content: text });
-    chatHistory.push({ role: 'assistant', content: data.reply, code: data.step_code });
-
-    if (data.ok && data.state) {
-      ctx.setSceneData(data.state.scene);
-      ctx.setPatches(data.state.patches);
-      ctx.setLastOperation(data.state.last_operation);
-    }
-  } catch (err) {
-    loadingBubble.remove();
-    appendMessageBubble('assistant', '网络或执行异常: ' + err.message);
-  }
-}
-
-export function initAgentPanel() {
-  if (btnSendAgent) {
-    btnSendAgent.onclick = () => sendAgentTurn();
-  }
-  if (agentInput) {
-    agentInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendAgentTurn();
-      }
-    });
-  }
-  if (btnClearChat) {
-    btnClearChat.onclick = () => {
-      chatHistory = [];
-      chatMessages.innerHTML = `
-        <div class="chat-bubble assistant">
-          <div class="bubble-header">🤖 SMLib 具身 Agent</div>
-          <div class="bubble-body">对话历史已清空。请输入你想要设计的几何构型或流道特征！</div>
-        </div>
-      `;
-    };
-  }
-
-  // 快捷 Prompt 标签点击触发
-  document.querySelectorAll('.prompt-pill').forEach((pill) => {
-    pill.onclick = () => {
-      const p = pill.dataset.prompt;
-      if (p) sendAgentTurn(p);
-    };
-  });
+  msgsEl.appendChild(bubble);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
 }

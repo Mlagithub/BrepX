@@ -1,1 +1,1 @@
-﻿"""BrepX backend package."""
+"""BrepX backend package."""

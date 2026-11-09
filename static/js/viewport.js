@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
-import { ctx } from './context.js';
+import { context } from './context.js';
+import { interactionLock } from './interaction_lock.js';
 import { initViewCube, updateViewCube } from './view_cube.js';
 
 export const container = document.getElementById('viewport');
@@ -13,7 +14,7 @@ const width = container.clientWidth;
 const height = container.clientHeight;
 
 export const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1d24);
+scene.background = new THREE.Color(0xf1f5f9);
 
 const aspect = width / height;
 const frustumSize = 160;
@@ -44,20 +45,20 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.target.set(0, 0, 0);
 
-// Lighting
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+interactionLock.bindControls(controls, null);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
 scene.add(ambientLight);
 
-const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
+const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.15);
 dirLight1.position.set(150, 200, 150);
 scene.add(dirLight1);
 
-const dirLight2 = new THREE.DirectionalLight(0xb0c4de, 0.6);
+const dirLight2 = new THREE.DirectionalLight(0xb0c4de, 0.55);
 dirLight2.position.set(-150, -100, -150);
 scene.add(dirLight2);
 
-// Grid and Axis Helpers
-export const gridHelper = new THREE.GridHelper(300, 60, 0x3e4451, 0x2c313a);
+export const gridHelper = new THREE.GridHelper(300, 60, 0x94a3b8, 0xdbe2ea);
 gridHelper.position.y = -0.1;
 scene.add(gridHelper);
 
@@ -65,7 +66,6 @@ export const axesHelper = new THREE.AxesHelper(50);
 axesHelper.material.linewidth = 2;
 scene.add(axesHelper);
 
-// Groups for models and previews
 export const modelGroup = new THREE.Group();
 modelGroup.name = 'brep-models-root';
 scene.add(modelGroup);
@@ -74,10 +74,9 @@ export const previewGroup = new THREE.Group();
 previewGroup.name = 'modal-previews-root';
 scene.add(previewGroup);
 
-// Materials for B-Rep entities
 const defaultFaceMaterial = new THREE.MeshStandardMaterial({
-  color: 0x80baff,
-  metalness: 0.15,
+  color: 0x5b9be6,
+  metalness: 0.1,
   roughness: 0.45,
   side: THREE.DoubleSide,
   polygonOffset: true,
@@ -86,7 +85,7 @@ const defaultFaceMaterial = new THREE.MeshStandardMaterial({
 });
 
 const defaultEdgeMaterial = new THREE.LineBasicMaterial({
-  color: 0x182436,
+  color: 0x1e293b,
   linewidth: 2,
 });
 
@@ -94,15 +93,16 @@ export function disposeHierarchy(obj) {
   obj.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
     if (child.material) {
-      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-      else child.material.dispose();
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((m) => {
+        if (m !== defaultFaceMaterial && m !== defaultEdgeMaterial) {
+          m.dispose();
+        }
+      });
     }
   });
 }
 
-/**
- * Rebuild B-Rep objects from backend topological scene data.
- */
 export function buildBrepScene(sceneData) {
   while (modelGroup.children.length > 0) {
     const child = modelGroup.children[0];
@@ -112,51 +112,41 @@ export function buildBrepScene(sceneData) {
 
   if (!sceneData || !sceneData.bodies) return;
 
-  sceneData.bodies.forEach((body) => {
+  sceneData.bodies.forEach((body, bIndex) => {
     const bodyRoot = new THREE.Group();
-    bodyRoot.name = `body_${body.name}`;
-    bodyRoot.userData = { bodyName: body.name, bodyExpr: body.expr, kind: body.kind, bbox: body.bbox };
+    bodyRoot.name = body.body_id || `body_${bIndex + 1}`;
 
-    // 构造具备独立拓扑面索引与几何元数据的可拾取曲面网格
     (body.faces || []).forEach((faceData) => {
+      if (!faceData.vertices || faceData.error) return;
       const geom = new THREE.BufferGeometry();
       geom.setAttribute('position', new THREE.Float32BufferAttribute(faceData.vertices, 3));
-      if (faceData.normals && faceData.normals.length === faceData.vertices.length) {
-        geom.setAttribute('normal', new THREE.Float32BufferAttribute(faceData.normals, 3));
-      } else {
-        geom.computeVertexNormals();
-      }
       geom.setIndex(faceData.indices);
+      geom.computeVertexNormals();
 
-      const mat = defaultFaceMaterial.clone();
-      const faceMesh = new THREE.Mesh(geom, mat);
-      faceMesh.name = `face_${faceData.face_index}`;
+      const faceMesh = new THREE.Mesh(geom, defaultFaceMaterial);
       faceMesh.castShadow = true;
       faceMesh.receiveShadow = true;
       faceMesh.userData = {
         type: 'face',
-        bodyName: body.name,
-        index: faceData.face_index,
-        expr: faceData.expr,
+        selector: faceData.selector,
         meta: faceData,
       };
       bodyRoot.add(faceMesh);
     });
 
-    // 构造具备独立拓扑边索引的特征折线渲染对象
     (body.edges || []).forEach((edgeData) => {
-      if (!edgeData.points || edgeData.points.length < 6) return;
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.Float32BufferAttribute(edgeData.points, 3));
+      if (!edgeData.points || edgeData.points.length < 2) return;
+      const flatPoints = [];
+      edgeData.points.forEach(pt => flatPoints.push(pt[0], pt[1], pt[2]));
 
-      const edgeLine = new THREE.Line(geom, defaultEdgeMaterial.clone());
-      edgeLine.name = `edge_${edgeData.edge_index}`;
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(flatPoints, 3));
+
+      const edgeLine = new THREE.Line(geom, defaultEdgeMaterial);
       edgeLine.renderOrder = 2;
       edgeLine.userData = {
         type: 'edge',
-        bodyName: body.name,
-        index: edgeData.edge_index,
-        expr: edgeData.expr,
+        selector: edgeData.selector,
         meta: edgeData,
       };
       bodyRoot.add(edgeLine);
@@ -165,12 +155,13 @@ export function buildBrepScene(sceneData) {
     modelGroup.add(bodyRoot);
   });
 
-  // Fit camera & update grid
   const box = new THREE.Box3().setFromObject(modelGroup);
   if (!box.isEmpty()) {
     gridHelper.position.y = box.min.y - 0.2;
     fitCameraToObject(modelGroup);
   }
+
+  context.emit('scene:built', sceneData);
 }
 
 export function fitCameraToObject(object) {
@@ -201,18 +192,46 @@ export function fitCameraToObject(object) {
   controls.update();
 }
 
+export function alignCameraNormalTo(faceMeta) {
+  if (!faceMeta) return;
+  const normalArr = faceMeta.normal || [0, 0, 1];
+  const centerArr = faceMeta.center || [0, 0, 0];
+
+  const normal = new THREE.Vector3(normalArr[0], normalArr[1], normalArr[2]).normalize();
+  const center = new THREE.Vector3(centerArr[0], centerArr[1], centerArr[2]);
+
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  const maxDim = box.isEmpty() ? 80 : Math.max(box.getSize(new THREE.Vector3()).length(), 40);
+  const dist = maxDim * 1.8;
+
+  controls.target.copy(center);
+  activeCamera.position.copy(center).addScaledVector(normal, dist);
+
+  let up = new THREE.Vector3(0, 1, 0);
+  if (Math.abs(normal.dot(up)) > 0.9) {
+    up.set(0, 0, 1);
+  }
+  activeCamera.up.copy(up);
+  activeCamera.lookAt(center);
+  activeCamera.updateProjectionMatrix();
+  controls.update();
+}
+
 export function setStandardView(type) {
   const box = new THREE.Box3().setFromObject(modelGroup);
   const center = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
   const dist = box.isEmpty() ? 120 : Math.max(box.getSize(new THREE.Vector3()).length() * 1.5, 80);
 
   controls.target.copy(center);
+  activeCamera.up.set(0, 1, 0);
+
   if (type === 'iso') {
     activeCamera.position.set(center.x + dist * 0.7, center.y + dist * 0.6, center.z + dist * 0.7);
   } else if (type === 'front') {
     activeCamera.position.set(center.x, center.y, center.z + dist);
   } else if (type === 'top') {
     activeCamera.position.set(center.x, center.y + dist, center.z);
+    activeCamera.up.set(0, 0, -1);
   } else if (type === 'right') {
     activeCamera.position.set(center.x + dist, center.y, center.z);
   } else if (type === 'fit') {
@@ -239,11 +258,17 @@ export function setCameraType(type) {
 }
 
 export function setXrayMode(enable) {
+  defaultFaceMaterial.transparent = enable;
+  defaultFaceMaterial.opacity = enable ? 0.35 : 1.0;
+  defaultFaceMaterial.depthWrite = !enable;
+  defaultFaceMaterial.needsUpdate = true;
+
   modelGroup.traverse((child) => {
-    if (child.isMesh && child.userData.type === 'face') {
+    if (child.isMesh && child.userData.type === 'face' && child.material !== defaultFaceMaterial) {
       child.material.transparent = enable;
       child.material.opacity = enable ? 0.35 : 1.0;
       child.material.depthWrite = !enable;
+      child.material.needsUpdate = true;
     }
   });
 }
