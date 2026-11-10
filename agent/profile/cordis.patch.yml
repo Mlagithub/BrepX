@@ -39,29 +39,27 @@
 # Kept: todo, goal and skill. todo helps the model plan; skill carries the
 # impeller guide installed under $DSH_HOME/skills.
 
-# ── 自定义模型路由配置 ──────────────────────────────────────
-- id: llm-pi-ai
-  name: '@deepseek-ai/dsh-llm-pi-ai'
-  config:
-    providers:
-      cpa:
-        displayName: CPA
-        headers:
-          Authorization: 'Bearer keepone-cpa-password'
-        api: openai-responses
-        baseURL: https://cpa.keepone.work/v1
-        models:
-          - id: gemini-pro-auto
-            name: gemini-pro-auto
-            contextWindow: 1000000
-            maxTokens: 64000
-            input:
-              - text
-              - image
-
-# ── 设置新会话默认选用的模型 ─────────────────────────────
-- id: agent-default-model
-  name: '@deepseek-ai/dsh-agent-default-model'
-  config:
-    provider: cpa
-    model: gemini-pro-auto
+# ── 模型路由不进仓库 ─────────────────────────────────────────
+# 这个文件随仓库发布，所以这里不写 provider、baseURL，也不写任何凭据。
+# 本机把自己的路由追加到 $DSH_HOME/cordis.patch.yml（home 级覆盖层，不被提交），
+# 形状如下：
+#
+#   - id: llm-pi-ai
+#     name: '@deepseek-ai/dsh-llm-pi-ai'
+#     config:
+#       providers:
+#         <provider>:
+#           api: openai-responses
+#           baseURL: <your endpoint>
+#           headers:
+#             Authorization: 'Bearer <token 从环境变量或密钥库读取>'
+#           models:
+#             - id: <model>
+#               name: <model>
+#   - id: agent-default-model
+#     name: '@deepseek-ai/dsh-agent-default-model'
+#     config:
+#       provider: <provider>
+#       model: <model>
+#
+# 提醒：token 一旦进过 git 历史，删文件不等于撤销，必须到服务端轮换。

@@ -13,6 +13,23 @@ import sys
 
 from cadwork.design import BuildError, build
 from cadwork.samples.impeller import impeller_document
+from cadwork.samples.registry import SAMPLES
+from cadwork.samples.registry import build as make_sample
+
+
+def _export_part(result, directory: str, stem: str, feature_id: str) -> list[str]:
+    from cadwork import smlib as S
+
+    os.makedirs(directory, exist_ok=True)
+    part = result.outputs.get(feature_id)
+    if part is None:
+        return []
+    written: list[str] = []
+    for suffix, exporter in (("step", S.export_step), ("stl", S.export_stl)):
+        path = os.path.join(directory, f"{stem}.{suffix}")
+        exporter(part, path)
+        written.append(path)
+    return written
 
 
 def _export(result, directory: str) -> list[str]:
@@ -44,15 +61,21 @@ def _export(result, directory: str) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build the impeller document.")
-    parser.add_argument("--count", type=int, default=9, help="number of blades")
-    parser.add_argument("--wrap", type=float, default=30.0, help="wrap angle in degrees")
-    parser.add_argument("--fillet", type=float, default=0.3, help="fillet radius in mm")
+    parser = argparse.ArgumentParser(description="Build a sample document.")
+    parser.add_argument("--sample", default="impeller", choices=tuple(sorted(SAMPLES)),
+                        help="which sample document to build")
+    parser.add_argument("--count", type=int, default=9, help="number of blades (impeller)")
+    parser.add_argument("--wrap", type=float, default=30.0, help="wrap angle in degrees (impeller)")
+    parser.add_argument("--fillet", type=float, default=0.3, help="fillet radius in mm (impeller)")
     parser.add_argument("--export", default=None, help="directory for STEP/STL/CFD output")
     parser.add_argument("--json", action="store_true", help="print the build summary as JSON")
     args = parser.parse_args(argv)
 
-    document = impeller_document(count=args.count, wrap=args.wrap, fillet_radius=args.fillet)
+    if args.sample == "impeller":
+        document = make_sample("impeller", {"count": args.count, "wrap": args.wrap,
+                                           "fillet_radius": args.fillet})
+    else:
+        document = make_sample(args.sample)
     try:
         result = build(document)
     except BuildError as exc:
@@ -75,7 +98,12 @@ def main(argv: list[str] | None = None) -> int:
                   f"({tag['faces']} face(s))")
 
     if args.export:
-        for path in _export(result, args.export):
+        if args.sample == "impeller":
+            written = _export(result, args.export)
+        else:
+            final_id = document.features[-1].id
+            written = _export_part(result, args.export, args.sample, final_id)
+        for path in written:
             print(f"  wrote {path}")
     return 0
 

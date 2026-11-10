@@ -10,12 +10,18 @@ from cadwork.design.features import FEATURES, catalog, resolve_params
 
 
 class CatalogTests(unittest.TestCase):
-    def test_seven_feature_types(self) -> None:
-        self.assertEqual(len(FEATURES), 7)
+    def test_feature_types(self) -> None:
+        self.assertEqual(len(FEATURES), 30)
         self.assertEqual(
             set(FEATURES),
             {"hub_revolve", "blade_loft", "pattern_circular", "boolean",
-             "fillet", "tag_boundary", "cavity_extraction"},
+             "fillet", "tag_boundary", "cavity_extraction",
+             "curve_spiral", "curve_helix", "profile_rect", "sweep", "shell",
+             "solid_box", "solid_cylinder", "solid_cone", "solid_sphere",
+             "profile_circle", "profile_polygon", "extrude", "revolve_profile",
+             "transform", "pattern_linear", "mirror_part", "chamfer",
+             "offset_solid", "split_part", "scale_part", "pattern_grid",
+             "thicken_faces", "hole"},
         )
 
     def test_catalog_is_serialisable(self) -> None:

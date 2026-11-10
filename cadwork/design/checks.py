@@ -104,3 +104,25 @@ def volume_between(part: Any, low: float, high: float) -> CheckResult:
                 "low": low, "high": high}
 
     return _guard("volume_range", "volume between the operand bounds", action)
+
+
+def volume_lt(part: Any, maximum: float) -> CheckResult:
+    def action() -> dict[str, Any]:
+        volume = float(part.volume)
+        return {"_ok": volume < maximum, "volume": volume, "max": maximum}
+
+    return _guard("volume_lt", f"volume < {maximum:.1f}", action)
+
+
+def extent(value: Any, minimum: float = 0.0) -> CheckResult:
+    """Curves and sketches have no volume; measure whatever extent they do have."""
+
+    def action() -> dict[str, Any]:
+        for attribute in ("volume", "area", "length"):
+            if hasattr(value, attribute):
+                measured = float(getattr(value, attribute))
+                return {"_ok": measured > minimum, attribute: measured, "min": minimum}
+        return {"_ok": False, "error": f"{type(value).__name__} has no measurable extent"}
+
+    return _guard("extent", f"extent > {minimum}", action)
+

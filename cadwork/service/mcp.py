@@ -30,6 +30,26 @@ def build_mcp_server(service: CADService) -> MCPServer:
     )
 
     @server.tool()
+    def doc_summary(document_id: str) -> dict[str, Any]:
+        """Read the document the way a person would: every feature named in plain
+        words ("沉头孔 Ø10"), its editable parameters, whether it is on, and what
+        the build produced. Start here before changing anything."""
+        try:
+            return service.summary(document_id)
+        except ServiceError as exc:
+            raise _fail(exc)
+
+    @server.tool()
+    def doc_resolve(document_id: str, phrase: str) -> dict[str, Any]:
+        """Turn what the user said ("左边的沉头", "右边那个孔", "最后那个") into
+        feature ids, with the reasons for each match. When `confident` is false,
+        ask the user the returned `question` instead of guessing."""
+        try:
+            return service.resolve_reference(document_id, phrase)
+        except ServiceError as exc:
+            raise _fail(exc)
+
+    @server.tool()
     def doc_create(name: str = "Untitled") -> dict[str, Any]:
         """Create an empty document and return it."""
         document = service.store.create(name)

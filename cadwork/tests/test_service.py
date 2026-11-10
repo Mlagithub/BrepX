@@ -9,6 +9,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from cadwork.design.document import feature_to_json
+from cadwork.design.features import FEATURES
 from cadwork.samples.impeller import impeller_document
 from cadwork.service import create_app
 
@@ -45,7 +46,7 @@ class ServiceTests(unittest.TestCase):
         with self._client() as client:
             self.assertEqual(client.get("/api/health").json()["status"], "ok")
             catalog = client.get("/api/catalog").json()
-            self.assertEqual(len(catalog), 7)
+            self.assertEqual({entry["type"] for entry in catalog}, set(FEATURES))
 
     def test_build_impeller_through_the_api(self) -> None:
         with self._client() as client:
@@ -133,17 +134,26 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(payload["version"], 2)
             self.assertEqual(len(payload["features"]), 9)
 
-    def test_web_assets_and_impeller_sample(self) -> None:
+    def test_impeller_sample_route(self) -> None:
         with self._client() as client:
-            index = client.get("/")
-            self.assertEqual(index.status_code, 200)
-            self.assertIn("importmap", index.text)
-            for path in ("/web/src/main.js", "/web/vendor/three.module.js", "/web/style.css"):
-                self.assertEqual(client.get(path).status_code, 200, path)
             document = self._create(client)
             sample = client.post(f"/api/docs/{document['id']}/sample/impeller")
             self.assertEqual(sample.status_code, 200, sample.text[:200])
             self.assertEqual(len(sample.json()["document"]["features"]), 9)
+
+    def test_delete_document(self) -> None:
+        with self._client() as client:
+            document = self._create(client)
+            self.assertEqual(client.delete(f"/api/docs/{document['id']}").status_code, 200)
+            self.assertEqual(client.get(f"/api/docs/{document['id']}").status_code, 404)
+            self.assertNotIn(document["id"], [item["id"] for item in client.get("/api/docs").json()])
+            self.assertEqual(client.delete(f"/api/docs/{document['id']}").status_code, 404)
+
+    def test_no_standalone_frontend(self) -> None:
+        # The workbench is the dsh client plugin; the service is API-only.
+        with self._client() as client:
+            self.assertEqual(client.get("/web/src/main.js").status_code, 404)
+            self.assertEqual(client.get("/api/health").status_code, 200)
 
     def test_store_lists_newest_first(self) -> None:
         from cadwork.service.store import Store

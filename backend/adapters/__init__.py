@@ -1,1 +1,0 @@
-"""backend.adapters package."""

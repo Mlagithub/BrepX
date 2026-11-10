@@ -1,1 +1,0 @@
-﻿"""BrepX automated test suite."""

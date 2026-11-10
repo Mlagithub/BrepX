@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CAD kernel view</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0f1115; color: #c9d6ea;
+    font: 12px/1.5 system-ui, sans-serif; overflow: hidden }
+  #host { position: absolute; inset: 0 }
+  canvas { display: block }
+  #status { position: absolute; left: 10px; bottom: 8px; right: 10px; color: #8fa3bd;
+    text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre-wrap }
+</style>
+<!-- The kernel's own modules, not a bundle: bundling breaks its worker and
+     wasm loading (the package locates both with import.meta.url). -->
+<script type="importmap">
+{"imports": {
+  "three": "/pkg/three/build/three.module.js",
+  "three/addons/": "/pkg/three/examples/jsm/",
+  "@classcad/smlibwasm": "/pkg/@classcad/smlibwasm/dist/index.js",
+  "@classcad/smlibwasm/init": "/pkg/@classcad/smlibwasm/dist/init.js",
+  "@classcad/smlibpy-three": "/pkg/@classcad/smlibpy-three/dist/index.js",
+  "@classcad/smlibpy-three/init": "/pkg/@classcad/smlibpy-three/dist/init.js"
+}}
+</script>
+</head>
+<body>
+<div id="host"></div>
+<div id="status">starting…</div>
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { init } from '@classcad/smlibpy-three/init'
+
+const host = document.getElementById('host')
+const status = document.getElementById('status')
+const embedded = window.parent !== window
+// Embedded in the workbench, the host draws the readout: two lines of text at
+// the same corner are noise.
+if (embedded) status.style.display = 'none'
+const say = (text) => {
+  status.textContent = text
+  // The workbench shows the same line; the iframe is the one that knows what
+  // the kernel actually picked.
+  try { parent.postMessage({ from: 'cadview', text }, '*') } catch (error) { /* top level */ }
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+host.append(renderer.domElement)
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x0f1115)
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1e7)
+camera.up.set(0, 0, 1)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3140, 1.6))
+const key = new THREE.DirectionalLight(0xffffff, 2.2)
+key.position.set(160, 220, 180)
+scene.add(key)
+scene.add(new THREE.DirectionalLight(0x8899bb, 0.9).translateX(-140))
+
+const fit = (object) => {
+  const box = new THREE.Box3().setFromObject(object)
+  if (box.isEmpty()) return
+  const sphere = box.getBoundingSphere(new THREE.Sphere())
+  controls.target.copy(sphere.center)
+  camera.position.copy(sphere.center)
+    .addScaledVector(new THREE.Vector3(1, -1, 0.78).normalize(), Math.max(sphere.radius, 1) * 2.55)
+  camera.near = Math.max(sphere.radius / 3000, 0.01)
+  camera.far = Math.max(sphere.radius * 300, 200)
+  camera.updateProjectionMatrix()
+  controls.update()
+}
+
+const VIEWS = {
+  iso: [1, -1, 0.78],
+  front: [0, -1, 0],
+  top: [0, 0, 1],
+  right: [1, 0, 0],
+}
+
+let wire = false
+
+const setView = (name) => {
+  if (!part || !VIEWS[name]) return
+  const sphere = new THREE.Box3().setFromObject(part).getBoundingSphere(new THREE.Sphere())
+  const direction = new THREE.Vector3(...VIEWS[name]).normalize()
+  controls.target.copy(sphere.center)
+  camera.position.copy(sphere.center)
+    .addScaledVector(direction, Math.max(sphere.radius, 1) * 2.55)
+  camera.updateProjectionMatrix()
+  controls.update()
+}
+
+const applyFinish = () => {
+  if (!part) return
+  const meshes = []
+  part.traverse((child) => { if (child.isMesh) meshes.push(child) })
+  for (const child of meshes) {
+    if (child.userData.edges) {
+      child.remove(child.userData.edges)
+      child.userData.edges.geometry.dispose()
+      child.userData.edges.material.dispose()
+      child.userData.edges = null
+    }
+    if (wire) {
+      // A CAD wireframe shows feature edges, not every tessellation triangle.
+      child.material = new THREE.MeshBasicMaterial({
+        color: 0x102030, transparent: true, opacity: 0.12, depthWrite: false,
+      })
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(child.geometry, 16),
+        new THREE.LineBasicMaterial({ color: 0x5f9fe0 }),
+      )
+      child.userData.edges = edges
+      child.add(edges)
+    } else {
+      child.material = child.userData.solidMaterial || child.material
+    }
+  }
+  applySection()
+}
+
+// ---------------------------------------------------------------- section
+let sectionOn = false
+let sectionT = 0.5
+const sectionPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
+
+const applySection = () => {
+  if (!part) return
+  renderer.localClippingEnabled = true
+  if (sectionOn) {
+    const box = new THREE.Box3().setFromObject(part)
+    const low = box.min.z
+    const high = box.max.z
+    sectionPlane.constant = low + (high - low) * sectionT
+  }
+  part.traverse((child) => {
+    if (!child.isMesh || !child.material) return
+    child.material.clippingPlanes = sectionOn ? [sectionPlane] : null
+    child.material.side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
+    child.material.needsUpdate = true
+    const edges = child.userData.edges
+    if (edges) {
+      edges.material.clippingPlanes = sectionOn ? [sectionPlane] : null
+      edges.material.needsUpdate = true
+    }
+  })
+}
+
+const setSection = (on, t) => {
+  if (typeof on === 'boolean') sectionOn = on
+  if (typeof t === 'number') sectionT = Math.min(Math.max(t, 0), 1)
+  applySection()
+}
+
+// ---------------------------------------------------------------- measure
+let measureMode = false
+let measureA = null
+
+const measureFace = (hit) => {
+  const point = hit.point
+  const brep = hit.brep || hit.object.userData?.brep
+  const area = brep?.area
+  let normal = null
+  if (hit.face && hit.face.normal) {
+    normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+  }
+  const parts = ['测量']
+  if (area != null) parts.push(`面 ${Number(area).toFixed(1)} mm²`)
+  if (normal) parts.push(`法向 (${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)})`)
+  if (!measureA) {
+    measureA = point.clone()
+    parts.push(`起点 (${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)}) · 再点一处量距离`)
+    return parts.join(' · ')
+  }
+  const delta = point.clone().sub(measureA)
+  parts.push(`距离 ${delta.length().toFixed(2)} mm · Δx ${delta.x.toFixed(2)} Δy ${delta.y.toFixed(2)} Δz ${delta.z.toFixed(2)}`)
+  measureA = null
+  return parts.join(' · ')
+}
+
+// The workbench drives the camera from its toolbar; the kernel page stays the
+// only place that knows how to move it.
+addEventListener('message', (event) => {
+  const data = event.data
+  if (!data || data.from !== 'cadview-parent') return
+  if (data.type === 'theme') {
+    scene.background = new THREE.Color(data.background || '#0b0e13')
+  } else if (data.type === 'view') {
+    setView(data.name)
+  } else if (data.type === 'fit') {
+    if (part) fit(part)
+  } else if (data.type === 'wire') {
+    wire = !wire
+    applyFinish()
+  } else if (data.type === 'measure') {
+    measureMode = typeof data.on === 'boolean' ? data.on : !measureMode
+    measureA = null
+    say(measureMode ? '测量已开启：点面取尺寸，再点一处量距离' : '测量已关闭')
+  } else if (data.type === 'section') {
+    setSection(typeof data.on === 'boolean' ? data.on : !sectionOn, data.t)
+    say(sectionOn ? '剖切已开启：拖动滑块移动切面' : '剖切已关闭')
+  } else if (data.type === 'section-t') {
+    setSection(undefined, Number(data.t))
+  } else if (data.type === 'preview' && data.url) {
+    previewing = true
+    loadStep(data.url, data.label || 'candidate')
+  } else if (data.type === 'document') {
+    previewing = false
+    source = null
+    load()
+  }
+})
+
+const resize = () => {
+  const width = host.clientWidth || 1
+  const height = host.clientHeight || 1
+  renderer.setSize(width, height, false)
+  camera.aspect = width / height
+  camera.updateProjectionMatrix()
+}
+addEventListener('resize', resize)
+
+let kernel = null
+let part = null
+let source = null
+// While a candidate is on screen the document must not overwrite it.
+let previewing = false
+
+const params = new URLSearchParams(location.search)
+const pinned = params.get('doc')
+
+const mount = (bytes) => {
+  if (part) {
+    scene.remove(part)
+    part.traverse((child) => { child.geometry?.dispose?.(); child.material?.dispose?.() })
+  }
+  part = new kernel.STEPLoader().parse(bytes)
+  part.traverse((child) => {
+    if (child.isMesh) {
+      child.material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color().setHSL(0.58, 0.16, 0.52), metalness: 0.1, roughness: 0.62,
+      })
+      child.userData.solidMaterial = child.material
+    }
+  })
+  scene.add(part)
+  fit(part)
+  applySection()
+}
+
+const loadStep = async (url, label) => {
+  say(label || 'loading model…')
+  const response = await fetch(url)
+  if (!response.ok) { say(`load failed: ${response.status}`); return }
+  mount(new Uint8Array(await response.arrayBuffer()))
+}
+
+const load = async () => {
+  if (previewing) return source
+  const docs = await (await fetch('/api/docs')).json()
+  if (!docs.length) { say('no documents'); return null }
+  const doc = (pinned && docs.find((item) => item.id === pinned)) || docs[0]
+  if (source && source.id === doc.id && source.version === doc.version && part) return doc
+  say(`loading ${doc.name || doc.id} · v${doc.version}…`)
+  await loadStep(`/api/docs/${doc.id}/export/step`)
+  source = doc
+  say(`${doc.name || doc.id} · v${doc.version} · kernel ready · click a face`)
+  return doc
+}
+
+const raycaster = new THREE.Raycaster()
+renderer.domElement.addEventListener('pointerup', (event) => {
+  if (!part) return
+  const rect = renderer.domElement.getBoundingClientRect()
+  raycaster.setFromCamera(new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  ), camera)
+  const hits = raycaster.intersectObject(part, true)
+  if (!hits.length) { say('nothing picked'); return }
+  const hit = hits[0]
+  if (measureMode) { say(measureFace(hit)); return }
+  const brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
+  const area = brep?.area
+  let detail = `hit at (${hit.point.x.toFixed(1)}, ${hit.point.y.toFixed(1)}, ${hit.point.z.toFixed(1)})`
+  if (area != null) detail = `face · ${Number(area).toFixed(1)} mm² · ` + detail
+  else if (brep) detail = `brep · ${Object.keys(brep).slice(0, 6).join(', ')} · ` + detail
+  say(`${source.name || source.id} · v${source.version} · ${detail}`)
+  window.__lastPick = { area: area ?? null, point: [hit.point.x, hit.point.y, hit.point.z],
+    brepKeys: brep ? Object.keys(brep) : null }
+})
+
+const frame = () => {
+  requestAnimationFrame(frame)
+  controls.update()
+  renderer.render(scene, camera)
+}
+
+const start = async () => {
+  resize()
+  frame()
+  try {
+    const bytes = await (await fetch('/api/kernel/smlibwasm.wasm')).arrayBuffer()
+    say(`wasm ${bytes.byteLength} bytes · loading kernel…`)
+    kernel = await init({ wasmBinary: bytes })
+    say(`kernel ready · ${Object.keys(kernel).length} exports`)
+    window.__kernelReady = true
+  } catch (error) {
+    say(`kernel failed: ${error.message}`)
+    return
+  }
+  try {
+    await load()
+  } catch (error) {
+    say(`load failed: ${error.message}`)
+  }
+  setInterval(() => {
+    load().catch(() => {})
+  }, 2500)
+}
+
+start()
+</script>
+</body>
+</html>

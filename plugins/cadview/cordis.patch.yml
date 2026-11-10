@@ -1,0 +1,13 @@
+# Mounted when this bundle is listed in a profile:
+#  - cadview: the browser half (right-sidebar CAD tab)
+#  - mcp-cad: the CAD tools the session's agent may call
+- insert:
+    - id: cadview
+      name: 'cadview'
+    - id: mcp-cad
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: cad
+        transport: streamable-http
+        url: 'http://127.0.0.1:8765/mcp/'
+        toolCallTimeoutMs: 300000

@@ -21,8 +21,9 @@ from .features import (
     validate_feature,
 )
 
-CACHE_EPOCH = "2026-11-10.1"
-_KIND_SELECT = {"part": "self", "faces": "faces", "edges": "edges"}
+from cadwork.design.features import INPUT_KINDS
+
+CACHE_EPOCH = "2026-11-10.2 smlibpy-0.6"
 
 
 class BuildError(Exception):
@@ -138,15 +139,24 @@ def _feature_key(feature: Feature, params: Mapping[str, Any], input_keys: list[s
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
-def _check_kind(feature: Feature, role: str, kind: str) -> None:
+def _check_kind(feature: Feature, role: str, kind: str) -> Any:
+    spec = INPUT_KINDS.get(kind)
+    if spec is None:
+        raise BuildError(
+            "UNKNOWN_KIND",
+            f"{feature.id}.{role} uses unknown input kind {kind!r}",
+            feature.id,
+            hint=f"known kinds: {', '.join(sorted(INPUT_KINDS))}",
+        )
     ref = feature.refs[role]
-    expected = _KIND_SELECT[kind]
-    if ref.select != expected:
+    if ref.select not in spec.selects:
+        expected = " or ".join(repr(select) for select in spec.selects)
         raise BuildError(
             "INVALID_REF_KIND",
-            f"{feature.id}.{role} must use select={expected!r}, got {ref.select!r}",
+            f"{feature.id}.{role} must use select={expected}, got {ref.select!r}",
             feature.id,
         )
+    return spec
 
 
 def build(document: Document, cache: BuildCache | None = None) -> BuildResult:
@@ -170,13 +180,24 @@ def build(document: Document, cache: BuildCache | None = None) -> BuildResult:
         inputs: dict[str, Any] = {}
         input_keys: list[str] = []
         for role, kind in spec.inputs:
-            ref = feature.refs[role]
-            _check_kind(feature, role, kind)
+            ref = feature.refs.get(role)
+            if ref is None:
+                inputs[role] = None
+                continue
+            kind_spec = _check_kind(feature, role, kind)
             try:
                 value = refs.resolve(ref, outputs)
             except refs.RefError as exc:
                 raise BuildError(exc.code, exc.message, feature.id, exc.hint,
                                  blocked=tuple(f.id for f in enabled[index + 1:])) from exc
+            if kind_spec.accepts and not isinstance(value, kind_spec.accepts):
+                expected = ", ".join(item.__name__ for item in kind_spec.accepts)
+                raise BuildError(
+                    "INVALID_REF_TYPE",
+                    f"{feature.id}.{role} resolved to {type(value).__name__}, "
+                    f"expected {expected}",
+                    feature.id,
+                )
             inputs[role] = value
             input_keys.append(_ref_key(ref, fingerprints[ref.source]))
 

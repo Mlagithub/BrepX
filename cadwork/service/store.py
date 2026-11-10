@@ -41,16 +41,26 @@ class Store:
     def _history_path(self, document_id: str) -> Path:
         return self.root / f"{document_id}.history.json"
 
+    def _next_seq(self) -> int:
+        """Creation order, independent of file timestamps (coarse on Windows)."""
+        highest = 0
+        for path in self.root.glob("*.json"):
+            if path.name.endswith(".history.json"):
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            highest = max(highest, int(payload.get("seq", 0) or 0))
+        return highest + 1
+
     # ------------------------------------------------------------ queries
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
             entries: list[dict[str, Any]] = []
-            paths = [
-                path for path in self.root.glob("*.json")
-                if not path.name.endswith(".history.json")
-            ]
-            paths.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-            for path in paths:
+            for path in self.root.glob("*.json"):
+                if path.name.endswith(".history.json"):
+                    continue
                 try:
                     payload = json.loads(path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
@@ -60,11 +70,21 @@ class Store:
                     "name": payload.get("name", ""),
                     "version": payload.get("version", 1),
                     "features": len(payload.get("features") or []),
+                    "seq": int(payload.get("seq", 0) or 0),
                 })
+            entries.sort(key=lambda entry: entry["seq"], reverse=True)
             return entries
 
     def exists(self, document_id: str) -> bool:
         return self._path(document_id).exists()
+
+    def delete(self, document_id: str) -> None:
+        with self._lock:
+            path = self._path(document_id)
+            if not path.exists():
+                raise StoreError("NOT_FOUND", f"no document {document_id!r}", status=404)
+            path.unlink()
+            self._history_path(document_id).unlink(missing_ok=True)
 
     def get(self, document_id: str) -> Document:
         path = self._path(document_id)
@@ -78,9 +98,9 @@ class Store:
     # ------------------------------------------------------------ writes
     def create(self, name: str = "Untitled") -> Document:
         with self._lock:
-            document = new_document(name)
+            document = new_document(name, seq=self._next_seq())
             while self.exists(document.id):
-                document = new_document(name)
+                document = new_document(name, seq=document.seq)
             self._write(document)
             return document
 

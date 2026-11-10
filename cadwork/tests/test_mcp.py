@@ -14,6 +14,7 @@ import unittest
 import uvicorn
 
 from cadwork.design.document import feature_to_json
+from cadwork.design.features import FEATURES
 from cadwork.samples.impeller import impeller_document
 from cadwork.service import create_app
 
@@ -74,11 +75,11 @@ class MCPTests(unittest.TestCase):
                     sorted(tool.name for tool in tools.tools),
                     sorted(["doc_create", "doc_list", "doc_read", "catalog", "feature_add",
                             "feature_update", "feature_remove", "preview", "checks", "export",
-                            "render_png"]),
+                            "render_png", "doc_summary", "doc_resolve"]),
                 )
 
                 catalog = _payload(await session.call_tool("catalog", {}))
-                self.assertEqual(len(catalog), 7)
+                self.assertEqual({entry["type"] for entry in catalog}, set(FEATURES))
 
                 missing = await session.call_tool("doc_read", {"document_id": "nope"})
                 self.assertTrue(missing.is_error)

@@ -26,7 +26,7 @@ def _vec(value: Any) -> list[float]:
 
 def build_scene(part: Any, feature_id: str) -> dict[str, Any]:
     faces: list[dict[str, Any]] = []
-    for index, face in enumerate(part.faces()):
+    for index, face in enumerate(part.faces() if hasattr(part, "faces") else []):
         try:
             mesh = face.mesh()
             center = face.center()
@@ -43,7 +43,7 @@ def build_scene(part: Any, feature_id: str) -> dict[str, Any]:
             continue
 
     edges: list[dict[str, Any]] = []
-    for index, edge in enumerate(part.edges()):
+    for index, edge in enumerate(part.edges() if hasattr(part, "edges") else []):
         try:
             points = [_vec(edge.point_at(i / _EDGE_SAMPLES)) for i in range(_EDGE_SAMPLES + 1)]
             edges.append({"index": index, "length": float(edge.length), "points": points})

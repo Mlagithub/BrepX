@@ -117,10 +117,12 @@ class Document:
     version: int = 1
     features: tuple[Feature, ...] = ()
     history: tuple[str, ...] = ()
+    seq: int = 0
 
 
-def new_document(name: str = "Untitled", document_id: str | None = None) -> Document:
-    return Document(id=document_id or f"d_{uuid.uuid4().hex[:10]}", name=name)
+def new_document(name: str = "Untitled", document_id: str | None = None,
+                 seq: int = 0) -> Document:
+    return Document(id=document_id or f"d_{uuid.uuid4().hex[:10]}", name=name, seq=seq)
 
 
 def validate_layout(document: Document) -> None:
@@ -220,6 +222,7 @@ def apply_ops(
     document: Document,
     ops: list[Mapping[str, Any]],
     base_version: int | None = None,
+    name: str | None = None,
 ) -> Document:
     """Apply a batch atomically. Any failure leaves the input untouched."""
     if base_version is not None and base_version != document.version:
@@ -227,24 +230,25 @@ def apply_ops(
             "STALE_VERSION",
             f"document is at version {document.version}, edit expected {base_version}",
         )
-    if not ops:
+    if not ops and not name:
         return document
 
     features = list(document.features)
     for op in ops:
-        name = op.get("op")
-        handler = _OPS.get(str(name))
+        op_name = op.get("op")
+        handler = _OPS.get(str(op_name))
         if handler is None:
-            raise DocumentError("INVALID_OP", f"unknown op {name!r}")
+            raise DocumentError("INVALID_OP", f"unknown op {op_name!r}")
         handler(features, op)
 
     history = (document.history + (features_digest(document.features),))[-_MAX_HISTORY:]
     updated = Document(
         id=document.id,
-        name=document.name,
+        name=name or document.name,
         version=document.version + 1,
         features=tuple(features),
         history=history,
+        seq=document.seq,
     )
     validate_layout(updated)
     return updated
@@ -319,6 +323,7 @@ def document_to_json(value: Document) -> dict[str, Any]:
         "version": value.version,
         "features": [feature_to_json(item) for item in value.features],
         "history": list(value.history),
+        "seq": value.seq,
     }
 
 
@@ -329,6 +334,7 @@ def document_from_json(payload: Mapping[str, Any]) -> Document:
         version=int(payload.get("version", 1)),
         features=tuple(feature_from_json(item) for item in payload.get("features") or ()),
         history=tuple(payload.get("history") or ()),
+        seq=int(payload.get("seq", 0) or 0),
     )
     validate_layout(document)
     return document

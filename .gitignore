@@ -1,4 +1,4 @@
-﻿# Python cache
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
@@ -27,3 +27,7 @@ docs/
 !README.md
 cadwork-data/
 
+# Node plugin build
+node_modules/
+plugins/cadview/lib/*.mjs
+.tmp/
