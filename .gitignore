@@ -1,4 +1,4 @@
-# Python cache
+﻿# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
@@ -24,5 +24,6 @@ tasks/
 docs/
 
 *.md 
-!README.md 
+!README.md
+cadwork-data/
 

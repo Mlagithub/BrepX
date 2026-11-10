@@ -1,0 +1,67 @@
+# cadwork agent profile: the CAD MCP server, and nothing that can touch the host.
+# Every tool below the MCP insert is removed so the agent can only change documents.
+
+- insert:
+    - id: mcp-cad
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: cad
+        transport: streamable-http
+        url: 'http://127.0.0.1:8765/mcp/'
+        toolCallTimeoutMs: 300000
+
+# No shell, no files, no network, no plugin management, no delegation.
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-plugin-manager
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+
+# Kept: todo, goal and skill. todo helps the model plan; skill carries the
+# impeller guide installed under $DSH_HOME/skills.
+
+# ── 自定义模型路由配置 ──────────────────────────────────────
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      cpa:
+        displayName: CPA
+        headers:
+          Authorization: 'Bearer keepone-cpa-password'
+        api: openai-responses
+        baseURL: https://cpa.keepone.work/v1
+        models:
+          - id: gemini-pro-auto
+            name: gemini-pro-auto
+            contextWindow: 1000000
+            maxTokens: 64000
+            input:
+              - text
+              - image
+
+# ── 设置新会话默认选用的模型 ─────────────────────────────
+- id: agent-default-model
+  name: '@deepseek-ai/dsh-agent-default-model'
+  config:
+    provider: cpa
+    model: gemini-pro-auto

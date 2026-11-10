@@ -1,0 +1,12 @@
+{
+  "name": "cadwork-agent",
+  "private": true,
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-headless"
+      ]
+    }
+  }
+}
