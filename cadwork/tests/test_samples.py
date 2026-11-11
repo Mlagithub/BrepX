@@ -55,7 +55,7 @@ class SampleRouteTests(unittest.TestCase):
                 )
                 self.assertEqual(second.status_code, 200, second.text[:300])
                 self.assertEqual(len(second.json()["document"]["features"]), 4)
-                self.assertEqual(second.json()["document"]["version"], 3)
+                self.assertEqual(second.json()["document"]["version"], 2)
                 # The name is what lets the client label the picker.
                 self.assertEqual(second.json()["document"]["name"], "Volute casing")
 

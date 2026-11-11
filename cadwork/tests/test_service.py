@@ -51,7 +51,7 @@ class ServiceTests(unittest.TestCase):
     def test_build_impeller_through_the_api(self) -> None:
         with self._client() as client:
             payload = self._build_impeller(client)
-            self.assertEqual(payload["document"]["version"], 2)
+            self.assertEqual(payload["document"]["version"], 1)
             self.assertEqual(len(payload["build"]["features"]), 9)
             self.assertEqual(sorted(payload["tags"]), ["f6", "f7", "f8"])
 
@@ -79,7 +79,7 @@ class ServiceTests(unittest.TestCase):
             preview = response.json()
             self.assertIn("f3", preview["diff"]["changed"])
             current = client.get(f"/api/docs/{document_id}").json()
-            self.assertEqual(current["version"], 2)
+            self.assertEqual(current["version"], 1)
             self.assertEqual(current["features"][2]["params"]["count"], 9)
 
     def test_stale_version_is_rejected(self) -> None:
@@ -87,7 +87,7 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
             response = client.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 1, "ops": []},
+                json={"base_version": 0, "ops": []},
             )
             self.assertEqual(response.status_code, 409)
             self.assertEqual(response.json()["error"]["code"], "STALE_VERSION")
@@ -97,7 +97,7 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
             response = client.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 2,
+                json={"base_version": 1,
                       "ops": [{"op": "update", "id": "f5", "params": {"radius": 2.0}}]},
             )
             self.assertEqual(response.status_code, 422, response.text)
@@ -105,7 +105,7 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(error["feature_id"], "f5")
             self.assertEqual(error["blocked_downstream"], ["f6", "f7", "f8", "f9"])
             current = client.get(f"/api/docs/{document_id}").json()
-            self.assertEqual(current["version"], 2)
+            self.assertEqual(current["version"], 1)
 
     def test_export_step_and_cfd(self) -> None:
         with self._client() as client:
@@ -123,7 +123,7 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
             response = client.post(f"/api/docs/{document_id}/undo")
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["document"]["version"], 1)
+            self.assertEqual(response.json()["document"]["version"], 2)
             self.assertEqual(response.json()["document"]["features"], [])
 
     def test_store_survives_app_restart(self) -> None:
@@ -131,7 +131,7 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
         with TestClient(create_app(self.folder.name)) as second:
             payload = second.get(f"/api/docs/{document_id}").json()
-            self.assertEqual(payload["version"], 2)
+            self.assertEqual(payload["version"], 1)
             self.assertEqual(len(payload["features"]), 9)
 
     def test_impeller_sample_route(self) -> None:
@@ -173,20 +173,20 @@ class ServiceTests(unittest.TestCase):
             blade = {"op": "add", "feature": {"id": "f2", "type": "blade_loft"}}
             applied = first.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 1, "ops": [hub]},
+                json={"base_version": 0, "ops": [hub]},
             )
             self.assertEqual(applied.status_code, 200)
 
             stale = second.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 1, "ops": [blade]},
+                json={"base_version": 0, "ops": [blade]},
             )
             self.assertEqual(stale.status_code, 409)
             self.assertEqual(stale.json()["error"]["code"], "STALE_VERSION")
 
             retried = second.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 2, "ops": [blade]},
+                json={"base_version": 1, "ops": [blade]},
             )
             self.assertEqual(retried.status_code, 200, retried.text)
             self.assertEqual(len(retried.json()["document"]["features"]), 2)
@@ -195,6 +195,11 @@ class ServiceTests(unittest.TestCase):
         with self._client() as client:
             document = self._create(client)
             document_id = document["id"]
+
+            empty_undo = client.post(f"/api/docs/{document_id}/undo")
+            self.assertEqual(empty_undo.status_code, 409)
+            self.assertEqual(empty_undo.json()["error"]["code"], "NO_HISTORY")
+
             sequence = [
                 {"op": "add", "feature": {"id": "f1", "type": "hub_revolve"}},
                 {"op": "add", "feature": {"id": "f2", "type": "blade_loft"}},
@@ -211,17 +216,23 @@ class ServiceTests(unittest.TestCase):
                 )
                 self.assertEqual(response.status_code, 200, response.text)
                 version = response.json()["document"]["version"]
-            self.assertEqual(version, 4)
+            self.assertEqual(version, 3)
 
-            for expected_version, expected_features in ((3, 2), (2, 1), (1, 0)):
-                undone = client.post(f"/api/docs/{document_id}/undo")
-                self.assertEqual(undone.status_code, 200)
-                self.assertEqual(undone.json()["document"]["version"], expected_version)
-                self.assertEqual(len(undone.json()["document"]["features"]), expected_features)
+            # Undo writes a new milestone instead of rewriting the chain.
+            undone = client.post(f"/api/docs/{document_id}/undo")
+            self.assertEqual(undone.status_code, 200)
+            self.assertEqual(undone.json()["document"]["version"], 4)
+            self.assertEqual(len(undone.json()["document"]["features"]), 2)
+            self.assertEqual(undone.json()["document"]["milestones"][-1]["parent_version"], 2)
 
-            exhausted = client.post(f"/api/docs/{document_id}/undo")
-            self.assertEqual(exhausted.status_code, 409)
-            self.assertEqual(exhausted.json()["error"]["code"], "NO_HISTORY")
+            reverted = client.post(
+                f"/api/docs/{document_id}/revert",
+                json={"target_version": 1, "title": "回到单特征"},
+            )
+            self.assertEqual(reverted.status_code, 200, reverted.text)
+            self.assertEqual(reverted.json()["document"]["version"], 5)
+            self.assertEqual(len(reverted.json()["document"]["features"]), 1)
+            self.assertEqual(reverted.json()["document"]["milestones"][-1]["title"], "回到单特征")
 
     def test_render_png(self) -> None:
         with self._client() as client:

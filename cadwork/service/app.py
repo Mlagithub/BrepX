@@ -1,20 +1,22 @@
-"""FastAPI app: /api for the workbench, /mcp for the agent, one process."""
+"""HTTP and MCP surface over one process: browser canvas, agent tools."""
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import mimetypes
 import os
+import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-# Python's table has no .mjs; a module served as text/plain is refused by the
-# browser's strict MIME check, which is exactly what the kernel probe hits.
 mimetypes.add_type("text/javascript", ".mjs")
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -40,10 +42,12 @@ class CreateDocument(BaseModel):
 class EditRequest(BaseModel):
     base_version: int
     ops: list[dict[str, Any]]
+    title: str | None = None
 
 
 class PreviewRequest(BaseModel):
     ops: list[dict[str, Any]]
+    base_version: int | None = None
 
 
 class SampleRequest(BaseModel):
@@ -57,14 +61,42 @@ class VariantSpec(BaseModel):
 
 
 class VariantRequest(BaseModel):
-    # Either a parameter sweep (`feature` + `params`) or a list of candidate
-    # document deltas (`variants`); both produce the same kind of card.
     feature: str | None = None
     params: dict[str, list[Any]] | None = None
     variants: list[VariantSpec] | None = None
     include_base: bool = False
     base_version: int | None = None
     thumbs: bool = True
+
+
+class ChangeSpec(BaseModel):
+    feature_id: str
+    params: dict[str, Any]
+
+
+class TweakRequest(BaseModel):
+    base_version: int | None = None
+    changes: list[ChangeSpec]
+    title: str | None = None
+
+
+class RevertRequest(BaseModel):
+    target_version: int
+    title: str | None = None
+
+
+class IntentRequest(BaseModel):
+    text: str
+    base_version: int | None = None
+
+
+class PickRequest(BaseModel):
+    version: int | None = None
+    point: list[float]
+    normal: list[float] | None = None
+    area: float | None = None
+    face_index: int | None = None
+    feature_id: str | None = None
 
 
 def _error(exc: Exception) -> JSONResponse:
@@ -82,9 +114,11 @@ def _error(exc: Exception) -> JSONResponse:
         )
     if isinstance(exc, BuildError):
         return JSONResponse({"error": exc.to_json()}, status_code=422)
-    return JSONResponse(
-        {"error": {"code": "INTERNAL", "message": str(exc)}}, status_code=500,
-    )
+    return JSONResponse({"error": {"code": "INTERNAL", "message": str(exc)}}, status_code=500)
+
+
+def _sse(event: str, payload: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def register_routes(app: FastAPI, service: CADService) -> None:
@@ -113,7 +147,8 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.put("/api/docs/{document_id}")
     def edit_document(document_id: str, body: EditRequest) -> dict[str, Any]:
-        return service.apply(document_id, body.base_version, body.ops)
+        return service.commit(document_id, body.base_version, body.ops,
+                              title=body.title or "编辑特征", actor="human")
 
     @app.delete("/api/docs/{document_id}")
     def delete_document(document_id: str) -> dict[str, Any]:
@@ -122,7 +157,7 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.post("/api/docs/{document_id}/preview")
     def preview(document_id: str, body: PreviewRequest) -> dict[str, Any]:
-        return service.preview(document_id, body.ops)
+        return service.preview(document_id, body.ops, body.base_version)
 
     @app.post("/api/docs/{document_id}/undo")
     def undo(document_id: str) -> dict[str, Any]:
@@ -130,23 +165,123 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.post("/api/docs/{document_id}/sample/impeller")
     def sample_impeller(document_id: str, count: int = 9) -> dict[str, Any]:
-        """Backwards-compatible alias; replaces like every other sample."""
         document = service.read(document_id)
         sample = impeller_document(count=count)
         ops = [{"op": "remove", "id": feature.id}
                for feature in reversed(document.features)]
-        ops += [
-            {"op": "add", "feature": feature_to_json(feature)}
-            for feature in sample.features
-        ]
-        return service.apply(document_id, document.version, ops)
+        ops += [{"op": "add", "feature": feature_to_json(feature)} for feature in sample.features]
+        return service.commit(document_id, document.version, ops, title="载入叶轮", actor="human")
 
     @app.get("/api/samples")
     def samples() -> list[dict[str, Any]]:
         return sample_catalog()
 
-    # Variants: several parameter values built side by side, never touching the
-    # document until one is applied.
+    @app.post("/api/docs/{document_id}/sample/{name}")
+    def load_sample(document_id: str, name: str,
+                    body: SampleRequest | None = None) -> dict[str, Any]:
+        document = service.read(document_id)
+        request = body or SampleRequest()
+        try:
+            sample = build_sample(name, request.params)
+        except KeyError as exc:
+            raise ServiceError("NOT_FOUND", f"no sample {name!r}", status=404,
+                               hint="read /api/samples for the available ones") from exc
+        except ValueError as exc:
+            raise ServiceError("INVALID_PARAM", str(exc), status=400) from exc
+        ops: list[dict[str, Any]] = []
+        if request.replace:
+            ops.extend({"op": "remove", "id": feature.id}
+                       for feature in reversed(document.features))
+        ops.extend({"op": "add", "feature": feature_to_json(feature)}
+                   for feature in sample.features)
+        return service.commit(
+            document_id,
+            document.version,
+            ops,
+            title=SAMPLE_TITLES.get(name, sample.name),
+            actor="human",
+            name=SAMPLE_TITLES.get(name, sample.name),
+        )
+
+    # ------------------------------------------------------------ review loop
+    @app.get("/api/docs/{document_id}/state")
+    def state(document_id: str) -> dict[str, Any]:
+        return service.state(document_id)
+
+    @app.get("/api/docs/{document_id}/events")
+    async def events(document_id: str, request: Request) -> Response:
+        service.read(document_id)
+        channel = service.bus.subscribe(document_id)
+
+        async def stream():
+            try:
+                yield _sse("state", service.state(document_id))
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event, payload = await asyncio.to_thread(channel.get, True, 20.0)
+                    except queue.Empty:
+                        yield ": heartbeat\n\n"
+                        continue
+                    yield _sse(event, payload)
+            finally:
+                service.bus.unsubscribe(document_id, channel)
+
+        return StreamingResponse(
+            stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/docs/{document_id}/step")
+    def step(document_id: str, request: Request, version: int | None = None) -> Response:
+        payload = service.step_bytes(document_id, version=version)
+        etag = '"' + hashlib.sha1(payload).hexdigest() + '"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
+        return Response(content=payload, media_type="application/octet-stream",
+                        headers={"ETag": etag, "Cache-Control": "no-cache"})
+
+    @app.get("/api/docs/{document_id}/diff")
+    def diff(document_id: str, base: int, target: int | None = None) -> dict[str, Any]:
+        return service.compare_versions(document_id, base, target)
+
+    @app.post("/api/docs/{document_id}/pick")
+    def pick(document_id: str, body: PickRequest) -> dict[str, Any]:
+        return service.pick(document_id, body.model_dump())
+
+    @app.post("/api/docs/{document_id}/tweak")
+    def tweak(document_id: str, body: TweakRequest) -> dict[str, Any]:
+        changes = [item.model_dump() for item in body.changes]
+        return service.tweak(document_id, changes, body.base_version, body.title)
+
+    @app.post("/api/docs/{document_id}/toggle/{feature_id}")
+    def toggle(document_id: str, feature_id: str) -> dict[str, Any]:
+        return service.toggle(document_id, feature_id)
+
+    @app.post("/api/docs/{document_id}/revert")
+    def revert(document_id: str, body: RevertRequest) -> dict[str, Any]:
+        return service.revert(document_id, body.target_version, body.title)
+
+    # ------------------------------------------------------------ intents
+    @app.post("/api/docs/{document_id}/intents")
+    def add_intent(document_id: str, body: IntentRequest) -> dict[str, Any]:
+        return service.add_intent_note(document_id, body.text, base_version=body.base_version)
+
+    @app.get("/api/docs/{document_id}/intents")
+    def list_intents(document_id: str) -> dict[str, Any]:
+        return service.list_intents(document_id)
+
+    @app.delete("/api/docs/{document_id}/intents")
+    def clear_intents(document_id: str) -> dict[str, Any]:
+        return service.clear_intents(document_id)
+
+    @app.post("/api/docs/{document_id}/intents/{intent_id}/cancel")
+    def cancel_intent(document_id: str, intent_id: str) -> dict[str, Any]:
+        return service.cancel_intent(document_id, intent_id)
+
+    # ------------------------------------------------------------ variants
     @app.post("/api/docs/{document_id}/variants")
     def create_variants(document_id: str, body: VariantRequest) -> dict[str, Any]:
         return service.create_variants(
@@ -165,8 +300,7 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.get("/api/variants/{set_id}/{index}/thumb.png")
     def variant_thumbnail(set_id: str, index: int) -> Response:
-        return FileResponse(service.variant_thumbnail(set_id, index),
-                            media_type="image/png")
+        return FileResponse(service.variant_thumbnail(set_id, index), media_type="image/png")
 
     @app.get("/api/variants/{set_id}/sheet.png")
     def variant_sheet(set_id: str) -> Response:
@@ -181,30 +315,7 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def apply_variant(set_id: str, index: int) -> dict[str, Any]:
         return service.apply_variant(set_id, index)
 
-    @app.post("/api/docs/{document_id}/sample/{name}")
-    def load_sample(document_id: str, name: str,
-                    body: SampleRequest | None = None) -> dict[str, Any]:
-        """Replace (by default) the document with one of the sample parts."""
-        document = service.read(document_id)
-        request = body or SampleRequest()
-        try:
-            sample = build_sample(name, request.params)
-        except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no sample {name!r}", status=404,
-                               hint="read /api/samples for the available ones") from exc
-        except ValueError as exc:
-            raise ServiceError("INVALID_PARAM", str(exc), status=400) from exc
-        ops: list[dict[str, Any]] = []
-        if request.replace:
-            ops.extend({"op": "remove", "id": feature.id}
-                       for feature in reversed(document.features))
-        ops.extend({"op": "add", "feature": feature_to_json(feature)}
-                   for feature in sample.features)
-        # Naming the document after the family is what lets the client label the
-        # picker from the document instead of guessing from feature ids.
-        return service.apply(document_id, document.version, ops,
-                             name=SAMPLE_TITLES.get(name, sample.name))
-
+    # ------------------------------------------------------------ derived
     @app.get("/api/docs/{document_id}/checks")
     def checks(document_id: str) -> dict[str, Any]:
         return service.checks(document_id)
@@ -232,8 +343,9 @@ def register_routes(app: FastAPI, service: CADService) -> None:
         return Response(content=payload, media_type="image/png")
 
     @app.get("/api/docs/{document_id}/export/{fmt}")
-    def export(document_id: str, fmt: str, feature: str | None = None) -> Response:
-        payload, media_type = service.export(document_id, fmt, feature)
+    def export(document_id: str, fmt: str, feature: str | None = None,
+               version: int | None = None) -> Response:
+        payload, media_type = service.export(document_id, fmt, feature, version=version)
         suffix = "json" if fmt == "cfd" else fmt
         return Response(
             content=payload,
@@ -257,8 +369,6 @@ def create_app(store_root: str | os.PathLike[str] | None = None) -> FastAPI:
     app = FastAPI(title="cadwork", version=__version__, lifespan=lifespan)
     app.state.service = service
 
-    # The workbench runs inside the dsh web client on another origin; it reads
-    # scenes, renders and exports from here. Local tool, so any origin.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -270,7 +380,8 @@ def create_app(store_root: str | os.PathLike[str] | None = None) -> FastAPI:
     async def revalidate_web_assets(request: Request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith("/web") or path.startswith("/api/plugin"):
+        if path == "/" or path.startswith("/web") or path.startswith("/api/plugin") \
+                or path == "/api/kernel-view":
             response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -280,9 +391,6 @@ def create_app(store_root: str | os.PathLike[str] | None = None) -> FastAPI:
     register_routes(app, service)
     app.mount("/mcp", mcp_app)
 
-    # The SMLib kernel for the browser viewport. The dsh plugin asset route
-    # only serves images, so the 9 MB wasm ships from here instead and the
-    # client points `init({ locateFile })` at it.
     kernel_wasm = (
         Path(__file__).resolve().parents[2]
         / "plugins" / "cadview" / "node_modules"
@@ -300,8 +408,6 @@ def create_app(store_root: str | os.PathLike[str] | None = None) -> FastAPI:
             )
         return FileResponse(kernel_wasm, media_type="application/wasm")
 
-    # A bare page that times the browser's own wasm stages, so a stall can be
-    # attributed to the browser or to the kernel runtime instead of guessed at.
     @app.get("/api/probe", include_in_schema=False)
     def probe() -> HTMLResponse:
         page = """<!doctype html><meta charset="utf-8">
@@ -329,7 +435,6 @@ try {
   const r = await fetch('/api/kernel/smlibwasm.wasm')
   const bytes = await r.arrayBuffer()
   log(`fetch ${bytes.byteLength} bytes`)
-  // (1) the bundled module, the way the workbench loads it today
   const t0 = now()
   try {
     await import('/api/plugin/probe-kernel.mjs')
@@ -338,7 +443,6 @@ try {
   } catch (e) {
     log(`bundled   FAIL ${e.message}`)
   }
-  // (2) the package's own modules, unbundled, through the import map
   const t1 = now()
   try {
     const mod = await race(import('@classcad/smlibpy-three/init'), 6000, 'import of init')
@@ -354,8 +458,6 @@ log('done')
 </script>"""
         return HTMLResponse(page)
 
-    # The workbench viewport, kernel-precise: its own document with an import
-    # map, so the kernel runs from its own modules instead of a bundle.
     kernel_view = Path(__file__).with_name("kernel_view.html")
 
     @app.get("/api/kernel-view", include_in_schema=False)
@@ -367,14 +469,10 @@ log('done')
             )
         return FileResponse(kernel_view, media_type="text/html")
 
-    # Serve the kernel packages for the probe above: a bare import map needs the
-    # real module files, which is exactly what bundling rewrites. Dev-only.
     node_modules = Path(__file__).resolve().parents[2] / "plugins" / "cadview" / "node_modules"
     if node_modules.is_dir():
         app.mount("/pkg", StaticFiles(directory=str(node_modules)), name="pkg")
 
-    # The viewport module itself: three.js plus smlibpy-three, imported by the
-    # plugin lazily when its tab opens. Keeping it here keeps the plugin tiny.
     viewport_module = (
         Path(__file__).resolve().parents[2] / "plugins" / "cadview" / "lib" / "viewport.mjs"
     )
@@ -390,7 +488,6 @@ log('done')
             )
         return FileResponse(viewport_module, media_type="text/javascript")
 
-    # The isolation probe for smlibpy-three's browser bridge (not used by the app).
     probe_kernel = (
         Path(__file__).resolve().parents[2] / "plugins" / "cadview" / "lib" / "probe-kernel.mjs"
     )

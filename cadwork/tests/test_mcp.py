@@ -1,10 +1,9 @@
-"""End-to-end MCP test: a real HTTP server, the official client, ten tools."""
+"""End-to-end agent surface: a real HTTP server, the official client, ten tools."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import socket
 import tempfile
 import threading
@@ -14,9 +13,13 @@ import unittest
 import uvicorn
 
 from cadwork.design.document import feature_to_json
-from cadwork.design.features import FEATURES
 from cadwork.samples.impeller import impeller_document
 from cadwork.service import create_app
+
+EXPECTED_TOOLS = sorted([
+    "cad_state", "cad_probe", "cad_resolve", "cad_catalog", "cad_begin_intent",
+    "cad_preview", "cad_variants", "cad_commit", "cad_revert", "cad_render",
+])
 
 
 def _free_port() -> int:
@@ -71,48 +74,74 @@ class MCPTests(unittest.TestCase):
                 await session.initialize()
 
                 tools = await session.list_tools()
-                self.assertEqual(
-                    sorted(tool.name for tool in tools.tools),
-                    sorted(["doc_create", "doc_list", "doc_read", "catalog", "feature_add",
-                            "feature_update", "feature_remove", "preview", "checks", "export",
-                            "render_png", "doc_summary", "doc_resolve"]),
-                )
+                self.assertEqual(sorted(tool.name for tool in tools.tools), EXPECTED_TOOLS)
 
-                catalog = _payload(await session.call_tool("catalog", {}))
-                self.assertEqual({entry["type"] for entry in catalog}, set(FEATURES))
+                catalog = _payload(await session.call_tool("cad_catalog", {}))
+                self.assertEqual(len(catalog), 30)
 
-                missing = await session.call_tool("doc_read", {"document_id": "nope"})
-                self.assertTrue(missing.is_error)
-                self.assertIn("NOT_FOUND", missing.content[0].text)
+                state = _payload(await session.call_tool("cad_state", {}))
+                self.assertTrue(state["vacant"])
+                document_id = state["document"]["id"]
+                self.assertEqual(state["document"]["version"], 0)
 
-                created = _payload(await session.call_tool("doc_create", {"name": "MCP"}))
-                document_id = created["id"]
-                version = created["version"]
+                intent = _payload(await session.call_tool("cad_begin_intent", {
+                    "document_id": document_id,
+                    "prompt": "建一个九叶片叶轮",
+                    "steps": [f"放置 {feature.id}" for feature in impeller_document().features],
+                }))
+                intent_id = intent["intent_id"]
+                self.assertEqual(len(intent["steps"]), 9)
 
-                for feature in impeller_document().features:
-                    result = await session.call_tool("feature_add", {
+                version = 0
+                for index, feature in enumerate(impeller_document().features, start=1):
+                    committed = _payload(await session.call_tool("cad_commit", {
                         "document_id": document_id,
                         "base_version": version,
-                        "feature": feature_to_json(feature),
-                    })
-                    self.assertFalse(result.is_error, result.content)
-                    version = _payload(result)["document"]["version"]
+                        "ops": [{"op": "add", "feature": feature_to_json(feature)}],
+                        "title": f"放置 {feature.id}",
+                        "intent_id": intent_id,
+                        "step_index": index,
+                    }))
+                    version = committed["document"]["version"]
+                self.assertEqual(version, 9)
 
-                checks = _payload(await session.call_tool("checks", {"document_id": document_id}))
-                self.assertTrue(all(
-                    check["ok"] for feature in checks["features"] for check in feature["checks"]
-                ))
-                self.assertEqual(sorted(checks["tags"]), ["f6", "f7", "f8"])
+                state = _payload(await session.call_tool("cad_state", {"document_id": document_id}))
+                self.assertFalse(state["vacant"])
+                self.assertTrue(state["checks"]["ok"])
+                self.assertEqual(state["active_intent"]["status"], "completed")
+                self.assertGreater(len(state["focus_params"]), 0)
+                self.assertGreater(state["metrics"]["faces"], 0)
 
-                exported = await session.call_tool("export", {
-                    "document_id": document_id, "format": "step",
-                })
-                self.assertFalse(exported.is_error, exported.content)
-                path = exported.content[0].text
-                self.assertTrue(os.path.exists(path))
-                os.unlink(path)
+                probe = _payload(await session.call_tool("cad_probe", {
+                    "document_id": document_id,
+                    "ref": {"source": "f5", "select": "faces",
+                            "filters": [{"method": "largest"}]},
+                }))
+                self.assertTrue(probe["ref_probe"]["ok"])
+                self.assertEqual(probe["ref_probe"]["count"], 1)
 
-                image = await session.call_tool("render_png", {"document_id": document_id})
+                resolved = _payload(await session.call_tool("cad_resolve", {
+                    "document_id": document_id, "phrase": "最后那个",
+                }))
+                self.assertIn("matches", resolved)
+
+                preview = _payload(await session.call_tool("cad_preview", {
+                    "document_id": document_id,
+                    "ops": [{"op": "update", "id": "f3", "params": {"count": 11}}],
+                    "base_version": version,
+                }))
+                self.assertIn("f3", preview["diff"]["changed"])
+                self.assertGreaterEqual(preview["metrics"]["faces"], 1)
+                still = _payload(await session.call_tool("cad_state", {"document_id": document_id}))
+                self.assertEqual(still["document"]["version"], version)
+
+                reverted = _payload(await session.call_tool("cad_revert", {
+                    "document_id": document_id, "target_version": 4, "title": "回到四步",
+                }))
+                self.assertEqual(len(reverted["document"]["features"]), 4)
+                version = reverted["document"]["version"]
+
+                image = await session.call_tool("cad_render", {"document_id": document_id})
                 self.assertFalse(image.is_error, image.content)
                 self.assertTrue(any(item.type == "image" for item in image.content))
 

@@ -103,14 +103,16 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
         {"op": "update", "id": "f3", "params": {"count": 10}},
     ])
     exported, _ = restarted.export(document.id, "step")
+    edited_version = restarted.read(document.id).version
     undone = restarted.undo(document.id)
     steps.append(
         f"5 restarted service: scene={len(scene['faces'])} faces, "
-        f"edit -> v{undone['document']['version'] + 1}, export={len(exported)}B, "
+        f"edit -> v{edited_version}, export={len(exported)}B, "
         f"undo -> v{undone['document']['version']}"
     )
     assert len(exported) > 1000
-    assert undone["document"]["version"] == document.version
+    assert undone["document"]["version"] == edited_version + 1
+    assert len(undone["document"]["features"]) == len(document.features)
 
     report["ok"] = True
     report["final_version"] = undone["document"]["version"]
