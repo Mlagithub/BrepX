@@ -1,174 +1,182 @@
 /**
- * The CAD workbench, in the host's own visual language.
- *
- * Colour, radius and type come from the host's `--dsw-*` tokens, so the panel
- * flips with the light/dark theme and never looks bolted on. Two densities:
- * narrow (the sidebar tab) stacks; wide (the tab fullscreen) is a three-pane
- * workspace — parts and features, the model, properties and checks.
- *
- * The model is the kernel's own page in an iframe (the kernel must not be
- * bundled); this module talks to it over postMessage.
+ * BrepX canvas: a full-bleed model view with a floating dock, a visual diff
+ * layer and one bottom hub that carries the intent, the milestone chain and the
+ * focus sliders. Nothing here invents state: every version fact comes from the
+ * engine's state projection or its event stream.
  */
-const STYLE_ID = 'cadview-style'
+const STYLE_ID = 'brepx-style'
 
 const style = () => {
   if (document.getElementById(STYLE_ID)) return
   const tag = document.createElement('style')
   tag.id = STYLE_ID
   tag.textContent = `
-    .cv-root{
-      --cv-bg: var(--dsw-alias-bg-base, #0b0e13);
-      --cv-panel: var(--dsw-alias-bg-layer-1, #11151c);
-      --cv-panel-2: var(--dsw-alias-bg-layer-2, #151a23);
-      --cv-line: var(--dsw-alias-border-l2, #232d3d);
-      --cv-line-soft: var(--dsw-alias-border-l1, #1a2230);
-      --cv-fg: var(--dsw-alias-label-primary, #e8eef8);
-      --cv-fg-2: var(--dsw-alias-label-secondary, #a9b7ca);
-      --cv-fg-3: var(--dsw-alias-label-tertiary, #6d7d94);
-      --cv-accent: var(--dsw-alias-state-business-primary, #4c9aff);
-      --cv-ok: var(--dsw-alias-state-success-primary, #3ecf8e);
-      --cv-warn: var(--dsw-alias-state-warn-primary, #ffb454);
-      --cv-bad: var(--dsw-alias-state-error-primary, #ff5f7e);
-      --cv-r-sm: var(--dsw-radius-sm, 6px);
-      --cv-r-md: var(--dsw-radius-md, 9px);
-      --cv-font: var(--dsw-font-family, system-ui, sans-serif);
-      --cv-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    .bx-root{
+      --bx-bg: var(--dsw-alias-bg-base, #0b0e13);
+      --bx-panel: var(--dsw-alias-bg-layer-1, #11151c);
+      --bx-panel-2: var(--dsw-alias-bg-layer-2, #151a23);
+      --bx-line: var(--dsw-alias-border-l2, #232d3d);
+      --bx-fg: var(--dsw-alias-label-primary, #e8eef8);
+      --bx-fg-2: var(--dsw-alias-label-secondary, #a9b7ca);
+      --bx-fg-3: var(--dsw-alias-label-tertiary, #6d7d94);
+      --bx-accent: var(--dsw-alias-state-business-primary, #4c9aff);
+      --bx-ok: var(--dsw-alias-state-success-primary, #3ecf8e);
+      --bx-warn: var(--dsw-alias-state-warn-primary, #ffb454);
+      --bx-bad: var(--dsw-alias-state-error-primary, #ff5f7e);
+      --bx-r-sm: var(--dsw-radius-sm, 6px);
+      --bx-r-md: var(--dsw-radius-md, 9px);
+      --bx-font: var(--dsw-font-family, system-ui, sans-serif);
+      --bx-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
       position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0;
-      background: var(--cv-bg); color: var(--cv-fg); font: 12px/1.5 var(--cv-font)
+      background: var(--bx-bg); color: var(--bx-fg); font: 12px/1.5 var(--bx-font); overflow: hidden
     }
-    .cv-root button{font:inherit;color:var(--cv-fg-2);background:var(--cv-panel-2);
-      border:1px solid var(--cv-line);border-radius:var(--cv-r-sm);height:26px;padding:0 9px;cursor:pointer;
-      transition:background .12s,border-color .12s,color .12s}
-    .cv-root button:hover{background:var(--cv-panel);border-color:var(--cv-accent);color:var(--cv-fg)}
-    .cv-root button:disabled{opacity:.45;cursor:not-allowed}
-    .cv-root button.primary{background:var(--cv-accent);border-color:transparent;color:#08131f;font-weight:600}
-    .cv-root select,.cv-root input{font:inherit;color:var(--cv-fg);background:var(--cv-bg);
-      border:1px solid var(--cv-line);border-radius:var(--cv-r-sm);height:26px;padding:0 7px}
-    .cv-root select:focus,.cv-root input:focus{outline:none;border-color:var(--cv-accent)}
+    .bx-root button{font:inherit;color:var(--bx-fg-2);background:var(--bx-panel-2);
+      border:1px solid var(--bx-line);border-radius:var(--bx-r-sm);height:26px;padding:0 9px;
+      cursor:pointer;transition:background .12s,border-color .12s,color .12s;white-space:nowrap}
+    .bx-root button:hover{background:var(--bx-panel);border-color:var(--bx-accent);color:var(--bx-fg)}
+    .bx-root button:disabled{opacity:.42;cursor:not-allowed}
+    .bx-root button.on{border-color:var(--bx-accent);color:var(--bx-fg);
+      background:color-mix(in srgb, var(--bx-accent) 16%, transparent)}
+    .bx-root button.primary{background:var(--bx-accent);border-color:transparent;color:#08131f;font-weight:600}
+    .bx-root select,.bx-root input,.bx-root textarea{font:inherit;color:var(--bx-fg);
+      background:var(--bx-bg);border:1px solid var(--bx-line);border-radius:var(--bx-r-sm);height:26px;
+      padding:0 7px}
+    .bx-root textarea{height:auto;padding:6px 7px;resize:none}
+    .bx-root select:focus,.bx-root input:focus,.bx-root textarea:focus{outline:none;border-color:var(--bx-accent)}
 
-    /* header */
-    .cv-head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--cv-line);
-      background:var(--cv-panel);flex:0 0 auto;flex-wrap:wrap}
-    .cv-title{font-weight:650;color:var(--cv-fg);letter-spacing:.04em}
-    .cv-meta{color:var(--cv-fg-3);font:11px/1 var(--cv-mono);white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis;max-width:150px}
-    .cv-meta.wide-only{flex:1}
-    .cv-head .grow{flex:1}
+    .bx-top{display:flex;align-items:center;gap:9px;padding:5px 10px;background:var(--bx-panel);
+      border-bottom:1px solid var(--bx-line);flex:0 0 auto;min-height:32px}
+    .bx-brand{font-weight:650;letter-spacing:.05em}
+    .bx-doc{color:var(--bx-fg-3);font:11px/1 var(--bx-mono);white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;max-width:190px}
+    .bx-badge{font:10px/16px var(--bx-mono);height:16px;padding:0 6px;border-radius:999px;
+      border:1px solid var(--bx-line);color:var(--bx-fg-3)}
+    .bx-badge.ok{color:var(--bx-ok);border-color:color-mix(in srgb, var(--bx-ok) 45%, transparent)}
+    .bx-badge.bad{color:var(--bx-bad);border-color:color-mix(in srgb, var(--bx-bad) 45%, transparent)}
+    .bx-metric{color:var(--bx-fg-3);font:11px/1 var(--bx-mono);margin-left:auto;white-space:nowrap}
 
-    /* body layout */
-    .cv-main{flex:1;min-height:0;display:flex;flex-direction:column}
-    .cv-rail{display:none;min-height:0;flex-direction:column;width:230px;border-right:1px solid var(--cv-line);
-      background:var(--cv-panel)}
-    .cv-view{position:relative;flex:1;min-height:220px;background:var(--cv-bg)}
-    .cv-view iframe{display:block;width:100%;height:100%;border:0}
-    .cv-insp{display:none;width:290px;min-height:0;flex-direction:column;border-left:1px solid var(--cv-line);
-      background:var(--cv-panel)}
-    .cv-checks{flex:0 0 auto;max-height:96px;overflow:auto;border-top:1px solid var(--cv-line);
-      background:var(--cv-panel);padding:5px 10px;font-size:11px;line-height:1.5}
-    .cv-checks-head{color:var(--cv-ok)}
-    .cv-checks-head.bad{color:var(--cv-bad)}
-    .cv-checks ul{margin:3px 0 0;padding-left:16px;color:var(--cv-bad)}
+    .bx-stage{position:relative;flex:1;min-height:0;background:var(--bx-bg)}
+    .bx-stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block}
 
-    /* wide workspace */
-    .cv-root.wide .cv-main{flex-direction:row}
-    .cv-root.wide .cv-rail{display:flex}
-    .cv-root.wide .cv-insp{display:flex}
-    .cv-root.wide .cv-checks{display:none}
-    .cv-root.wide .cv-meta{max-width:none}
+    .bx-dock{position:absolute;top:8px;right:8px;z-index:12;display:flex;flex-wrap:wrap;
+      gap:4px;justify-content:flex-end;max-width:calc(100% - 24px);pointer-events:none}
+    .bx-dock > *{pointer-events:auto}
+    .bx-dock .group{display:flex;gap:3px;padding:3px;border-radius:var(--bx-r-md);
+      background:color-mix(in srgb, var(--bx-panel) 88%, transparent);border:1px solid var(--bx-line);
+      backdrop-filter:blur(8px)}
+    .bx-dock .group button{height:24px;padding:0 7px;font-size:11px;background:transparent;border-color:transparent}
+    .bx-dock .group button:hover{background:var(--bx-panel-2);border-color:var(--bx-line)}
+    .bx-dock .group button.on{background:color-mix(in srgb, var(--bx-accent) 22%, transparent);border-color:var(--bx-accent)}
 
-    /* panel sections */
-    .cv-section{display:flex;flex-direction:column;min-height:0}
-    .cv-section + .cv-section{border-top:1px solid var(--cv-line)}
-    .cv-section-head{display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;color:var(--cv-fg-3);
-      font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
-    .cv-section-head .count{font:10.5px/1 var(--cv-mono);letter-spacing:0;color:var(--cv-fg-3)}
-    .cv-section-body{flex:1;min-height:0;overflow:auto;padding:3px 5px 6px}
+    .bx-section{position:absolute;top:44px;right:8px;z-index:12;display:none;align-items:center;gap:6px;
+      padding:4px 7px;border-radius:var(--bx-r-md);background:color-mix(in srgb, var(--bx-panel) 92%, transparent);
+      border:1px solid var(--bx-line);backdrop-filter:blur(8px)}
+    .bx-section.on{display:flex}
+    .bx-section input[type=range]{width:110px;height:20px;padding:0;border:0;background:transparent;
+      accent-color:var(--bx-accent)}
 
-    /* parts */
-    .cv-part{display:grid;grid-template-columns:40px minmax(0,1fr);gap:8px;align-items:center;padding:5px;
-      border-radius:var(--cv-r-sm);border:1px solid transparent;cursor:pointer;background:none;height:auto;
-      width:100%;text-align:left;min-height:46px;overflow:hidden}
-    .cv-part:hover{background:var(--cv-panel-2);border-color:var(--cv-line)}
-    .cv-part.sel{background:var(--cv-panel-2);border-color:var(--cv-accent)}
-    .cv-part .thumb{width:40px;height:32px;border-radius:4px;object-fit:cover;background:var(--cv-panel-2);
-      border:1px solid var(--cv-line-soft);align-self:center}
-    .cv-part b{display:block;font-size:12px;font-weight:600;line-height:1.3;color:var(--cv-fg);white-space:nowrap;
-      overflow:hidden;text-overflow:ellipsis}
-    .cv-part span{font:10.5px/1.3 var(--cv-mono);color:var(--cv-fg-3)}
+    .bx-vacant{position:absolute;inset:0;z-index:10;display:none;align-items:center;justify-content:center;
+      flex-direction:column;gap:12px;pointer-events:none;
+      color:var(--bx-fg-3);text-align:center;padding:24px}
+    .bx-vacant.on{display:flex}
+    .bx-vacant-card{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:10px;
+      padding:18px 22px;border-radius:var(--bx-r-md);border:1px solid var(--bx-line);
+      background:color-mix(in srgb, var(--bx-panel) 84%, transparent);backdrop-filter:blur(8px)}
+    .bx-vacant strong{font-size:15px;color:var(--bx-fg);font-weight:600}
+    .bx-vacant p{margin:0;max-width:420px;line-height:1.7}
+    .bx-vacant .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 
-    /* features */
-    .cv-feat{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:7px;align-items:center;padding:4px 6px;
-      border-radius:var(--cv-r-sm);border:1px solid transparent;cursor:pointer;background:none;height:auto;
-      width:100%;text-align:left;color:var(--cv-fg-2)}
-    .cv-feat:hover{background:var(--cv-panel-2);border-color:var(--cv-line)}
-    .cv-feat.sel{background:var(--cv-panel-2);border-color:var(--cv-accent);color:var(--cv-fg)}
-    .cv-feat .dot{width:6px;height:6px;border-radius:50%;background:var(--cv-ok);justify-self:center}
-    .cv-feat.off .dot{background:var(--cv-fg-3)}
-    .cv-feat.off .name{text-decoration:line-through;color:var(--cv-fg-3)}
-    .cv-feat .name{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .cv-feat .name small{font:10.5px/1 var(--cv-mono);color:var(--cv-fg-3);margin-left:5px}
-    .cv-feat .sw{width:24px;height:13px;border-radius:999px;background:var(--cv-panel-2);border:1px solid var(--cv-line);
-      position:relative;flex:none}
-    .cv-feat .sw::after{content:"";position:absolute;top:1px;left:1px;width:9px;height:9px;border-radius:50%;
-      background:var(--cv-fg-3);transition:transform .14s,background .14s}
-    .cv-feat.on .sw{background:color-mix(in srgb, var(--cv-ok) 25%, transparent);border-color:var(--cv-ok)}
-    .cv-feat.on .sw::after{transform:translateX(10px);background:var(--cv-ok)}
+    .bx-replay{position:absolute;top:8px;left:8px;z-index:13;display:none;align-items:center;gap:8px;
+      padding:4px 8px;border-radius:var(--bx-r-md);background:color-mix(in srgb, var(--bx-warn) 18%, var(--bx-panel));
+      border:1px solid color-mix(in srgb, var(--bx-warn) 55%, transparent);color:var(--bx-fg);font-size:11px}
+    .bx-replay.on{display:flex}
 
-    /* inspector */
-    .cv-field{display:grid;grid-template-columns:88px minmax(0,1fr);gap:7px;align-items:center;padding:3px 8px}
-    .cv-field label{color:var(--cv-fg-3);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .cv-field input,.cv-field select{height:24px;font:11.5px/1 var(--cv-mono);width:100%}
-    .cv-empty{color:var(--cv-fg-3);padding:10px;font-size:11.5px;text-align:center}
-    .cv-check-row{display:grid;grid-template-columns:13px minmax(0,1fr);gap:6px;padding:2px 8px;font-size:11px}
-    .cv-check-row .mark{color:var(--cv-ok);font:11px/1.5 var(--cv-mono)}
-    .cv-check-row.bad .mark{color:var(--cv-bad)}
-    .cv-check-row .exp{color:var(--cv-fg-3);font:10px/1.35 var(--cv-mono)}
+    .bx-hub{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:14;
+      display:flex;flex-direction:column;gap:6px;width:min(820px, calc(100% - 18px));pointer-events:none}
+    .bx-hub > *{pointer-events:auto}
+    .bx-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--bx-r-md);
+      border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 93%, transparent);
+      backdrop-filter:blur(9px);flex-wrap:wrap}
+    .bx-banner{display:none;border-color:color-mix(in srgb, var(--bx-bad) 55%, transparent);
+      background:color-mix(in srgb, var(--bx-bad) 14%, var(--bx-panel));color:var(--bx-fg);font-size:11px}
+    .bx-banner.on{display:flex}
+    .bx-banner .grow{flex:1;min-width:120px}
+    .bx-stepper{overflow-x:auto;scrollbar-width:thin}
+    .bx-chip{height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--bx-line);
+      background:var(--bx-bg);color:var(--bx-fg-2);font:11px/1 var(--bx-mono);cursor:pointer;
+      display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+    .bx-chip:hover{border-color:var(--bx-accent);color:var(--bx-fg)}
+    .bx-chip.current{border-color:var(--bx-accent);color:var(--bx-fg);
+      background:color-mix(in srgb, var(--bx-accent) 16%, transparent)}
+    .bx-chip.viewing{border-color:var(--bx-warn);color:var(--bx-fg);
+      background:color-mix(in srgb, var(--bx-warn) 16%, transparent)}
+    .bx-chip .meta{color:var(--bx-fg-3);font-size:10px}
+    .bx-chip .actor{width:5px;height:5px;border-radius:50%;background:var(--bx-fg-3)}
+    .bx-chip .actor.agent{background:var(--bx-accent)}
+    .bx-chip .actor.human{background:var(--bx-ok)}
+    .bx-mutes{gap:5px;font-size:11px;color:var(--bx-fg-3)}
+    .bx-mute{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--bx-line);
+      border-radius:999px;padding:1px 7px;background:var(--bx-bg);cursor:pointer;font-size:11px;
+      color:var(--bx-fg-2)}
+    .bx-mute:hover{border-color:var(--bx-accent)}
+    .bx-mute.off{opacity:.55;text-decoration:line-through}
+    .bx-mute.locked{cursor:not-allowed;opacity:.4;text-decoration:none}
 
-    /* viewport overlay */
-    .cv-tools{position:absolute;top:8px;left:8px;display:flex;gap:4px;padding:4px;border-radius:var(--cv-r-md);
-      background:color-mix(in srgb, var(--cv-panel) 88%, transparent);border:1px solid var(--cv-line);
-      backdrop-filter:blur(6px)}
-    .cv-tools button{height:22px;padding:0 7px;font-size:11px}
-    .cv-tools .sep{width:1px;background:var(--cv-line);margin:1px 2px}
-    .cv-tools button.on{background:var(--cv-accent);border-color:transparent;color:#08131f;font-weight:600}
-    .cv-tools input[type=range]{width:104px;height:22px;padding:0;background:transparent;border:0;
-      accent-color:var(--cv-accent)}
-    .cv-readout{position:absolute;left:9px;bottom:7px;right:9px;display:flex;justify-content:space-between;gap:10px;
-      pointer-events:none;font:11px/1.4 var(--cv-mono);color:var(--cv-fg-2);text-shadow:0 1px 2px #000}
-    .cv-sheet{position:absolute;left:8px;right:8px;bottom:30px;z-index:15;display:flex;flex-direction:column;
-      gap:7px;padding:9px 10px;border-radius:var(--cv-r-md);border:1px solid var(--cv-line);
-      background:color-mix(in srgb, var(--cv-panel) 94%, transparent);backdrop-filter:blur(8px);
-      box-shadow:var(--dsw-shadow-lv2, 0 10px 30px rgb(0 0 0 / .35))}
-    .cv-sheet[hidden]{display:none}
-    .cv-sheet-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--cv-fg)}
-    .cv-sheet-note{color:var(--cv-fg-3);font:11px/1.4 var(--cv-mono)}
-    .cv-vrows{display:flex;flex-wrap:wrap;gap:6px;max-height:112px;overflow:auto}
-    .cv-vrow{display:flex;align-items:baseline;gap:8px;height:auto;padding:5px 9px;border-radius:var(--cv-r-sm);
-      border:1px solid var(--cv-line);background:var(--cv-bg);color:var(--cv-fg);text-align:left}
-    .cv-vrow b{font-size:12px}
-    .cv-vrow span{font:10.5px/1.3 var(--cv-mono);color:var(--cv-fg-3)}
-    .cv-vrow.sel{border-color:var(--cv-accent);
-      background:color-mix(in srgb, var(--cv-accent) 14%, transparent)}
-    .cv-vrow.bad{border-color:var(--cv-bad)}
-    .cv-vrow.bad b{color:var(--cv-bad)}
-    .cv-status-line{padding:3px 10px;border-top:1px solid var(--cv-line);background:var(--cv-panel);
-      color:var(--cv-fg-3);font:11px/1.4 var(--cv-mono);flex:0 0 auto;white-space:nowrap;overflow:hidden;
-      text-overflow:ellipsis}
+    .bx-card{display:none;flex-direction:column;gap:6px;padding:7px 9px;border-radius:var(--bx-r-md);
+      border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 93%, transparent);
+      backdrop-filter:blur(9px)}
+    .bx-card.on{display:flex}
+    .bx-card-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+    .bx-card-title{font-weight:600;color:var(--bx-fg)}
+    .bx-card-delta{color:var(--bx-fg-3);font:11px/1.4 var(--bx-mono);margin-left:auto}
+    .bx-focus{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+    .bx-focus label{display:flex;align-items:center;gap:6px;color:var(--bx-fg-3);font-size:11px;
+      padding:2px 6px;border-radius:var(--bx-r-sm);background:color-mix(in srgb, var(--bx-bg) 70%, transparent)}
+    .bx-focus input[type=range]{width:92px;height:20px;padding:0;border:0;background:transparent;
+      accent-color:var(--bx-accent)}
+    .bx-focus input[type=number]{width:64px;height:22px;font:11px/1 var(--bx-mono)}
+    .bx-focus b{font:11px/1 var(--bx-mono);color:var(--bx-fg);min-width:40px;text-align:right}
+    .bx-focus .unit{color:var(--bx-fg-3);font-size:10px}
 
-    /* modal (variants) */
-    .cv-modal{position:absolute;inset:0;z-index:20;display:flex;align-items:flex-start;justify-content:center;
-      padding:16px;overflow:auto;background:color-mix(in srgb, var(--cv-bg) 72%, transparent);backdrop-filter:blur(3px)}
-    .cv-modal[hidden]{display:none}
-    .cv-modal-box{width:100%;max-width:760px;display:flex;flex-direction:column;gap:9px;padding:13px;
-      border-radius:var(--cv-r-md);background:var(--cv-panel);border:1px solid var(--cv-line);
-      box-shadow:var(--dsw-shadow-lv2, 0 18px 48px rgb(0 0 0 / .5))}
-    .cv-modal-head{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--cv-fg)}
-    .cv-form{display:flex;flex-wrap:wrap;align-items:center;gap:7px;color:var(--cv-fg-3)}
-    .cv-form label{display:flex;align-items:center;gap:4px}
-    .cv-form input[type=text]{width:150px}
-      border-radius:var(--cv-r-sm);border:1px solid var(--cv-line);background:var(--cv-bg);color:var(--cv-fg)}
-      var(--cv-panel), var(--cv-panel-2), var(--cv-panel));background-size:200% 100%;
-      animation:cv-shimmer 1.2s linear infinite}
+    .bx-variants{display:none;gap:8px;overflow-x:auto;padding:7px 9px;border-radius:var(--bx-r-md);
+      border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 94%, transparent);
+      align-items:stretch}
+    .bx-variants.on{display:flex}
+    .bx-variant{min-width:148px;max-width:176px;display:flex;flex-direction:column;gap:5px;align-items:stretch;
+      padding:6px 8px;border-radius:var(--bx-r-sm);border:1px solid var(--bx-line);background:var(--bx-bg);
+      color:var(--bx-fg-2);font-size:11px;overflow:hidden}
+    .bx-variant.selected{border-color:var(--bx-accent);
+      background:color-mix(in srgb, var(--bx-accent) 10%, var(--bx-bg))}
+    .bx-variant img{display:block;width:100%;height:68px;object-fit:contain;border-radius:4px;
+      background:var(--bx-panel-2)}
+    .bx-root button.bx-variant-preview{display:flex;flex-direction:column;gap:3px;align-items:flex-start;
+      width:100%;height:auto;padding:0;border:0;background:transparent;text-align:left;white-space:normal}
+    .bx-root button.bx-variant-preview:hover{background:transparent;border-color:transparent}
+    .bx-variant b{color:var(--bx-fg);font-weight:600;font-size:11px}
+    .bx-variant span{font:10px/1.4 var(--bx-mono);color:var(--bx-fg-3)}
+    .bx-variant-actions{display:flex;gap:4px;margin-top:auto}
+    .bx-root .bx-variant-actions button{height:22px;padding:0 8px;font-size:10px;flex:1}
+
+    .bx-composer{display:flex;flex-direction:column;gap:5px;padding:6px 8px;border-radius:var(--bx-r-md);
+      border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 95%, transparent);
+      backdrop-filter:blur(10px)}
+    .bx-pills{display:flex;flex-wrap:wrap;gap:4px}
+    .bx-pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border-radius:999px;
+      border:1px solid color-mix(in srgb, var(--bx-accent) 45%, transparent);color:var(--bx-fg);
+      background:color-mix(in srgb, var(--bx-accent) 12%, transparent);font:10px/1 var(--bx-mono)}
+    .bx-pill button{height:14px;padding:0 3px;border:0;background:transparent;color:var(--bx-fg-3);font-size:10px}
+    .bx-pill button:hover{color:var(--bx-bad);background:transparent}
+    .bx-inputrow{display:flex;gap:6px;align-items:flex-end}
+    .bx-inputrow textarea{flex:1;min-height:34px;max-height:96px;line-height:1.5}
+    .bx-hint{color:var(--bx-fg-3);font:10px/1.4 var(--bx-mono)}
+    .bx-intent{display:none;align-items:center;gap:6px;font-size:11px;color:var(--bx-fg-3)}
+    .bx-intent.on{display:flex}
+    .bx-intent .steps{display:flex;gap:5px;flex-wrap:wrap}
+    .bx-step{padding:0 6px;height:18px;border-radius:999px;border:1px solid var(--bx-line);
+      font:10px/18px var(--bx-mono);color:var(--bx-fg-3)}
+    .bx-step.done{color:var(--bx-ok);border-color:color-mix(in srgb, var(--bx-ok) 40%, transparent)}
+    .bx-step.running{color:var(--bx-fg);border-color:var(--bx-accent)}
+    .bx-step.skipped{text-decoration:line-through}
   `
   document.head.appendChild(tag)
 }
@@ -177,13 +185,21 @@ const fetchJSON = async (url, options) => {
   const response = await fetch(url, options)
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
+    let code = null
+    let hint = null
     try {
       const payload = await response.json()
       if (payload?.error?.message) message = payload.error.message
+      if (payload?.error?.code) code = payload.error.code
+      if (payload?.error?.hint) hint = payload.error.hint
     } catch (error) {
       /* the status line is enough */
     }
-    throw new Error(message)
+    const err = new Error(hint ? `${message}（${hint}）` : message)
+    err.status = response.status
+    err.code = code
+    err.hint = hint
+    throw err
   }
   return response.json()
 }
@@ -195,809 +211,952 @@ const el = (tag, className, text) => {
   return node
 }
 
-/**
- * Mount the workbench in `host`.
- * @param host - element to fill.
- * @param base - cadwork service origin, e.g. http://127.0.0.1:8765
- */
+const num = (value, digits = 0) => {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return Number(value).toLocaleString(undefined, {
+    minimumFractionDigits: digits, maximumFractionDigits: digits,
+  })
+}
+
 export function mountViewport(host, base) {
   style()
   host.textContent = ''
 
-  const root = el('div', 'cv-root')
+  const root = el('div', 'bx-root')
 
   // ---------------------------------------------------------------- header
-  const head = el('div', 'cv-head')
-  const title = el('span', 'cv-title', 'BrepX')
-  const picker = el('select')
-  picker.setAttribute('aria-label', 'Sample')
-  const meta = el('span', 'cv-meta', 'starting…')
-  const variantsButton = el('button', null, '变体')
-  variantsButton.title = '并置比较若干候选（不修改文档）'
-  const buildButton = el('button', 'primary', 'Build')
-  const reloadButton = el('button', null, 'Reload')
-  const undoButton = el('button', null, '撤销')
-  const stepButton = el('button', null, 'STEP')
-  stepButton.title = '导出 STEP'
-  const stlButton = el('button', null, 'STL')
-  stlButton.title = '导出 STL'
-  const grow = el('span', 'grow')
-  const helpButton = el('button', null, '?')
-  helpButton.setAttribute('aria-label', '演示与快捷键')
-  helpButton.title = '演示脚本与快捷键'
-  head.append(title, picker, meta, grow, variantsButton, undoButton, stepButton, stlButton,
-    buildButton, reloadButton, helpButton)
+  const head = el('div', 'bx-top')
+  const brand = el('span', 'bx-brand', 'BrepX')
+  const docLabel = el('span', 'bx-doc', '连接中…')
+  const checkBadge = el('span', 'bx-badge', 'checks —')
+  const metricText = el('span', 'bx-metric', '')
+  head.append(brand, docLabel, checkBadge, metricText)
+  root.append(head)
 
-  // ---------------------------------------------------------------- rail
-  const rail = el('div', 'cv-rail')
-  const partsSection = el('section', 'cv-section')
-  const partsHead = el('div', 'cv-section-head')
-  partsHead.append(el('span', null, '零件'), el('span', 'count'))
-  const partsBody = el('div', 'cv-section-body')
-  partsSection.append(partsHead, partsBody)
-  const treeSection = el('section', 'cv-section')
-  const treeHead = el('div', 'cv-section-head')
-  treeHead.append(el('span', null, '特征'), el('span', 'count'))
-  const treeBody = el('div', 'cv-section-body')
-  treeSection.append(treeHead, treeBody)
-  partsSection.style.flex = '0 0 42%'
-  treeSection.style.flex = '1'
-  rail.append(partsSection, treeSection)
-
-  // ---------------------------------------------------------------- view
-  const view = el('div', 'cv-view')
+  // ---------------------------------------------------------------- stage
+  const stage = el('div', 'bx-stage')
   const frame = el('iframe')
-  frame.title = 'CAD model'
+  frame.title = 'BrepX 模型'
   frame.src = `${base}/api/kernel-view`
-  const tools = el('div', 'cv-tools')
-  for (const [label, name] of [['等轴', 'iso'], ['前', 'front'], ['顶', 'top'], ['右', 'right']]) {
-    const button = el('button', null, label)
-    button.setAttribute('aria-label', `视图 ${label}`)
-    button.addEventListener('click', () => command('view', { name }))
-    tools.append(button)
-  }
-  tools.append(el('span', 'sep'))
-  const fitButton = el('button', null, '适配')
-  fitButton.addEventListener('click', () => command('fit'))
+  stage.append(frame)
+
+  const dock = el('div', 'bx-dock')
+  const viewGroup = el('div', 'group')
   const wireButton = el('button', null, '线框')
-  wireButton.addEventListener('click', () => command('wire'))
-  tools.append(fitButton, wireButton)
-  tools.append(el('span', 'sep'))
-  let measuring = false
   const measureButton = el('button', null, '测量')
-  measureButton.setAttribute('aria-label', '测量')
-  measureButton.title = '测量：点面取尺寸，再点一处量距离 (M)'
-  measureButton.addEventListener('click', () => {
-    measuring = !measuring
-    measureButton.classList.toggle('on', measuring)
-    command('measure', { on: measuring })
-  })
-  let sectioning = false
+  const ghostButton = el('button', null, '残影')
+  const deltaButton = el('button', null, '差异')
   const sectionButton = el('button', null, '剖切')
-  sectionButton.setAttribute('aria-label', '剖切')
-  sectionButton.title = '剖切：拖动滑块移动切面 (X)'
-  const sectionRange = el('input', 'cv-section-range')
+  for (const [name, label] of [['iso', '等轴'], ['front', '前'], ['top', '顶'], ['right', '右']]) {
+    const button = el('button', null, label)
+    button.addEventListener('click', () => post('view', { name }))
+    viewGroup.append(button)
+  }
+  const fitButton = el('button', null, '适配')
+  fitButton.addEventListener('click', () => post('fit', {}))
+  viewGroup.append(fitButton, wireButton, measureButton, ghostButton, deltaButton, sectionButton)
+
+  const exportGroup = el('div', 'group')
+  const exportLinks = {}
+  for (const [fmt, label] of [['step', 'STEP'], ['stl', 'STL'], ['cfd', 'CFD']]) {
+    const node = el('button', null, label)
+    node.title = `导出 ${label}`
+    node.addEventListener('click', () => {
+      if (!currentDoc) return
+      const link = document.createElement('a')
+      link.href = `${base}/api/docs/${currentDoc.document.id}/export/${fmt}`
+      link.rel = 'noopener'
+      document.body.append(link)
+      link.click()
+      link.remove()
+    })
+    exportLinks[fmt] = node
+    exportGroup.append(node)
+  }
+  dock.append(viewGroup, exportGroup)
+  stage.append(dock)
+
+  const sectionBar = el('div', 'bx-section')
+  const sectionAxis = el('select')
+  for (const axis of ['X', 'Y', 'Z']) {
+    const option = el('option', null, `${axis} 剖切`)
+    option.value = axis
+    sectionAxis.append(option)
+  }
+  sectionAxis.value = 'Z'
+  const sectionRange = el('input')
   sectionRange.type = 'range'
   sectionRange.min = '0'
-  sectionRange.max = '100'
-  sectionRange.value = '50'
-  sectionRange.hidden = true
-  sectionRange.setAttribute('aria-label', '剖面位置')
-  sectionRange.addEventListener('input', () => {
-    command('section-t', { t: Number(sectionRange.value) / 100 })
-  })
-  sectionButton.addEventListener('click', () => {
-    sectioning = !sectioning
-    sectionButton.classList.toggle('on', sectioning)
-    sectionRange.hidden = !sectioning
-    command('section', { on: sectioning, t: Number(sectionRange.value) / 100 })
-  })
-  tools.append(measureButton, sectionButton, sectionRange)
-  const readout = el('div', 'cv-readout')
-  const pickText = el('span', null, '点击模型可拾取面')
-  const metricsText = el('span', null, '')
-  readout.append(pickText, metricsText)
-  view.append(frame, tools, readout)
+  sectionRange.max = '1'
+  sectionRange.step = '0.01'
+  sectionRange.value = '0.5'
+  sectionRange.setAttribute('aria-label', '剖切位置')
+  sectionBar.append(sectionAxis, sectionRange)
+  stage.append(sectionBar)
 
-  // ---------------------------------------------------------------- inspector
-  const insp = el('div', 'cv-insp')
-  const fieldsSection = el('section', 'cv-section')
-  const fieldsHead = el('div', 'cv-section-head')
-  fieldsHead.append(el('span', null, '属性'), el('span', 'count'))
-  const fieldsBody = el('div', 'cv-section-body')
-  const applyButton = el('button', 'primary', '应用参数')
-  applyButton.disabled = true
-  const applyRow = el('div')
-  applyRow.style.cssText = 'padding:6px 8px;border-top:1px solid var(--cv-line)'
-  applyRow.append(applyButton)
-  fieldsSection.append(fieldsHead, fieldsBody, applyRow)
-  fieldsSection.style.flex = '1'
-  const checksSection = el('section', 'cv-section')
-  const checksHead = el('div', 'cv-section-head')
-  checksHead.append(el('span', null, '检查'), el('span', 'count'))
-  const checksBody = el('div', 'cv-section-body')
-  checksSection.append(checksHead, checksBody)
-  checksSection.style.flex = '0 0 38%'
-  insp.append(fieldsSection, checksSection)
+  const vacant = el('div', 'bx-vacant')
+  const vacantCard = el('div', 'bx-vacant-card')
+  const vacantTitle = el('strong', null, '空白文档')
+  const vacantBody = el('p', null, '直接描述你要的零件，Agent 会先拆解里程碑，再逐步生成几何。')
+  const vacantRow = el('div', 'row')
+  const sampleButton = el('button', 'primary', '载入叶轮样例')
+  sampleButton.addEventListener('click', () => loadSample('impeller'))
+  const scrollHint = el('span', 'bx-hint', '也可以在底部输入框直接向 Agent 描述需求')
+  vacantRow.append(sampleButton)
+  vacantCard.append(vacantTitle, vacantBody, vacantRow, scrollHint)
+  vacant.append(vacantCard)
+  stage.append(vacant)
 
-  // ---------------------------------------------------------------- bottom
-  const checksStrip = el('div', 'cv-checks')
-  const statusLine = el('div', 'cv-status-line', 'starting…')
+  const replayBar = el('div', 'bx-replay')
+  const replayText = el('span', null, '')
+  const replayBack = el('button', null, '回到最新')
+  replayBar.append(replayText, replayBack)
+  stage.append(replayBar)
 
-  const main = el('div', 'cv-main')
-  main.append(rail, view, insp)
-  root.append(head, main, checksStrip, statusLine)
+  // ---------------------------------------------------------------- hub
+  const hub = el('div', 'bx-hub')
+  const banner = el('div', 'bx-row bx-banner')
+  const bannerText = el('span', 'grow', '')
+  const bannerClose = el('button', null, '×')
+  banner.append(bannerText, bannerClose)
+  const stepper = el('div', 'bx-row bx-stepper')
+  const mutes = el('div', 'bx-row bx-mutes')
+  const card = el('div', 'bx-card')
+  const variants = el('div', 'bx-variants')
+  const composer = el('form', 'bx-composer')
+  const pills = el('div', 'bx-pills')
+  const intentBar = el('div', 'bx-intent')
+  const inputRow = el('div', 'bx-inputrow')
+  const prompt = el('textarea')
+  prompt.placeholder = '描述要做的改动；拾取的面会作为上下文挂在前面'
+  prompt.rows = 1
+  prompt.setAttribute('aria-label', '设计意图')
+  const sendButton = el('button', 'primary', '发送')
+  sendButton.type = 'submit'
+  const stopButton = el('button', null, '停止')
+  stopButton.type = 'button'
+  stopButton.hidden = true
+  const undoButton = el('button', null, '撤销')
+  undoButton.type = 'button'
+  const hint = el('span', 'bx-hint', '')
+  inputRow.append(prompt, sendButton, stopButton, undoButton)
+  composer.append(pills, intentBar, inputRow, hint)
+  hub.append(banner, stepper, mutes, card, variants, composer)
+  stage.append(hub)
+  root.append(stage)
   host.append(root)
 
-  const observer = new ResizeObserver(() => {
-    root.classList.toggle('wide', root.clientWidth >= 860)
-  })
-  observer.observe(root)
-
   // ---------------------------------------------------------------- state
-  let samples = []
-  let catalog = null
+  let serviceBase = base
   let currentDoc = null
-  let building = false
-  let polling = null
+  let state = null
+  let kernelReady = false
+  let replayVersion = null
+  let ghostOn = false
+  let deltaOn = false
+  let wireOn = false
+  let measureOn = false
+  let sectionOn = false
+  let sectionAxisValue = 'Z'
+  let sectionValue = 0.5
+  let pendingPicks = []
   let variantSet = null
-  let selected = null
+  let variantPreviewIndex = null
+  let activeIntent = null
+  let eventSource = null
+  let bannerTimer = null
+  let streamRetry = null
+  let shownVersion = -1
+  let watchdog = null
 
-  const say = (text) => { statusLine.textContent = text }
-  const command = (type, payload = {}) => {
-    try { frame.contentWindow?.postMessage({ from: 'cadview-parent', type, ...payload }, '*') }
-    catch (error) { /* the page may not be ready */ }
+  const documentId = () => currentDoc?.document.id ?? null
+  const liveVersion = () => currentDoc?.document.version ?? 0
+  const showingVersion = () => replayVersion ?? liveVersion()
+
+  const post = (type, payload) => {
+    try {
+      frame.contentWindow?.postMessage({ from: 'brepx-workbench', type, ...payload }, '*')
+    } catch (error) {
+      /* the frame may not be ready yet */
+    }
   }
 
-  // ---------------------------------------------------------------- checks
-  const renderChecks = (report) => {
-    checksStrip.textContent = ''
-    checksBody.textContent = ''
-    if (!report) {
-      checksStrip.textContent = 'checks unavailable'
-      checksBody.append(el('div', 'cv-empty', '不可用'))
+  const say = (text) => { hint.textContent = text }
+
+  const showBanner = (text, seconds = 5) => {
+    bannerText.textContent = text
+    banner.classList.add('on')
+    if (bannerTimer) clearTimeout(bannerTimer)
+    bannerTimer = setTimeout(() => banner.classList.remove('on'), seconds * 1000)
+  }
+  bannerClose.addEventListener('click', () => banner.classList.remove('on'))
+
+  const designPayload = (options = {}) => ({
+    documentId: documentId(),
+    version: showingVersion(),
+    highlight: options.highlight,
+    prefetch: options.prefetch ?? previousVersion(),
+    fit: options.fit,
+  })
+
+  const parseColor = (text) => {
+    const match = String(text || '').match(/rgba?\(([^)]+)\)/)
+    if (!match) return null
+    const [r, g, b, a = 1] = match[1].split(',').map((item) => Number(item.trim()))
+    if ([r, g, b].some((value) => Number.isNaN(value)) || a === 0) return null
+    return { r, g, b }
+  }
+
+  const themePayload = () => {
+    const stageStyle = getComputedStyle(stage)
+    const rootStyle = getComputedStyle(root)
+    const background = parseColor(stageStyle.backgroundColor)
+      || parseColor(rootStyle.backgroundColor)
+      || parseColor(getComputedStyle(document.body).backgroundColor)
+      || { r: 11, g: 14, b: 19 }
+    const foreground = parseColor(rootStyle.color) || { r: 232, g: 238, b: 248 }
+    const luminance = (0.299 * background.r + 0.587 * background.g + 0.114 * background.b) / 255
+    return {
+      background: `rgb(${background.r}, ${background.g}, ${background.b})`,
+      foreground: `rgb(${foreground.r}, ${foreground.g}, ${foreground.b})`,
+      light: luminance > 0.5,
+    }
+  }
+
+  const pushDesign = (options = {}) => {
+    if (!kernelReady) return
+    post('theme', themePayload())
+    post('design', designPayload(options))
+  }
+
+  // A dropped handshake message must not leave a black viewport: retry until the
+  // frame reports that it shows the version the hub is asking for.
+  const startWatchdog = () => {
+    if (watchdog) return
+    watchdog = setInterval(() => {
+      if (!kernelReady) return
+      if (!documentId()) return
+      if (shownVersion === showingVersion()) return
+      pushDesign()
+    }, 1500)
+  }
+
+  frame.addEventListener('load', () => {
+    kernelReady = false
+    shownVersion = -1
+  })
+
+  // ---------------------------------------------------------------- render
+  const renderHeader = () => {
+    if (!currentDoc) {
+      docLabel.textContent = 'service unreachable'
       return
     }
-    const all = []
-    for (const feature of report.features || []) {
-      for (const check of feature.checks || []) all.push({ ...check, feature: feature.id })
+    docLabel.textContent = `${currentDoc.document.name || currentDoc.document.id} · v${currentDoc.document.version}`
+    if (currentDoc.vacant) {
+      checkBadge.textContent = '空白'
+      checkBadge.className = 'bx-badge'
+      metricText.textContent = ''
+    } else {
+      const checks = currentDoc.checks
+      checkBadge.textContent = `checks ${checks.passed}/${checks.total}`
+      checkBadge.className = `bx-badge ${checks.ok ? 'ok' : 'bad'}`
+      const metrics = currentDoc.metrics || {}
+      metricText.textContent = `${metrics.faces ?? 0} 面 · ${num((metrics.volume ?? 0) / 1000, 2)} cm³`
     }
-    const failed = all.filter((check) => !check.ok)
-    const headText = failed.length
-      ? `Checks · ${all.length - failed.length}/${all.length} ok · ${failed.length} failed`
-      : `Checks · ${all.length}/${all.length} ok`
-    const stripHead = el('div', failed.length ? 'cv-checks-head bad' : 'cv-checks-head', headText)
-    checksStrip.append(stripHead)
-    if (failed.length) {
-      const list = el('ul')
-      for (const item of failed) {
-        list.append(el('li', null, `${item.feature}.${item.name}: ${item.hint || item.expected || 'failed'}`))
-      }
-      checksStrip.append(list)
-    }
-    for (const item of all) {
-      const row = el('div', item.ok ? 'cv-check-row' : 'cv-check-row bad')
-      row.append(el('span', 'mark', item.ok ? '✓' : '✗'))
-      const body = el('div')
-      body.append(el('div', null, `${item.feature}.${item.name}`))
-      if (!item.ok && (item.hint || item.expected)) body.append(el('div', 'exp', item.hint || item.expected))
-      row.append(body)
-      checksBody.append(row)
-    }
-    checksHead.lastChild.textContent = `${all.length - failed.length}/${all.length}`
   }
 
-  // ---------------------------------------------------------------- parts + tree
-  const renderParts = (docs) => {
-    partsBody.textContent = ''
-    for (const doc of docs) {
-      const button = el('button', doc.id === currentDoc?.id ? 'cv-part sel' : 'cv-part')
-      button.setAttribute('aria-label', `零件 ${doc.name || doc.id}`)
-      const image = el('img', 'thumb')
-      image.loading = 'lazy'
-      image.src = `${base}/api/docs/${doc.id}/render.png?view=iso`
-      image.alt = ''
-      const body = el('div')
-      body.append(el('b', null, doc.name || doc.id), el('span', null, `v${doc.version} · ${doc.features} 特征`))
-      button.append(image, body)
-      button.addEventListener('click', () => { selectDocument(doc.id) })
-      partsBody.append(button)
+  const renderReplay = () => {
+    const replaying = replayVersion !== null && replayVersion !== liveVersion()
+    replayBar.classList.toggle('on', replaying)
+    if (replaying) {
+      replayText.textContent = `正在回放 v${replayVersion} · 只读，不写入文档`
+      replayBack.textContent = `回到最新 v${liveVersion()}`
     }
-    partsHead.lastChild.textContent = String(docs.length)
   }
 
-  const renderTree = (doc) => {
-    treeBody.textContent = ''
-    const features = doc.features || []
+  const renderStepper = () => {
+    stepper.textContent = ''
+    if (!currentDoc || (currentDoc.vacant && replayVersion === null)) {
+      stepper.hidden = true
+      return
+    }
+    stepper.hidden = false
+    const milestones = currentDoc.milestones || []
+    if (!milestones.length) {
+      stepper.append(el('span', 'bx-hint', '还没有里程碑'))
+      return
+    }
+    const scrollLeft = stepper.scrollLeft
+    for (const milestone of milestones) {
+      const chip = el('button', 'bx-chip')
+      chip.type = 'button'
+      const isLive = milestone.version === liveVersion()
+      const isViewing = milestone.version === showingVersion()
+      chip.classList.toggle('current', isLive)
+      chip.classList.toggle('viewing', !isLive && isViewing)
+      chip.append(el('span', `actor ${milestone.actor || 'agent'}`))
+      chip.append(document.createTextNode(milestone.title || `v${milestone.version}`))
+      chip.append(el('span', 'meta', `v${milestone.version}`))
+      chip.title = `查看 v${milestone.version}${milestone.parent_version != null ? `（父 v${milestone.parent_version}）` : ''}`
+      chip.addEventListener('click', () => viewMilestone(milestone.version))
+      stepper.append(chip)
+    }
+    stepper.scrollLeft = scrollLeft
+  }
+
+  const renderMutes = () => {
+    mutes.textContent = ''
+    const features = currentDoc?.features || []
+    if (!features.length || (currentDoc?.vacant && replayVersion === null)) {
+      mutes.hidden = true
+      return
+    }
+    mutes.hidden = false
+    mutes.append(el('span', 'bx-hint', '特征'))
     for (const feature of features) {
-      const button = el('button', `cv-feat ${feature.enabled ? 'on' : 'off'}${selected === feature.id ? ' sel' : ''}`)
-      button.setAttribute('aria-label', `${feature.id} ${feature.type} ${feature.enabled ? 'on' : 'off'}`)
-      const dot = el('span', 'dot')
-      const name = el('span', 'name')
-      name.append(document.createTextNode(feature.id), el('small', null, feature.type))
-      const sw = el('span', 'sw')
-      button.append(dot, name, sw)
-      button.addEventListener('click', (event) => {
-        if (event.target === sw || sw.contains(event.target)) { toggle(feature); return }
-        select(feature.id)
+      const tag = el('button', `bx-mute${feature.enabled ? '' : ' off'}${feature.can_toggle ? '' : ' locked'}`)
+      tag.type = 'button'
+      tag.append(el('span', null, feature.can_toggle ? `${feature.enabled ? '👁 ' : '◌ '}${feature.id}` : feature.id))
+      tag.title = feature.can_toggle
+        ? `${feature.type} · 点击${feature.enabled ? '关闭' : '开启'}`
+        : `${feature.type} · 有下游引用，只能通过 Agent 调整`
+      tag.addEventListener('click', () => {
+        if (!feature.can_toggle) {
+          showBanner(`${feature.id} 仍被后续特征引用，不能单独启停`)
+          return
+        }
+        toggleFeature(feature.id)
       })
-      treeBody.append(button)
+      mutes.append(tag)
     }
-    treeHead.lastChild.textContent = String(features.length)
   }
 
-  // ---------------------------------------------------------------- inspector body
-  const renderFields = (doc, featureId) => {
-    fieldsBody.textContent = ''
-    const feature = (doc.features || []).find((item) => item.id === featureId)
-    if (!feature) {
-      fieldsBody.append(el('div', 'cv-empty', '选择一个特征'))
-      fieldsHead.lastChild.textContent = ''
-      applyButton.disabled = true
+  const formatDelta = (milestone) => {
+    const metrics = milestone?.metrics || {}
+    return `体积 ${num((metrics.volume ?? 0) / 1000, 2)} cm³ · 面 ${metrics.faces ?? 0}`
+  }
+
+  const renderCard = () => {
+    card.textContent = ''
+    const replaying = replayVersion !== null && replayVersion !== liveVersion()
+    const milestones = currentDoc?.milestones || []
+    const viewed = milestones.find((item) => item.version === showingVersion())
+    if (!currentDoc || currentDoc.vacant || replaying) {
+      card.classList.remove('on')
       return
     }
-    fieldsHead.lastChild.textContent = `${feature.id} · ${feature.type}`
-    const inputs = {}
-    for (const [key, value] of Object.entries(feature.params || {})) {
-      const row = el('div', 'cv-field')
-      row.append(el('label', null, key))
+    const focus = currentDoc.focus_params || []
+    if (!focus.length) {
+      card.classList.add('on')
+      const headRow = el('div', 'bx-card-head')
+      headRow.append(el('span', 'bx-card-title', viewed?.title || '当前版本'))
+      headRow.append(el('span', 'bx-card-delta', formatDelta(viewed)))
+      card.append(headRow, el('span', 'bx-hint', '这个里程碑没有可微调的数值参数'))
+      return
+    }
+    card.classList.add('on')
+    const headRow = el('div', 'bx-card-head')
+    headRow.append(el('span', 'bx-card-title', viewed?.title || '当前版本'))
+    headRow.append(el('span', 'bx-card-delta', formatDelta(viewed)))
+    const focusRow = el('div', 'bx-focus')
+    for (const item of focus.slice(0, 4)) focusRow.append(focusControl(item))
+    const variantButton = el('button', null, '生成变体')
+    variantButton.type = 'button'
+    variantButton.title = `围绕 ${focus[0].label} 试算几个候选`
+    variantButton.addEventListener('click', () => generateVariants(focus[0]))
+    focusRow.append(variantButton)
+    card.append(headRow, focusRow)
+  }
+
+  const focusControl = (item) => {
+    const wrap = el('label')
+    wrap.append(el('span', null, item.label))
+    const value = Number(item.value)
+    const numeric = item.value != null && Number.isFinite(value) && typeof item.value !== 'string'
+    const low = item.minimum != null ? Number(item.minimum) : Math.round(value * 0.5 * 100) / 100
+    const high = item.maximum != null ? Number(item.maximum) : Math.max(value * 2, low + 1)
+    if (!numeric) {
       const input = el('input')
-      input.value = String(value)
-      input.setAttribute('aria-label', `${feature.id} ${key}`)
-      input.dataset.key = key
-      inputs[key] = input
-      row.append(input)
-      fieldsBody.append(row)
+      input.type = 'text'
+      input.value = String(item.value ?? '')
+      input.style.width = '64px'
+      input.setAttribute('aria-label', item.label)
+      input.addEventListener('change', () => tweak(item, input.value))
+      wrap.append(input)
+      return wrap
     }
-    applyButton.disabled = false
-    applyButton.onclick = () => applyParams(feature, inputs)
-  }
-
-  const applyParams = async (feature, inputs) => {
-    if (!currentDoc) return
-    const params = {}
-    for (const [key, input] of Object.entries(inputs)) {
-      const raw = input.value.trim()
-      if (raw === String(feature.params[key])) continue
-      const number = Number(raw)
-      params[key] = Number.isNaN(number) ? raw : number
+    const readout = el('b', null, num(value, Number.isInteger(value) ? 0 : 2))
+    const range = el('input')
+    range.type = 'range'
+    range.min = String(low)
+    range.max = String(high)
+    const step = Number.isInteger(value)
+      ? 1
+      : Math.max(Math.abs(value) / 1000, (high - low) / 1000, 0.001)
+    range.step = String(step)
+    range.value = String(value)
+    range.setAttribute('aria-label', item.label)
+    let timer = null
+    const commit = () => {
+      const next = Number.isInteger(value)
+        ? Math.round(Number(range.value))
+        : Math.round(Number(range.value) * 1000) / 1000
+      if (next === value) return
+      tweak(item, next)
     }
-    if (!Object.keys(params).length) { say('参数没有变化'); return }
-    say(`应用 ${feature.id} 的 ${Object.keys(params).join(', ')}…`)
-    try {
-      await fetchJSON(`${base}/api/docs/${currentDoc.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base_version: currentDoc.version,
-          ops: [{ op: 'update', id: feature.id, params }],
-        }),
-      })
-      await reload()
-      say(`已应用 ${feature.id} · v${currentDoc?.version}`)
-    } catch (error) {
-      say(`应用失败：${error.message}`)
-    }
-  }
-
-  const select = (featureId) => {
-    selected = featureId
-    renderTree(currentDoc)
-    renderFields(currentDoc, featureId)
-  }
-
-  const selectDocument = async (id) => {
-    selected = null
-    // Reload through the one path that keeps tree, fields, checks and metrics
-    // in step with the document the viewport is about to show.
-    await reload(id)
-    frame.src = `${base}/api/kernel-view?doc=${encodeURIComponent(id)}`
-    say(`已切换零件「${currentDoc?.name || id}」v${currentDoc?.version}`)
-  }
-
-  const toggle = async (feature) => {
-    if (!currentDoc) return
-    say(`切换 ${feature.id}…`)
-    try {
-      await fetchJSON(`${base}/api/docs/${currentDoc.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          base_version: currentDoc.version,
-          ops: [{ op: 'update', id: feature.id, enabled: !feature.enabled }],
-        }),
-      })
-      await reload()
-    } catch (error) {
-      say(`切换失败：${error.message}`)
-    }
-  }
-
-  // ---------------------------------------------------------------- sample builder
-  const rememberSample = (documentId, name) => {
-    try { localStorage.setItem(`cadview.sample.${documentId}`, name) } catch (error) { /* private */ }
-  }
-
-  const sampleOfDocument = (doc) => {
-    const label = String(doc?.name || '').toLowerCase()
-    if (!label) return null
-    return samples.find((sample) =>
-      sample.name === label || String(sample.title).toLowerCase() === label) || null
-  }
-
-  const readParams = () => {
-    const values = {}
-    const row = root.querySelector('.cv-params')
-    if (!row) return values
-    for (const input of row.querySelectorAll('input')) {
-      const spec = samples
-        .find((sample) => sample.name === picker.value)
-        ?.params.find((param) => param.name === input.dataset.name)
-      if (!spec) continue
-      values[spec.name] = spec.kind === 'int' ? parseInt(input.value, 10) : parseFloat(input.value)
-    }
-    return values
-  }
-
-  const renderParams = () => {
-    const existing = root.querySelector('.cv-params')
-    if (existing) existing.remove()
-    const sample = samples.find((entry) => entry.name === picker.value)
-    if (!sample) return
-    const row = el('div', 'cv-params')
-    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;padding:5px 10px;border-bottom:1px solid var(--cv-line);background:var(--cv-panel-2);align-items:center'
-    for (const param of sample.params) {
-      const label = el('label')
-      label.style.cssText = 'display:flex;align-items:center;gap:4px;color:var(--cv-fg-3)'
-      label.append(el('span', null, param.unit ? `${param.name} (${param.unit})` : param.name))
-      const input = el('input')
-      input.type = 'number'
-      input.value = param.default
-      input.min = param.min
-      input.max = param.max
-      input.step = param.kind === 'int' ? '1' : 'any'
-      input.dataset.name = param.name
-      input.setAttribute('aria-label', param.name)
-      input.style.width = '66px'
-      label.append(input)
-      row.append(label)
-    }
-    head.after(row)
-  }
-
-  // ---------------------------------------------------------------- load / build
-  const reload = async (targetId) => {
-    try {
-      const list = await fetchJSON(base + '/api/docs')
-      if (!list.length) throw new Error('no documents')
-      // Keep whatever the viewport is showing; only fall back to the newest
-      // document when there is no current one (or it disappeared).
-      const kept = currentDoc && list.find((item) => item.id === currentDoc.id)
-      const chosen = targetId && list.find((item) => item.id === targetId)
-      const id = (chosen || kept || list[0]).id
-      const switched = Boolean(currentDoc) && currentDoc.id !== id
-      const [doc, report] = await Promise.all([
-        fetchJSON(`${base}/api/docs/${id}`),
-        fetchJSON(`${base}/api/docs/${id}/checks`).catch(() => null),
-      ])
-      currentDoc = doc
-      meta.textContent = `${doc.name || doc.id} · v${doc.version}`
-      renderParts(list)
-      renderTree(doc)
-      if (selected && doc.features.some((item) => item.id === selected)) {
-        renderFields(doc, selected)
-      } else {
-        selected = null
-        renderFields(doc, null)
-      }
-      renderChecks(report)
-      const shown = sampleOfDocument(doc)
-      if (shown) {
-        if (picker.value !== shown.name) { picker.value = shown.name; renderParams() }
-      } else if (picker.value) {
-        picker.value = ''
-        renderParams()
-      }
-      if (switched) frame.src = `${base}/api/kernel-view?doc=${encodeURIComponent(id)}`
-      const scene = await fetchJSON(`${base}/api/docs/${id}/scene`).catch(() => null)
-      metricsText.textContent = scene
-        ? `${scene.metrics.faces} 面 · ${Math.round(scene.metrics.volume).toLocaleString()} mm³`
-        : ''
-    } catch (error) {
-      meta.textContent = 'service unreachable'
-      say(`${error.message} — start python -m cadwork.service`)
-    }
-  }
-
-  const build = async () => {
-    buildButton.disabled = true
-    picker.disabled = true
-    building = true
-    say(`构建 ${picker.value}…`)
-    try {
-      const doc = currentDoc || (await fetchJSON(base + '/api/docs'))[0]
-      const result = await fetchJSON(`${base}/api/docs/${doc.id}/sample/${picker.value}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: readParams(), replace: true }),
-      })
-      rememberSample(doc.id, picker.value)
-      await reload()
-      say(`已构建 ${picker.value}${result?.document?.version ? ` · v${result.document.version}` : ''}`)
-    } catch (error) {
-      say(`构建失败：${error.message}`)
-    } finally {
-      buildButton.disabled = false
-      picker.disabled = false
-      building = false
-    }
-  }
-
-  // ---------------------------------------------------------------- variants sheet
-  // Candidates are compared in the model view itself: no thumbnails, no modal
-  // over the viewport. Selecting a row loads that candidate's STEP here.
-  const sheet = el('div', 'cv-sheet')
-  sheet.hidden = true
-  sheet.innerHTML = `
-    <div class="cv-sheet-head">
-      <span>变体并置</span>
-      <span class="cv-sheet-note" aria-live="polite"></span>
-      <button class="cv-x" aria-label="关闭变体面板" style="margin-left:auto">x</button>
-    </div>
-    <div class="cv-form">
-      <label>特征 <select class="cv-feature" aria-label="变体特征"></select></label>
-      <label>参数 <select class="cv-param" aria-label="变体参数"></select></label>
-      <label>取值 <input type="text" class="cv-values" aria-label="变体取值"></label>
-      <label><input type="checkbox" class="cv-base" aria-label="包含当前" checked> 含当前</label>
-      <button class="primary cv-generate">生成</button>
-      <button class="cv-apply" disabled>应用所选</button>
-    </div>
-    <div class="cv-vrows" role="list"></div>`
-  view.append(sheet)
-
-  const sheetNote = sheet.querySelector('.cv-sheet-note')
-  const modalFeature = sheet.querySelector('.cv-feature')
-  const modalParam = sheet.querySelector('.cv-param')
-  const modalValues = sheet.querySelector('.cv-values')
-  const modalBase = sheet.querySelector('.cv-base')
-  const rowsBox = sheet.querySelector('.cv-vrows')
-  const variantApply = sheet.querySelector('.cv-apply')
-
-  let chosen = null
-
-  const catalogOf = async (type) => {
-    if (!catalog) catalog = await fetchJSON(base + '/api/catalog')
-    return catalog.find((entry) => entry.type === type)
-  }
-
-  const suggestedValues = (spec) => {
-    if (spec.choices) return spec.choices.slice(0, 3).join(', ')
-    const fallback = Number(spec.default)
-    const low = spec.min != null ? Number(spec.min) : fallback * 0.5
-    const high = spec.max != null ? Number(spec.max) : fallback * 2
-    return [...new Set([fallback * 0.6, fallback, fallback * 1.5]
-      .map((value) => Math.min(Math.max(value, low), high))
-      .map((value) => (spec.kind === 'int' ? Math.round(value) : Math.round(value * 100) / 100)))]
-      .join(', ')
-  }
-
-  const currentFeature = () =>
-    (currentDoc?.features || []).find((item) => item.id === modalFeature.value) || null
-
-  const applySuggestion = async () => {
-    const feature = currentFeature()
-    if (!feature) return
-    const spec = await catalogOf(feature.type)
-    const param = spec?.params?.[modalParam.value]
-    modalValues.value = param ? suggestedValues(param) : ''
-    sheetNote.textContent = '选一个参数，给一组取值，生成后在视口里逐个看'
-  }
-
-  const fillParams = async () => {
-    modalParam.textContent = ''
-    const feature = currentFeature()
-    if (!feature) return
-    const spec = await catalogOf(feature.type)
-    for (const [name, param] of Object.entries(spec?.params || {})) {
-      const option = el('option', null, param.unit ? `${name} (${param.unit})` : name)
-      option.value = name
-      modalParam.append(option)
-    }
-    // A shape parameter is what people mean to vary; x/y are rarely interesting.
-    const preferred = ['cb_diameter', 'cs_diameter', 'diameter', 'length', 'width',
-      'height', 'thickness', 'depth', 'cb_depth', 'cs_depth', 'radius', 'amount']
-    const names = Object.keys(spec?.params || {})
-    const pick = preferred.find((name) => names.includes(name) && feature.params[name] != null)
-      || preferred.find((name) => names.includes(name))
-      || Object.keys(feature.params || {}).find((name) => names.includes(name))
-    if (pick) modalParam.value = pick
-    await applySuggestion()
-  }
-
-  const preview = (variant, row) => {
-    for (const other of rowsBox.children) other.classList.remove('sel')
-    row.classList.add('sel')
-    chosen = variant
-    variantApply.disabled = false
-    sheetNote.textContent = `预览「${variant.label}」· 文档尚未改动`
-    command('preview', { url: base + variant.step, label: `预览 ${variant.label}` })
-  }
-
-  const renderRows = () => {
-    rowsBox.textContent = ''
-    chosen = null
-    variantApply.disabled = true
-    const variants = variantSet?.variants || []
-    for (const variant of variants) {
-      const row = el('button', variant.ok ? 'cv-vrow' : 'cv-vrow bad')
-      row.setAttribute('aria-label', `${variant.label} ${variant.ok ? '可用' : '不可用'}`)
-      row.append(el('b', null, variant.label))
-      row.append(el('span', null, variant.ok
-        ? `${variant.faces} 面 · ${Math.round(variant.volume).toLocaleString()} mm³ · ${variant.seconds}s`
-        : (variant.error?.message || '构建失败')))
-      if (variant.ok && variant.step) row.addEventListener('click', () => preview(variant, row))
-      rowsBox.append(row)
-    }
-    if (!variants.length) rowsBox.append(el('div', 'cv-empty', '还没有候选'))
-    // Preview a changed candidate, not the baseline card.
-    const first = variants.find((item) => item.ok && item.step && item.ops.length)
-      || variants.find((item) => item.ok && item.step)
-    if (first) {
-      const row = [...rowsBox.children].find((child) => child.tagName === 'BUTTON')
-      if (row) preview(first, row)
-    }
-  }
-
-  const buildVariants = async () => {
-    if (!currentDoc) return
-    const raw = modalValues.value.trim().split(/[,，\s]+/).filter(Boolean)
-    if (!raw.length) { sheetNote.textContent = '先给一组取值，例如 12, 18, 24'; return }
-    const feature = currentFeature()
-    const spec = feature ? await catalogOf(feature.type) : null
-    const param = spec?.params?.[modalParam.value]
-    const values = raw.map((item) => {
-      const number = Number(item)
-      if (Number.isNaN(number)) return item
-      return param?.kind === 'int' ? Math.round(number) : number
+    range.addEventListener('input', (event) => {
+      readout.textContent = num(Number(range.value), Number.isInteger(value) ? 0 : 2)
+      if (!event.isTrusted) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(commit, 120)
     })
-    sheetNote.textContent = '构建中…'
+    wrap.append(range, readout)
+    if (item.unit) wrap.append(el('span', 'unit', item.unit))
+    return wrap
+  }
+
+  const renderVariants = () => {
+    variants.textContent = ''
+    if (!variantSet || replayVersion !== null) {
+      variants.classList.remove('on')
+      return
+    }
+    const options = (variantSet.variants || []).filter((item) => item.ok)
+    if (!options.length) {
+      variants.classList.remove('on')
+      return
+    }
+    variants.classList.add('on')
+    for (const option of options) {
+      const selected = variantPreviewIndex === option.index
+      const cardBox = el('div', `bx-variant${selected ? ' selected' : ''}`)
+      const previewBtn = el('button', 'bx-variant-preview')
+      previewBtn.type = 'button'
+      if (option.thumb) {
+        const img = document.createElement('img')
+        img.src = option.thumb.startsWith('http') ? option.thumb : `${serviceBase}${option.thumb}`
+        img.alt = option.label || `方案 ${option.index}`
+        previewBtn.append(img)
+      }
+      previewBtn.append(el('b', null, option.label || `方案 ${option.index}`))
+      const vol = option.build?.metrics?.volume ?? option.volume ?? null
+      const faces = option.build?.metrics?.faces ?? option.faces ?? null
+      const summary = [
+        vol != null ? `体积 ${num(vol / 1000, 2)} cm³` : null,
+        faces != null ? `${faces} 面` : null,
+      ].filter(Boolean).join(' · ') || '可预览'
+      previewBtn.append(el('span', null, summary))
+      previewBtn.title = '点击在主视口预览该方案'
+      previewBtn.addEventListener('click', () => previewVariant(variantSet.set, option))
+
+      const actions = el('div', 'bx-variant-actions')
+      const pickBtn = el('button', 'primary', '采纳')
+      pickBtn.type = 'button'
+      pickBtn.addEventListener('click', () => applyVariant(variantSet.set, option.index))
+      actions.append(pickBtn)
+      cardBox.append(previewBtn, actions)
+      variants.append(cardBox)
+    }
+    const close = el('button', null, '收起')
+    close.type = 'button'
+    close.addEventListener('click', () => {
+      variantSet = null
+      variantPreviewIndex = null
+      renderVariants()
+      pushDesign()
+    })
+    variants.append(close)
+  }
+
+  const renderIntent = () => {
+    intentBar.textContent = ''
+    const intent = activeIntent
+    if (!intent || intent.status !== 'running') {
+      intentBar.classList.remove('on')
+      stopButton.hidden = true
+      return
+    }
+    intentBar.classList.add('on')
+    intentBar.append(el('span', null, '意图'))
+    intentBar.append(el('span', null, intent.prompt.slice(0, 40)))
+    const steps = el('div', 'steps')
+    for (const step of intent.steps) {
+      steps.append(el('span', `bx-step ${step.status}`, `${step.index} ${step.title}`))
+    }
+    intentBar.append(steps)
+    stopButton.hidden = false
+  }
+
+  const renderPills = () => {
+    pills.textContent = ''
+    for (const anchor of pendingPicks) {
+      const pill = el('span', 'bx-pill', anchor.label)
+      const remove = el('button', null, '×')
+      remove.type = 'button'
+      remove.addEventListener('click', () => {
+        pendingPicks = pendingPicks.filter((item) => item !== anchor)
+        renderPills()
+      })
+      pill.append(remove)
+      pills.append(pill)
+    }
+  }
+
+  const renderAll = () => {
+    renderHeader()
+    renderReplay()
+    renderStepper()
+    renderMutes()
+    renderCard()
+    renderVariants()
+    renderIntent()
+    vacant.classList.toggle('on', Boolean(currentDoc?.vacant) && replayVersion === null)
+    const disabled = Boolean(currentDoc?.vacant)
+    for (const button of [wireButton, measureButton, ghostButton, deltaButton, sectionButton]) {
+      button.disabled = disabled
+    }
+    for (const node of Object.values(exportLinks)) node.disabled = disabled
+    sendButton.disabled = false
+    pushDesign()
+  }
+
+  // ---------------------------------------------------------------- data
+  const loadState = async (documentId) => {
+    currentDoc = await fetchJSON(`${serviceBase}/api/docs/${documentId}/state`)
+    activeIntent = currentDoc.active_intent || null
+    if (replayVersion !== null && !currentDoc.milestones.some((m) => m.version === replayVersion)) {
+      replayVersion = null
+    }
+    renderAll()
+  }
+
+  const connect = async (documentId) => {
+    if (eventSource) { eventSource.close(); eventSource = null }
+    if (streamRetry) { clearTimeout(streamRetry); streamRetry = null }
     try {
-      variantSet = await fetchJSON(`${base}/api/docs/${currentDoc.id}/variants`, {
+      eventSource = new EventSource(`${serviceBase}/api/docs/${documentId}/events`)
+      eventSource.addEventListener('state', async (event) => {
+        currentDoc = JSON.parse(event.data)
+        activeIntent = currentDoc.active_intent || null
+        renderAll()
+      })
+      eventSource.addEventListener('milestone', async (event) => {
+        const payload = JSON.parse(event.data)
+        await loadState(documentId)
+        if (payload.changed_face_centers?.length) {
+          pushDesign({ highlight: payload.changed_face_centers })
+        }
+        const checks = currentDoc.checks
+        showBanner(`v${payload.version} ${payload.title} · checks ${checks.passed}/${checks.total}`, 4)
+      })
+      eventSource.addEventListener('intent', (event) => {
+        activeIntent = JSON.parse(event.data)
+        renderIntent()
+      })
+      eventSource.addEventListener('variants', (event) => {
+        variantSet = JSON.parse(event.data)
+        renderVariants()
+      })
+      eventSource.addEventListener('error', (event) => {
+        const payload = event.data ? JSON.parse(event.data) : null
+        if (payload?.message) showBanner(`${payload.code || 'ERROR'} · ${payload.message}`)
+      })
+      eventSource.onerror = () => {
+        eventSource?.close()
+        eventSource = null
+        if (streamRetry) clearTimeout(streamRetry)
+        streamRetry = setTimeout(() => { if (currentDoc) connect(currentDoc.document.id) }, 2500)
+      }
+    } catch (error) {
+      showBanner(`事件流连接失败：${error.message}`)
+    }
+  }
+
+  const boot = async () => {
+    try {
+      const documents = await fetchJSON(`${serviceBase}/api/docs`)
+      let id = documents.length ? documents[0].id : null
+      if (!id) {
+        const created = await fetchJSON(`${serviceBase}/api/docs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Workbench' }),
+        })
+        id = created.id
+      }
+      await loadState(id)
+      connect(id)
+      say('就绪 · 底部输入意图，或按住空格对比上一版本')
+    } catch (error) {
+      docLabel.textContent = 'service unreachable'
+      say(`${error.message} — 启动 python -m cadwork.service`)
+    }
+  }
+
+  // ---------------------------------------------------------------- actions
+  const viewMilestone = async (version) => {
+    replayVersion = version === liveVersion() ? null : version
+    renderReplay()
+    renderStepper()
+    renderCard()
+    if (version > 0) {
+      const milestone = (currentDoc?.milestones || []).find((item) => item.version === version)
+      const base = milestone?.parent_version ?? (version > 1 ? version - 1 : null)
+      if (base != null) {
+        try {
+          const detail = await fetchJSON(
+            `${serviceBase}/api/docs/${documentId()}/diff?base=${base}&target=${version}`,
+          )
+          if (detail?.changed_face_centers?.length) {
+            pushDesign({ highlight: detail.changed_face_centers })
+            return
+          }
+        } catch (error) {
+          /* the diff is a nicety, never a blocker */
+        }
+      }
+    }
+    pushDesign()
+  }
+
+  const backToLive = () => {
+    replayVersion = null
+    renderAll()
+  }
+  replayBack.addEventListener('click', backToLive)
+
+  const tweak = async (item, value) => {
+    if (!currentDoc || replayVersion !== null) return
+    if (value === item.value) return
+    try {
+      await fetchJSON(`${serviceBase}/api/docs/${documentId()}/tweak`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          feature: modalFeature.value,
-          params: { [modalParam.value]: values },
-          include_base: modalBase.checked,
-          thumbs: false,
-          base_version: currentDoc.version,
+          base_version: liveVersion(),
+          changes: [{ feature_id: item.feature_id, params: { [item.param]: value } }],
         }),
       })
-      renderRows()
-      const failed = variantSet.variants.filter((item) => !item.ok).length
-      sheetNote.textContent = `${variantSet.variants.length} 个候选 · 文档未改动`
-        + (failed ? ` · ${failed} 个不可用` : '')
+      await loadState(documentId())
+      say(`微调 ${item.label} → ${value}`)
     } catch (error) {
-      rowsBox.textContent = ''
-      sheetNote.textContent = `生成失败：${error.message}`
+      if (error.status === 409 || error.code === 'STALE_VERSION') return
+      showBanner(`微调失败 · ${error.message}`)
     }
   }
 
-  const applyChosen = async () => {
-    if (!chosen || !variantSet) return
-    if (variantSet.document !== currentDoc?.id) {
-      sheetNote.textContent = '这组候选属于另一个零件，请重新生成'
-      return
-    }
-    const label = chosen.label
-    sheetNote.textContent = `应用「${label}」…`
+  const toggleFeature = async (featureId) => {
+    if (!currentDoc || replayVersion !== null) return
     try {
-      await fetchJSON(`${base}/api/variants/${variantSet.set}/${chosen.index}/apply`, { method: 'POST' })
-      variantSet = null
-      chosen = null
-      variantApply.disabled = true
-      await reload()
-      command('document')
-      sheet.hidden = true
-      say(`已应用「${label}」· v${currentDoc?.version}`)
+      await fetchJSON(`${serviceBase}/api/docs/${documentId()}/toggle/${featureId}`, { method: 'POST' })
+      await loadState(documentId())
+      say(`已切换 ${featureId}`)
     } catch (error) {
-      sheetNote.textContent = `应用失败：${error.message}`
+      showBanner(`启停失败 · ${error.message}`)
     }
   }
 
-  const closeSheet = () => {
-    sheet.hidden = true
-    if (chosen) {
-      chosen = null
-      variantApply.disabled = true
-      command('document')
+  const generateVariants = async (focus) => {
+    if (!currentDoc || !focus) return
+    const value = Number(focus.value)
+    const low = focus.minimum != null ? Number(focus.minimum) : value * 0.75
+    const high = focus.maximum != null ? Number(focus.maximum) : value * 1.25
+    const candidates = [value * 0.85, value * 1.15]
+      .map((item) => Math.min(Math.max(item, low), high))
+      .map((item) => (Number.isInteger(value) ? Math.round(item) : Math.round(item * 100) / 100))
+    say('试算候选…')
+    try {
+      variantSet = await fetchJSON(`${serviceBase}/api/docs/${documentId()}/variants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feature: focus.feature_id,
+          params: { [focus.param]: [...new Set(candidates)] },
+          base_version: liveVersion(),
+        }),
+      })
+      renderVariants()
+      if (variantSet.all_failed) showBanner('所有候选都未通过检查，调整参数后再试')
+    } catch (error) {
+      showBanner(`变体失败 · ${error.message}`)
     }
   }
 
-  const openVariants = async () => {
-    sheet.hidden = false
-    if (variantSet && variantSet.document !== currentDoc?.id) {
+  const previewVariant = (setId, option) => {
+    variantPreviewIndex = option.index
+    renderVariants()
+    const stepUrl = option.step?.startsWith('http')
+      ? option.step
+      : `${serviceBase}${option.step || `/api/variants/${setId}/${option.index}/step`}`
+    post('preview', { url: stepUrl, label: option.label || `方案 ${option.index}` })
+    say(`预览方案：${option.label || option.index}（点击「采纳」写入文档）`)
+  }
+
+  const applyVariant = async (setId, index) => {
+    try {
+      await fetchJSON(`${serviceBase}/api/variants/${setId}/${index}/apply`, { method: 'POST' })
       variantSet = null
-      rowsBox.textContent = ''
+      variantPreviewIndex = null
+      renderVariants()
+      await loadState(documentId())
+      say('已采纳方案')
+    } catch (error) {
+      showBanner(`采纳失败 · ${error.message}`)
     }
-    modalFeature.textContent = ''
-    for (const feature of currentDoc?.features || []) {
-      const option = el('option', null, `${feature.id} · ${feature.type}`)
-      option.value = feature.id
-      modalFeature.append(option)
-    }
-    // Vary what is selected in the tree; the tip is only a fallback.
-    const ids = [...modalFeature.options].map((option) => option.value)
-    if (selected && ids.includes(selected)) {
-      modalFeature.value = selected
-    } else if (modalFeature.options.length) {
-      modalFeature.selectedIndex = modalFeature.options.length - 1
-    }
-    await fillParams()
-    if (variantSet) renderRows()
-    else rowsBox.textContent = ''
-    if (!variantSet) sheetNote.textContent = '选一个特征与参数，生成后在视口里逐个看'
   }
 
-  variantsButton.addEventListener('click', () => { openVariants() })
-  sheet.querySelector('.cv-x').addEventListener('click', closeSheet)
-  modalFeature.addEventListener('change', () => { fillParams() })
-  modalParam.addEventListener('change', () => { applySuggestion() })
-  sheet.querySelector('.cv-generate').addEventListener('click', () => { buildVariants() })
-  variantApply.addEventListener('click', () => { applyChosen() })
-
-  // ---------------------------------------------------------------- help
-  const help = el('div', 'cv-modal')
-  help.hidden = true
-  help.innerHTML = `
-    <div class="cv-modal-box">
-      <div class="cv-modal-head"><span>演示脚本与快捷键</span>
-        <button class="cv-x" aria-label="关闭帮助" style="margin-left:auto">×</button></div>
-      <ol style="margin:0;padding-left:18px;color:var(--cv-fg-2);line-height:1.95">
-        <li>左栏选一个零件</li>
-        <li>点一个特征 → 右侧改参数 → 点「应用参数」</li>
-        <li>点「变体」→ 生成候选 → 点一张卡落地到文档</li>
-        <li>点「STEP」导出模型</li>
-        <li>点宿主右上角全屏，得到三栏工作区</li>
-      </ol>
-      <div style="color:var(--cv-fg-3);font-size:11px;line-height:2;border-top:1px solid var(--cv-line);padding-top:8px">
-        1–4 视图 · F 适配 · W 线框 · M 测量 · X 剖切 · 空格 启停所选特征 · Ctrl+Z 撤销 · Esc 关闭
-      </div>
-    </div>`
-  root.append(help)
-  help.querySelector('.cv-x').addEventListener('click', () => { help.hidden = true })
-  helpButton.addEventListener('click', () => { help.hidden = !help.hidden })
-
-  // ---------------------------------------------------------------- keyboard
-  const isTyping = (target) => {
-    const tag = target?.tagName
-    return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || Boolean(target?.isContentEditable)
+  const submitIntent = async (event) => {
+    event.preventDefault()
+    const text = prompt.value.trim()
+    if (!currentDoc) return
+    const picks = pendingPicks.map((item) => item.label).join(' ')
+    const message = [picks, text].filter(Boolean).join(' ')
+    if (!message) return
+    sendButton.disabled = true
+    const branchBase = replayVersion !== null ? replayVersion : null
+    try {
+      const result = await fetchJSON(`${serviceBase}/api/docs/${documentId()}/intents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: message,
+          ...(branchBase !== null ? { base_version: branchBase } : {}),
+        }),
+      })
+      prompt.value = ''
+      pendingPicks = []
+      renderPills()
+      say(branchBase !== null
+        ? `已基于 v${branchBase} 交给 Agent · 待处理 ${result.pending}`
+        : `已交给 Agent · 待处理 ${result.pending}`)
+    } catch (error) {
+      showBanner(`提交失败 · ${error.message}`)
+    } finally {
+      sendButton.disabled = false
+    }
   }
-  const toggleSelected = () => {
-    const feature = (currentDoc?.features || []).find((item) => item.id === selected)
-    if (feature) toggle(feature)
+  composer.addEventListener('submit', submitIntent)
+
+  prompt.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      composer.requestSubmit()
+    }
+  })
+
+  stopButton.addEventListener('click', async () => {
+    if (!activeIntent || !currentDoc) return
+    try {
+      await fetchJSON(
+        `${serviceBase}/api/docs/${documentId()}/intents/${activeIntent.intent_id}/cancel`,
+        { method: 'POST' },
+      )
+      activeIntent = null
+      renderIntent()
+      say('已请求停止')
+    } catch (error) {
+      showBanner(`停止失败 · ${error.message}`)
+    }
+  })
+
+  undoButton.addEventListener('click', async () => {
+    if (!currentDoc || replayVersion !== null) return
+    try {
+      await fetchJSON(`${serviceBase}/api/docs/${documentId()}/undo`, { method: 'POST' })
+      await loadState(documentId())
+      say('已撤销一步')
+    } catch (error) {
+      showBanner(`撤销失败 · ${error.message}`)
+    }
+  })
+
+  const loadSample = async (name) => {
+    if (!currentDoc) return
+    try {
+      await fetchJSON(`${serviceBase}/api/docs/${documentId()}/sample/${name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: {}, replace: true }),
+      })
+      await loadState(documentId())
+      say(`已载入 ${name}`)
+    } catch (error) {
+      showBanner(`载入失败 · ${error.message}`)
+    }
   }
-  const onKey = (event) => {
-    if (isTyping(event.target) || !root.isConnected) return
-    if (event.ctrlKey || event.metaKey) {
-      if (event.key.toLowerCase() === 'z') { event.preventDefault(); undoButton.click() }
+
+  const previousVersion = () => {
+    const milestones = currentDoc?.milestones || []
+    const earlier = milestones.map((item) => item.version).filter((version) => version < showingVersion())
+    return earlier.length ? Math.max(...earlier) : null
+  }
+
+  const toggleGhost = async (on) => {
+    ghostOn = typeof on === 'boolean' ? on : !ghostOn
+    ghostButton.classList.toggle('on', ghostOn)
+    if (!ghostOn) {
+      post('ghost', { on: false })
       return
     }
-    const view = { '1': 'iso', '2': 'front', '3': 'top', '4': 'right' }[event.key]
-    if (view) { command('view', { name: view }); return }
-    const key = event.key.toLowerCase()
-    if (key === 'f') { command('fit'); return }
-    if (key === 'w') { wireButton.click(); return }
-    if (key === 'm') { measureButton.click(); return }
-    if (key === 'x') { sectionButton.click(); return }
-    if (event.key === ' ') { event.preventDefault(); toggleSelected(); return }
-    if (event.key === 'Escape') { help.hidden = true; if (!sheet.hidden) closeSheet() }
+    const version = previousVersion()
+    if (!version) {
+      ghostOn = false
+      ghostButton.classList.remove('on')
+      showBanner('没有上一版本可对比')
+      return
+    }
+    post('ghost', { on: true, documentId: documentId(), version })
+  }
+
+  const toggleDelta = async () => {
+    if (deltaOn) {
+      deltaOn = false
+      deltaButton.classList.remove('on')
+      post('highlight', { centers: [] })
+      return
+    }
+    const version = previousVersion()
+    if (!version) { showBanner('没有上一版本可比较'); return }
+    say('计算差异…')
+    try {
+      const report = await fetchJSON(
+        `${serviceBase}/api/docs/${documentId()}/diff?base=${version}&target=${showingVersion()}`,
+      )
+      const centers = report.changed_face_centers || []
+      if (!centers.length) { showBanner('两个版本没有几何差异'); return }
+      deltaOn = true
+      deltaButton.classList.add('on')
+      post('highlight', { centers, seconds: 8 })
+      say(`差异：${report.changed_face_indices.length} 个变更面（v${version} → v${showingVersion()}）`)
+    } catch (error) {
+      showBanner(`差异失败 · ${error.message}`)
+    }
+  }
+
+  wireButton.addEventListener('click', () => {
+    wireOn = !wireOn
+    wireButton.classList.toggle('on', wireOn)
+    post('wire', { on: wireOn })
+  })
+
+  measureButton.addEventListener('click', () => {
+    measureOn = !measureOn
+    measureButton.classList.toggle('on', measureOn)
+    post('measure', { on: measureOn })
+  })
+
+  ghostButton.addEventListener('click', () => toggleGhost())
+  deltaButton.addEventListener('click', () => toggleDelta())
+
+  sectionButton.addEventListener('click', () => {
+    sectionOn = !sectionOn
+    sectionButton.classList.toggle('on', sectionOn)
+    sectionBar.classList.toggle('on', sectionOn)
+    post('section', { on: sectionOn, axis: sectionAxisValue, t: sectionValue })
+  })
+  sectionAxis.addEventListener('change', () => {
+    sectionAxisValue = sectionAxis.value
+    post('section', { on: sectionOn, axis: sectionAxisValue, t: sectionValue })
+  })
+  sectionRange.addEventListener('input', () => {
+    sectionValue = Number(sectionRange.value)
+    post('section', { on: sectionOn, axis: sectionAxisValue, t: sectionValue })
+  })
+
+  const onKey = (event) => {
+    const tag = event.target?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (event.code === 'Space') {
+      event.preventDefault()
+      if (!event.repeat) toggleGhost(true)
+      return
+    }
+    if (event.key === 'g') { toggleGhost(); return }
+    if (event.key === 'd') { toggleDelta(); return }
+    if (event.key === 'Escape') {
+      banner.classList.remove('on')
+      sectionBar.classList.remove('on')
+      return
+    }
+    const views = { 1: 'iso', 2: 'front', 3: 'top', 4: 'right' }
+    if (views[event.key]) post('view', { name: views[event.key] })
+    if (event.key === 'f') post('fit', {})
+  }
+  const onKeyUp = (event) => {
+    const tag = event.target?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (event.code === 'Space' && ghostOn) toggleGhost(false)
   }
   document.addEventListener('keydown', onKey)
+  document.addEventListener('keyup', onKeyUp)
 
-  buildButton.addEventListener('click', () => { build() })
-  reloadButton.addEventListener('click', () => {
-    frame.src = `${base}/api/kernel-view?t=${Date.now()}`
-    reload()
-  })
-  undoButton.addEventListener('click', async () => {
-    if (!currentDoc) return
+  const resolvePick = async (rawPick) => {
+    if (!currentDoc || currentDoc.vacant) return { ...rawPick, label: formatAnchor(rawPick) }
     try {
-      const result = await fetchJSON(`${base}/api/docs/${currentDoc.id}/undo`, { method: 'POST' })
-      await reload()
-      say(`已撤销 · v${result?.document?.version ?? currentDoc.version}`)
+      const semantic = await fetchJSON(`${serviceBase}/api/docs/${documentId()}/pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: showingVersion(),
+          point: rawPick.point,
+          normal: rawPick.normal,
+          area: rawPick.area,
+          face_index: rawPick.face_index,
+        }),
+      })
+      return { ...rawPick, ...semantic }
     } catch (error) {
-      say(`撤销失败：${error.message}`)
-    }
-  })
-  const exportAs = async (format) => {
-    if (!currentDoc) return
-    say(`导出 ${format.toUpperCase()}…`)
-    try {
-      const response = await fetch(`${base}/api/docs/${currentDoc.id}/export/${format}`)
-      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-      const blob = await response.blob()
-      const name = `${currentDoc.name || 'part'}.${format}`
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = name
-      link.click()
-      URL.revokeObjectURL(link.href)
-      say(`已导出 ${name} · ${Math.round(blob.size / 1024)} KB`)
-    } catch (error) {
-      say(`导出失败：${error.message}`)
+      return { ...rawPick, label: formatAnchor(rawPick) }
     }
   }
-  stepButton.addEventListener('click', () => { exportAs('step') })
-  stlButton.addEventListener('click', () => { exportAs('stl') })
-  picker.addEventListener('change', () => { renderParams(); build() })
 
-  const onMessage = (event) => {
+  const onMessage = async (event) => {
     const data = event.data
-    if (!data || data.from !== 'cadview' || typeof data.text !== 'string') return
-    pickText.textContent = data.text
+    if (!data || data.from !== 'brepx-viewport') return
+    if (data.type === 'ready') {
+      kernelReady = true
+      shownVersion = -1
+      pushDesign()
+      startWatchdog()
+    } else if (data.type === 'shown') {
+      shownVersion = data.version
+    } else if (data.type === 'pick' && data.pick) {
+      const anchor = await resolvePick(data.pick)
+      pendingPicks = [...pendingPicks.slice(-2), anchor]
+      renderPills()
+      prompt.focus()
+    } else if (data.type === 'status') {
+      say(`视口 · ${data.text}`)
+    } else if (data.type === 'error') {
+      showBanner(`视口：${data.text}`)
+    }
+  }
+  const formatAnchor = (pick) => {
+    const point = pick.point.map((value) => Number(value).toFixed(1)).join(', ')
+    const area = pick.area != null ? ` · ${Number(pick.area).toFixed(1)} mm²` : ''
+    return `@(${point})${area}`
   }
   window.addEventListener('message', onMessage)
 
-  // Theme: the 3D page cannot read host tokens, so pass the resolved background.
-  const pushTheme = () => {
-    const background = getComputedStyle(root).getPropertyValue('--cv-bg').trim() || '#0b0e13'
-    const foreground = getComputedStyle(root).getPropertyValue('--cv-fg-2').trim() || '#a9b7ca'
-    try {
-      frame.contentWindow?.postMessage({ from: 'cadview-parent', type: 'theme',
-        background, foreground }, '*')
-    } catch (error) { /* not ready */ }
-  }
-  frame.addEventListener('load', () => {
-    pushTheme()
-    command('fit')
+  const themeObserver = new MutationObserver(() => {
+    if (kernelReady) post('theme', themePayload())
+  })
+  themeObserver.observe(document.documentElement, {
+    attributes: true, attributeFilter: ['class', 'style', 'data-theme'],
   })
 
-  const start = async () => {
-    try {
-      samples = await fetchJSON(base + '/api/samples')
-      picker.textContent = ''
-      const custom = el('option', null, '自定义零件')
-      custom.value = ''
-      custom.disabled = true
-      picker.append(custom)
-      for (const sample of samples) {
-        const option = el('option', null, sample.title)
-        option.value = sample.name
-        picker.append(option)
-      }
-      await reload()
-      const match = sampleOfDocument(currentDoc)
-      if (match) picker.value = match.name
-      renderParams()
-      say('就绪 · 选零件或特征，或点「变体」比较候选')
-    } catch (error) {
-      meta.textContent = 'service unreachable'
-      say(`${error.message} — start python -m cadwork.service`)
-    }
-  }
-
-  const watch = () => {
-    if (polling) return
-    polling = setInterval(async () => {
-      if (document.hidden || building) return
-      try {
-        const list = await fetchJSON(base + '/api/docs')
-        if (!list.length || !currentDoc) return
-        const fresh = list.find((item) => item.id === currentDoc.id)
-        if (!fresh || fresh.version !== currentDoc.version) await reload()
-      } catch (error) { /* service down: the status line says so */ }
-    }, 2500)
-  }
-
-  watch()
-  start()
+  boot()
 
   return () => {
-    if (polling) clearInterval(polling)
-    observer.disconnect()
-    window.removeEventListener('message', onMessage)
+    themeObserver.disconnect()
+    if (eventSource) eventSource.close()
+    if (streamRetry) clearTimeout(streamRetry)
+    if (bannerTimer) clearTimeout(bannerTimer)
+    if (watchdog) clearInterval(watchdog)
     document.removeEventListener('keydown', onKey)
+    document.removeEventListener('keyup', onKeyUp)
+    window.removeEventListener('message', onMessage)
     root.remove()
   }
 }

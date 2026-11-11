@@ -1,18 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>CAD kernel view</title>
+<title>BrepX 视口</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0f1115; color: #c9d6ea;
+  html, body { margin: 0; height: 100%; background: #0b0e13; color: #c9d6ea;
     font: 12px/1.5 system-ui, sans-serif; overflow: hidden }
   #host { position: absolute; inset: 0 }
   canvas { display: block }
+  #empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; color: #5b6b80; text-align: center; pointer-events: none }
+  #empty.on { display: flex }
+  #empty b { font-size: 15px; color: #8fa3bd; font-weight: 600 }
   #status { position: absolute; left: 10px; bottom: 8px; right: 10px; color: #8fa3bd;
     text-shadow: 0 1px 2px #000; pointer-events: none; white-space: pre-wrap }
 </style>
-<!-- The kernel's own modules, not a bundle: bundling breaks its worker and
-     wasm loading (the package locates both with import.meta.url). -->
+<!-- The kernel locates its wasm and worker through import.meta.url, so it must
+     load as its own modules rather than a bundle. -->
 <script type="importmap">
 {"imports": {
   "three": "/pkg/three/build/three.module.js",
@@ -26,6 +30,7 @@
 </head>
 <body>
 <div id="host"></div>
+<div id="empty"><b>空白文档</b><span>描述你要的零件，Agent 会生成第一个里程碑</span></div>
 <div id="status">starting…</div>
 <script type="module">
 import * as THREE from 'three'
@@ -33,58 +38,178 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { init } from '@classcad/smlibpy-three/init'
 
 const host = document.getElementById('host')
-const status = document.getElementById('status')
+const statusLine = document.getElementById('status')
+const empty = document.getElementById('empty')
 const embedded = window.parent !== window
-// Embedded in the workbench, the host draws the readout: two lines of text at
-// the same corner are noise.
-if (embedded) status.style.display = 'none'
+if (embedded) statusLine.style.display = 'none'
+
+const post = (type, payload) => {
+  if (!embedded) return
+  try { parent.postMessage({ from: 'brepx-viewport', type, ...payload }, '*') } catch (error) { /* detached */ }
+}
 const say = (text) => {
-  status.textContent = text
-  // The workbench shows the same line; the iframe is the one that knows what
-  // the kernel actually picked.
-  try { parent.postMessage({ from: 'cadview', text }, '*') } catch (error) { /* top level */ }
+  statusLine.textContent = text
+  post('status', { text })
 }
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 host.append(renderer.domElement)
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x0f1115)
+scene.background = new THREE.Color(0x0b0e13)
 const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1e7)
 camera.up.set(0, 0, 1)
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.enableDamping = true
-scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3140, 1.6))
-const key = new THREE.DirectionalLight(0xffffff, 2.2)
-key.position.set(160, 220, 180)
-scene.add(key)
-scene.add(new THREE.DirectionalLight(0x8899bb, 0.9).translateX(-140))
+const hemisphere = new THREE.HemisphereLight(0xffffff, 0x2a3140, 1.6)
+scene.add(hemisphere)
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.2)
+keyLight.position.set(160, 220, 180)
+scene.add(keyLight)
+const fillLight = new THREE.DirectionalLight(0x8899bb, 0.9)
+fillLight.position.set(-140, -160, 60)
+scene.add(fillLight)
+
+const SOLID_COLOR = new THREE.Color().setHSL(0.58, 0.16, 0.52)
+const VIEWS = { iso: [1, -1, 0.78], front: [0, -1, 0], top: [0, 0, 1], right: [1, 0, 0] }
+
+// Palette follows the hosting application so the model does not sit in a dark
+// hole inside a light workspace.
+const palette = {
+  background: '#0b0e13',
+  solid: SOLID_COLOR.clone(),
+  edge: new THREE.Color(0x5f9fe0),
+  ghost: new THREE.Color(0x6fa8ff),
+  ghostEdge: new THREE.Color(0x7fb2ff),
+  ghostOpacity: 0.13,
+  light: 1.6,
+  key: 2.2,
+  fill: 0.9,
+}
+
+const applyPalette = (theme) => {
+  if (theme.background) {
+    palette.background = theme.background
+    scene.background = new THREE.Color(theme.background)
+    document.body.style.background = theme.background
+  }
+  if (theme.foreground) {
+    document.body.style.color = theme.foreground
+  }
+  const isLight = theme.light !== undefined ? Boolean(theme.light) : palette.background !== '#0b0e13'
+  if (isLight) {
+    palette.solid = new THREE.Color().setHSL(0.58, 0.16, 0.52)
+    palette.edge = new THREE.Color(0x2c4a66)
+    palette.ghost = new THREE.Color(0x3f78c4)
+    palette.ghostEdge = new THREE.Color(0x2d62ad)
+    palette.ghostOpacity = 0.18
+    palette.light = 1.35
+    palette.key = 1.9
+    palette.fill = 0.75
+  } else {
+    palette.solid = new THREE.Color().setHSL(0.58, 0.20, 0.62)
+    palette.edge = new THREE.Color(0x5f9fe0)
+    palette.ghost = new THREE.Color(0x6fa8ff)
+    palette.ghostEdge = new THREE.Color(0x7fb2ff)
+    palette.ghostOpacity = 0.13
+    palette.light = 1.6
+    palette.key = 2.2
+    palette.fill = 0.9
+  }
+  hemisphere.intensity = palette.light
+  keyLight.intensity = palette.key
+  fillLight.intensity = palette.fill
+  rebuildGrid(!isLight)
+  if (display) {
+    display.traverse((child) => {
+      if (!child.isMesh) return
+      const solid = child.userData.solidMaterial
+      if (solid) solid.color.copy(palette.solid)
+      const edges = child.userData.edges
+      if (edges?.material) edges.material.color.copy(palette.edge)
+    })
+  }
+  if (ghost) {
+    ghost.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.color.copy(palette.ghost)
+        child.material.opacity = palette.ghostOpacity
+      }
+      if (child.isLineSegments && child.material) child.material.color.copy(palette.ghostEdge)
+    })
+  }
+}
+
+let kernel = null
+let display = null
+let ghost = null
+let highlightGroup = null
+let previewActive = false
+let wire = false
+let measureMode = false
+let measureA = null
+let sectionOn = false
+let sectionAxis = 'Z'
+let sectionT = 0.5
+let currentDoc = null
+let currentVersion = -1
+let hasFitted = false
+let highlightTimer = null
+
+const vacantGroup = new THREE.Group()
+let gridHelper = new THREE.GridHelper(160, 16, 0x3b495e, 0x1d2633)
+gridHelper.rotation.x = Math.PI / 2
+vacantGroup.add(gridHelper)
+vacantGroup.add(new THREE.AxesHelper(45))
+vacantGroup.visible = false
+scene.add(vacantGroup)
+
+const rebuildGrid = (isDark) => {
+  vacantGroup.remove(gridHelper)
+  gridHelper.geometry?.dispose?.()
+  gridHelper.material?.dispose?.()
+  gridHelper = new THREE.GridHelper(
+    160,
+    16,
+    isDark ? 0x3b495e : 0x9aa8bc,
+    isDark ? 0x1d2633 : 0xdbe2ec,
+  )
+  gridHelper.rotation.x = Math.PI / 2
+  vacantGroup.add(gridHelper)
+}
+
+const bytes = new Map()
+const CACHE_LIMIT = 6
+
+const remember = (store, key, value) => {
+  if (store.has(key)) store.delete(key)
+  store.set(key, value)
+  while (store.size > CACHE_LIMIT) {
+    const oldest = store.keys().next().value
+    store.delete(oldest)
+  }
+}
 
 const fit = (object) => {
   const box = new THREE.Box3().setFromObject(object)
   if (box.isEmpty()) return
   const sphere = box.getBoundingSphere(new THREE.Sphere())
-  controls.target.copy(sphere.center)
-  camera.position.copy(sphere.center)
-    .addScaledVector(new THREE.Vector3(1, -1, 0.78).normalize(), Math.max(sphere.radius, 1) * 2.55)
-  camera.near = Math.max(sphere.radius / 3000, 0.01)
-  camera.far = Math.max(sphere.radius * 300, 200)
+  const radius = Math.max(sphere.radius, 1)
+  // The hub covers the lower part of the canvas, so frame the part slightly
+  // above the geometric centre and leave margin around it.
+  const lift = new THREE.Vector3(0, 0, -radius * 0.24)
+  controls.target.copy(sphere.center).add(lift)
+  camera.position.copy(controls.target)
+    .addScaledVector(new THREE.Vector3(1, -1, 0.78).normalize(), radius * 3.1)
+  camera.near = Math.max(radius / 3000, 0.01)
+  camera.far = Math.max(radius * 300, 200)
   camera.updateProjectionMatrix()
   controls.update()
 }
 
-const VIEWS = {
-  iso: [1, -1, 0.78],
-  front: [0, -1, 0],
-  top: [0, 0, 1],
-  right: [1, 0, 0],
-}
-
-let wire = false
-
 const setView = (name) => {
-  if (!part || !VIEWS[name]) return
-  const sphere = new THREE.Box3().setFromObject(part).getBoundingSphere(new THREE.Sphere())
+  if (!display || !VIEWS[name]) return
+  const sphere = new THREE.Box3().setFromObject(display).getBoundingSphere(new THREE.Sphere())
   const direction = new THREE.Vector3(...VIEWS[name]).normalize()
   controls.target.copy(sphere.center)
   camera.position.copy(sphere.center)
@@ -93,50 +218,90 @@ const setView = (name) => {
   controls.update()
 }
 
-const applyFinish = () => {
-  if (!part) return
-  const meshes = []
-  part.traverse((child) => { if (child.isMesh) meshes.push(child) })
-  for (const child of meshes) {
-    if (child.userData.edges) {
+const disposeObject = (object) => {
+  if (!object) return
+  scene.remove(object)
+  object.traverse((child) => {
+    if (child.userData?.edges) {
       child.remove(child.userData.edges)
-      child.userData.edges.geometry.dispose()
-      child.userData.edges.material.dispose()
-      child.userData.edges = null
+      child.userData.edges.geometry?.dispose?.()
+      child.userData.edges.material?.dispose?.()
     }
-    if (wire) {
-      // A CAD wireframe shows feature edges, not every tessellation triangle.
-      child.material = new THREE.MeshBasicMaterial({
-        color: 0x102030, transparent: true, opacity: 0.12, depthWrite: false,
-      })
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(child.geometry, 16),
-        new THREE.LineBasicMaterial({ color: 0x5f9fe0 }),
-      )
-      child.userData.edges = edges
-      child.add(edges)
-    } else {
-      child.material = child.userData.solidMaterial || child.material
-    }
-  }
-  applySection()
+    child.geometry?.dispose?.()
+    const material = child.material
+    if (Array.isArray(material)) material.forEach((item) => item.dispose?.())
+    else material?.dispose?.()
+  })
 }
 
-// ---------------------------------------------------------------- section
-let sectionOn = false
-let sectionT = 0.5
+const dressSolid = (object) => {
+  object.traverse((child) => {
+    if (!child.isMesh) return
+    child.material = new THREE.MeshStandardMaterial({
+      color: palette.solid.clone(), metalness: 0.1, roughness: 0.62,
+    })
+    child.userData.solidMaterial = child.material
+  })
+  return object
+}
+
+// The loader also attaches its own helper lines, whose materials belong to the
+// kernel's copy of the renderer. Drop them so every drawn object is ours.
+const stripHelpers = (object) => {
+  const drop = []
+  object.traverse((child) => {
+    if (child === object) return
+    if (child.isMesh) return
+    if (child.isLine || child.isLineSegments || child.isPoints) drop.push(child)
+  })
+  for (const child of drop) {
+    child.parent?.remove(child)
+    child.geometry?.dispose?.()
+    const material = child.material
+    if (Array.isArray(material)) material.forEach((item) => item.dispose?.())
+    else material?.dispose?.()
+  }
+  return object
+}
+
+const parseBytes = (payload) => {
+  const object = stripHelpers(new kernel.STEPLoader().parse(payload))
+  dressSolid(object)
+  return object
+}
+
+const fetchBytes = async (documentId, version) => {
+  const key = `${documentId}:${version}`
+  if (bytes.has(key)) return bytes.get(key)
+  const response = await fetch(`/api/docs/${documentId}/step?version=${version}`)
+  if (!response.ok) throw new Error(`STEP ${response.status}`)
+  const payload = new Uint8Array(await response.arrayBuffer())
+  remember(bytes, key, payload)
+  return payload
+}
+
+const objectFor = async (documentId, version) => {
+  // Parsing yields objects owned by the kernel loader; each consumer gets a
+  // freshly parsed copy so its materials never come from a foreign renderer.
+  return parseBytes(await fetchBytes(documentId, version))
+}
+
 const sectionPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
 
 const applySection = () => {
-  if (!part) return
+  if (!display) return
   renderer.localClippingEnabled = true
+  const axis = new THREE.Vector3(
+    sectionAxis === 'X' ? -1 : 0, sectionAxis === 'Y' ? -1 : 0, sectionAxis === 'Z' ? -1 : 0,
+  )
+  sectionPlane.normal.copy(axis)
   if (sectionOn) {
-    const box = new THREE.Box3().setFromObject(part)
-    const low = box.min.z
-    const high = box.max.z
+    const box = new THREE.Box3().setFromObject(display)
+    const low = sectionAxis === 'X' ? box.min.x : sectionAxis === 'Y' ? box.min.y : box.min.z
+    const high = sectionAxis === 'X' ? box.max.x : sectionAxis === 'Y' ? box.max.y : box.max.z
     sectionPlane.constant = low + (high - low) * sectionT
   }
-  part.traverse((child) => {
+  display.traverse((child) => {
     if (!child.isMesh || !child.material) return
     child.material.clippingPlanes = sectionOn ? [sectionPlane] : null
     child.material.side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
@@ -149,68 +314,280 @@ const applySection = () => {
   })
 }
 
-const setSection = (on, t) => {
-  if (typeof on === 'boolean') sectionOn = on
-  if (typeof t === 'number') sectionT = Math.min(Math.max(t, 0), 1)
+const applyWire = () => {
+  if (!display) return
+  display.traverse((child) => {
+    if (!child.isMesh) return
+    if (child.userData.edges) {
+      child.remove(child.userData.edges)
+      child.userData.edges.geometry.dispose()
+      child.userData.edges.material.dispose()
+      child.userData.edges = null
+    }
+    if (wire) {
+      child.material = new THREE.MeshBasicMaterial({
+        color: palette.edge.clone(), transparent: true, opacity: 0.12, depthWrite: false,
+      })
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(child.geometry, 16),
+        new THREE.LineBasicMaterial({ color: palette.edge.clone() }),
+      )
+      child.userData.edges = edges
+      child.add(edges)
+    } else {
+      child.material = child.userData.solidMaterial || child.material
+    }
+  })
   applySection()
 }
 
-// ---------------------------------------------------------------- measure
-let measureMode = false
-let measureA = null
-
-const measureFace = (hit) => {
-  const point = hit.point
-  const brep = hit.brep || hit.object.userData?.brep
-  const area = brep?.area
-  let normal = null
-  if (hit.face && hit.face.normal) {
-    normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+const clearHighlight = () => {
+  if (highlightTimer) { clearTimeout(highlightTimer); highlightTimer = null }
+  if (highlightGroup) {
+    disposeObject(highlightGroup)
+    highlightGroup = null
   }
-  const parts = ['测量']
-  if (area != null) parts.push(`面 ${Number(area).toFixed(1)} mm²`)
-  if (normal) parts.push(`法向 (${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)})`)
-  if (!measureA) {
-    measureA = point.clone()
-    parts.push(`起点 (${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)}) · 再点一处量距离`)
-    return parts.join(' · ')
-  }
-  const delta = point.clone().sub(measureA)
-  parts.push(`距离 ${delta.length().toFixed(2)} mm · Δx ${delta.x.toFixed(2)} Δy ${delta.y.toFixed(2)} Δz ${delta.z.toFixed(2)}`)
-  measureA = null
-  return parts.join(' · ')
 }
 
-// The workbench drives the camera from its toolbar; the kernel page stays the
-// only place that knows how to move it.
+const highlightFaces = (centers, seconds = 3.2) => {
+  if (!display || !centers?.length) return
+  clearHighlight()
+  const anchors = centers.map((item) => new THREE.Vector3(item[0], item[1], item[2]))
+  const group = new THREE.Group()
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffb454,
+    emissive: 0x663800,
+    roughness: 0.45,
+    metalness: 0.05,
+    transparent: true,
+    opacity: 0.62,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  display.updateMatrixWorld(true)
+  let matched = 0
+  display.traverse((child) => {
+    if (!child.isMesh || typeof child.faces !== 'function') return
+    for (const face of child.faces()) {
+      const center = face.getCenter()
+      center.applyMatrix4(child.matrixWorld)
+      let hit = false
+      for (const anchor of anchors) {
+        if (center.distanceTo(anchor) <= 0.6) { hit = true; break }
+      }
+      if (!hit) continue
+      const overlay = new THREE.Mesh(face.geometry, mat)
+      overlay.applyMatrix4(child.matrixWorld)
+      group.add(overlay)
+      matched += 1
+    }
+  })
+  if (!matched) {
+    mat.dispose()
+    return
+  }
+  highlightGroup = group
+  scene.add(highlightGroup)
+  highlightTimer = setTimeout(clearHighlight, seconds * 1000)
+}
+
+const clearGhost = () => {
+  if (!ghost) return
+  disposeObject(ghost)
+  ghost = null
+}
+
+const showGhost = async (documentId, version) => {
+  clearGhost()
+  try {
+    const object = await objectFor(documentId, version)
+    object.traverse((child) => {
+      if (!child.isMesh) return
+      child.material = new THREE.MeshBasicMaterial({
+        color: palette.ghost.clone(), transparent: true, opacity: palette.ghostOpacity, depthWrite: false,
+      })
+      child.add(new THREE.LineSegments(
+        new THREE.EdgesGeometry(child.geometry, 16),
+        new THREE.LineBasicMaterial({ color: palette.ghostEdge.clone(), transparent: true, opacity: 0.32 }),
+      ))
+    })
+    ghost = object
+    scene.add(ghost)
+    say(`残影 v${version} 叠加中`)
+  } catch (error) {
+    say(`残影加载失败 ${error.message}`)
+  }
+}
+
+const showVersion = async (documentId, version, options = {}) => {
+  currentDoc = documentId
+  if (!kernel) return
+  if (!documentId || !version) {
+    previewActive = false
+    clearHighlight()
+    disposeObject(display)
+    display = null
+    clearGhost()
+    vacantGroup.visible = true
+    controls.target.set(0, 0, 0)
+    camera.position.set(110, -110, 82)
+    camera.updateProjectionMatrix()
+    controls.update()
+    empty.classList.add('on')
+    currentVersion = version || 0
+    say('空白文档')
+    return
+  }
+  vacantGroup.visible = false
+  empty.classList.remove('on')
+  if (!previewActive && currentVersion === version && display && !options.force) return
+  previewActive = false
+  clearHighlight()
+  const keep = display
+  try {
+    const object = await objectFor(documentId, version)
+    display = object
+    scene.add(display)
+    disposeObject(keep)
+    currentVersion = version
+    if (!hasFitted || options.fit) { fit(display); hasFitted = true }
+    applyWire()
+    applySection()
+    if (options.highlight?.length) highlightFaces(options.highlight)
+    const meshes = countFaces(display)
+    say(`v${version} · ${meshes} 个面组`)
+    post('shown', { version, documentId, faces: meshes })
+  } catch (error) {
+    display = keep
+    say(`模型加载失败 ${error.message}`)
+  }
+}
+
+const showPreview = async (url, label) => {
+  if (!kernel || !url) return
+  vacantGroup.visible = false
+  empty.classList.remove('on')
+  clearHighlight()
+  const keep = display
+  try {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`STEP ${response.status}`)
+    const object = parseBytes(new Uint8Array(await response.arrayBuffer()))
+    previewActive = true
+    display = object
+    scene.add(display)
+    disposeObject(keep)
+    if (!hasFitted) { fit(display); hasFitted = true }
+    applyWire()
+    applySection()
+    say(`预览 · ${label || '候选方案'}`)
+  } catch (error) {
+    display = keep
+    say(`预览失败 ${error.message}`)
+  }
+}
+
+const countFaces = (object) => {
+  const set = new Set()
+  object.traverse((child) => { if (child.isMesh) set.add(child.uuid) })
+  return set.size
+}
+
+const prefetch = (documentId, version) => {
+  if (!documentId || !version) return
+  fetchBytes(documentId, version).catch(() => {})
+}
+
+// ---------------------------------------------------------------- picking
+const raycaster = new THREE.Raycaster()
+const pickAt = (event) => {
+  if (!display) return null
+  const rect = renderer.domElement.getBoundingClientRect()
+  raycaster.setFromCamera(new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1,
+  ), camera)
+  const hits = raycaster.intersectObject(display, true)
+  if (!hits.length) return null
+  const hit = hits[0]
+  const brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
+  let normal = null
+  if (hit.face?.normal) {
+    normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+  }
+  return {
+    point: [hit.point.x, hit.point.y, hit.point.z],
+    normal: normal ? [normal.x, normal.y, normal.z] : null,
+    area: brep?.area ?? null,
+    face_index: hit.faceIndex ?? null,
+  }
+}
+
+renderer.domElement.addEventListener('pointerup', (event) => {
+  if (!display) return
+  const found = pickAt(event)
+  if (!found) { say('没有命中几何'); return }
+  if (measureMode) {
+    if (!measureA) {
+      measureA = { point: new THREE.Vector3(...found.point), normal: found.normal }
+      say(`起点 (${found.point.map((n) => n.toFixed(1)).join(', ')}) · 再点一处量距离`)
+      return
+    }
+    const end = new THREE.Vector3(...found.point)
+    const delta = end.clone().sub(measureA.point)
+    let text = `距离 ${delta.length().toFixed(2)} mm · Δx ${delta.x.toFixed(2)} `
+      + `Δy ${delta.y.toFixed(2)} Δz ${delta.z.toFixed(2)}`
+    if (measureA.normal && found.normal) {
+      const a = new THREE.Vector3(...measureA.normal).normalize()
+      const b = new THREE.Vector3(...found.normal).normalize()
+      const angle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1)))
+      text += ` · 夹角 ${angle.toFixed(1)}°`
+    }
+    say(text)
+    measureA = null
+    return
+  }
+  post('pick', { pick: found })
+  say(`拾取 (${found.point.map((n) => n.toFixed(1)).join(', ')})`
+    + (found.area != null ? ` · ${Number(found.area).toFixed(1)} mm²` : ''))
+})
+
+// ---------------------------------------------------------------- protocol
 addEventListener('message', (event) => {
   const data = event.data
-  if (!data || data.from !== 'cadview-parent') return
-  if (data.type === 'theme') {
-    scene.background = new THREE.Color(data.background || '#0b0e13')
+  if (!data || data.from !== 'brepx-workbench') return
+  if (data.type === 'design') {
+    showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight })
+    if (data.prefetch) prefetch(data.documentId, data.prefetch)
+  } else if (data.type === 'preview') {
+    showPreview(data.url, data.label)
+  } else if (data.type === 'ghost') {
+    if (data.on === false || !data.version) { clearGhost(); say('残影关闭') }
+    else showGhost(data.documentId || currentDoc, data.version)
+  } else if (data.type === 'highlight') {
+    if (data.centers?.length) highlightFaces(data.centers, data.seconds)
+    else clearHighlight()
   } else if (data.type === 'view') {
     setView(data.name)
   } else if (data.type === 'fit') {
-    if (part) fit(part)
+    if (display) fit(display)
   } else if (data.type === 'wire') {
-    wire = !wire
-    applyFinish()
+    wire = typeof data.on === 'boolean' ? data.on : !wire
+    applyWire()
   } else if (data.type === 'measure') {
     measureMode = typeof data.on === 'boolean' ? data.on : !measureMode
     measureA = null
-    say(measureMode ? '测量已开启：点面取尺寸，再点一处量距离' : '测量已关闭')
+    say(measureMode ? '测量已开启：点两处取距离与夹角' : '测量已关闭')
   } else if (data.type === 'section') {
-    setSection(typeof data.on === 'boolean' ? data.on : !sectionOn, data.t)
-    say(sectionOn ? '剖切已开启：拖动滑块移动切面' : '剖切已关闭')
-  } else if (data.type === 'section-t') {
-    setSection(undefined, Number(data.t))
-  } else if (data.type === 'preview' && data.url) {
-    previewing = true
-    loadStep(data.url, data.label || 'candidate')
-  } else if (data.type === 'document') {
-    previewing = false
-    source = null
-    load()
+    if (typeof data.on === 'boolean') sectionOn = data.on
+    if (data.axis) sectionAxis = data.axis
+    if (typeof data.t === 'number') sectionT = Math.min(Math.max(data.t, 0), 1)
+    applySection()
+  } else if (data.type === 'theme') {
+    applyPalette(data)
   }
 })
 
@@ -223,103 +600,33 @@ const resize = () => {
 }
 addEventListener('resize', resize)
 
-let kernel = null
-let part = null
-let source = null
-// While a candidate is on screen the document must not overwrite it.
-let previewing = false
-
-const params = new URLSearchParams(location.search)
-const pinned = params.get('doc')
-
-const mount = (bytes) => {
-  if (part) {
-    scene.remove(part)
-    part.traverse((child) => { child.geometry?.dispose?.(); child.material?.dispose?.() })
-  }
-  part = new kernel.STEPLoader().parse(bytes)
-  part.traverse((child) => {
-    if (child.isMesh) {
-      child.material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color().setHSL(0.58, 0.16, 0.52), metalness: 0.1, roughness: 0.62,
-      })
-      child.userData.solidMaterial = child.material
-    }
-  })
-  scene.add(part)
-  fit(part)
-  applySection()
-}
-
-const loadStep = async (url, label) => {
-  say(label || 'loading model…')
-  const response = await fetch(url)
-  if (!response.ok) { say(`load failed: ${response.status}`); return }
-  mount(new Uint8Array(await response.arrayBuffer()))
-}
-
-const load = async () => {
-  if (previewing) return source
-  const docs = await (await fetch('/api/docs')).json()
-  if (!docs.length) { say('no documents'); return null }
-  const doc = (pinned && docs.find((item) => item.id === pinned)) || docs[0]
-  if (source && source.id === doc.id && source.version === doc.version && part) return doc
-  say(`loading ${doc.name || doc.id} · v${doc.version}…`)
-  await loadStep(`/api/docs/${doc.id}/export/step`)
-  source = doc
-  say(`${doc.name || doc.id} · v${doc.version} · kernel ready · click a face`)
-  return doc
-}
-
-const raycaster = new THREE.Raycaster()
-renderer.domElement.addEventListener('pointerup', (event) => {
-  if (!part) return
-  const rect = renderer.domElement.getBoundingClientRect()
-  raycaster.setFromCamera(new THREE.Vector2(
-    ((event.clientX - rect.left) / rect.width) * 2 - 1,
-    -((event.clientY - rect.top) / rect.height) * 2 + 1,
-  ), camera)
-  const hits = raycaster.intersectObject(part, true)
-  if (!hits.length) { say('nothing picked'); return }
-  const hit = hits[0]
-  if (measureMode) { say(measureFace(hit)); return }
-  const brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
-  const area = brep?.area
-  let detail = `hit at (${hit.point.x.toFixed(1)}, ${hit.point.y.toFixed(1)}, ${hit.point.z.toFixed(1)})`
-  if (area != null) detail = `face · ${Number(area).toFixed(1)} mm² · ` + detail
-  else if (brep) detail = `brep · ${Object.keys(brep).slice(0, 6).join(', ')} · ` + detail
-  say(`${source.name || source.id} · v${source.version} · ${detail}`)
-  window.__lastPick = { area: area ?? null, point: [hit.point.x, hit.point.y, hit.point.z],
-    brepKeys: brep ? Object.keys(brep) : null }
-})
-
+let frameCount = 0
+let lastFrameError = null
 const frame = () => {
   requestAnimationFrame(frame)
-  controls.update()
-  renderer.render(scene, camera)
+  try {
+    controls.update()
+    renderer.render(scene, camera)
+    frameCount += 1
+  } catch (error) {
+    lastFrameError = error.message
+  }
 }
 
 const start = async () => {
   resize()
   frame()
   try {
-    const bytes = await (await fetch('/api/kernel/smlibwasm.wasm')).arrayBuffer()
-    say(`wasm ${bytes.byteLength} bytes · loading kernel…`)
-    kernel = await init({ wasmBinary: bytes })
-    say(`kernel ready · ${Object.keys(kernel).length} exports`)
+    const payload = await (await fetch('/api/kernel/smlibwasm.wasm')).arrayBuffer()
+    say(`kernel ${(payload.byteLength / 1e6).toFixed(1)} MB · loading…`)
+    kernel = await init({ wasmBinary: payload })
     window.__kernelReady = true
+    say('kernel ready')
+    post('ready', {})
   } catch (error) {
     say(`kernel failed: ${error.message}`)
-    return
+    post('error', { text: error.message })
   }
-  try {
-    await load()
-  } catch (error) {
-    say(`load failed: ${error.message}`)
-  }
-  setInterval(() => {
-    load().catch(() => {})
-  }, 2500)
 }
 
 start()
