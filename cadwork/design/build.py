@@ -93,7 +93,7 @@ class BuildResult:
 class BuildCache:
     """Content-addressed LRU. Deleting it only costs time, never correctness."""
 
-    def __init__(self, capacity: int = 64) -> None:
+    def __init__(self, capacity: int = 128) -> None:
         self.capacity = capacity
         self._data: OrderedDict[str, tuple[FeatureOutput, tuple[CheckResult, ...]]] = OrderedDict()
 

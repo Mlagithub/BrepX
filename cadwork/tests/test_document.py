@@ -39,14 +39,19 @@ class DocumentEditTests(unittest.TestCase):
         self.doc = new_document("test", "d_test")
 
     def test_new_document_is_empty(self) -> None:
-        self.assertEqual(self.doc.version, 1)
+        self.assertEqual(self.doc.version, 0)
         self.assertEqual(self.doc.features, ())
+        self.assertEqual(len(self.doc.milestones), 1)
+        self.assertEqual(self.doc.milestones[0].version, 0)
+        self.assertEqual(self.doc.milestones[0].parent_version, None)
 
     def test_add_bumps_version_and_keeps_order(self) -> None:
         doc = apply_ops(self.doc, [_feature("f1"), _feature("f2", "blade_loft")])
-        self.assertEqual(doc.version, 2)
+        self.assertEqual(doc.version, 1)
         self.assertEqual([item.id for item in doc.features], ["f1", "f2"])
         self.assertEqual(len(doc.history), 1)
+        self.assertEqual(doc.milestones[-1].version, 1)
+        self.assertEqual(doc.milestones[-1].parent_version, 0)
 
     def test_update_merges_params(self) -> None:
         doc = apply_ops(self.doc, [{

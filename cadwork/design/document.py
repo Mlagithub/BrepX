@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -30,6 +31,8 @@ class DocumentError(Exception):
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,31}$")
 _TYPE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _MAX_HISTORY = 50
+_MAX_MILESTONES = 100
+_MAX_FOCUS = 4
 
 
 def canonical_json(value: Any) -> str:
@@ -111,18 +114,57 @@ class Feature:
 
 
 @dataclass(frozen=True)
+class FocusParam:
+    """Editable parameter highlighted for quick adjustment."""
+
+    feature_id: str
+    param: str
+    label: str = ""
+    unit: str = ""
+    minimum: float | None = None
+    maximum: float | None = None
+    origin: str = "derived"
+
+
+@dataclass(frozen=True)
+class Milestone:
+    """Version anchor representing one user-facing step."""
+
+    version: int
+    title: str
+    changed_features: tuple[str, ...] = ()
+    focus_params: tuple[FocusParam, ...] = ()
+    parent_version: int | None = None
+    actor: str = "agent"
+    intent_id: str | None = None
+    step_index: int | None = None
+    created: float = 0.0
+    changed_face_indices: tuple[int, ...] = ()
+    metrics: tuple[tuple[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
 class Document:
     id: str
     name: str
-    version: int = 1
+    version: int = 0
     features: tuple[Feature, ...] = ()
+    milestones: tuple[Milestone, ...] = ()
     history: tuple[str, ...] = ()
     seq: int = 0
 
 
 def new_document(name: str = "Untitled", document_id: str | None = None,
-                 seq: int = 0) -> Document:
-    return Document(id=document_id or f"d_{uuid.uuid4().hex[:10]}", name=name, seq=seq)
+                 seq: int = 0, actor: str = "human") -> Document:
+    """Every document starts at v0: one empty milestone and no features."""
+    return Document(
+        id=document_id or f"d_{uuid.uuid4().hex[:10]}",
+        name=name,
+        version=0,
+        milestones=(Milestone(version=0, title="空白文档", parent_version=None,
+                              actor=actor, created=time.time()),),
+        seq=seq,
+    )
 
 
 def validate_layout(document: Document) -> None:
@@ -223,6 +265,12 @@ def apply_ops(
     ops: list[Mapping[str, Any]],
     base_version: int | None = None,
     name: str | None = None,
+    milestone_title: str | None = None,
+    focus_params: list[Mapping[str, Any] | FocusParam] | None = None,
+    actor: str = "agent",
+    intent_id: str | None = None,
+    step_index: int | None = None,
+    parent_version: int | None = None,
 ) -> Document:
     """Apply a batch atomically. Any failure leaves the input untouched."""
     if base_version is not None and base_version != document.version:
@@ -230,23 +278,60 @@ def apply_ops(
             "STALE_VERSION",
             f"document is at version {document.version}, edit expected {base_version}",
         )
-    if not ops and not name:
+    if not ops and not name and not milestone_title and not focus_params:
         return document
 
     features = list(document.features)
+    changed_ids: list[str] = []
     for op in ops:
         op_name = op.get("op")
         handler = _OPS.get(str(op_name))
         if handler is None:
             raise DocumentError("INVALID_OP", f"unknown op {op_name!r}")
         handler(features, op)
+        if op_name == "add" and isinstance(op.get("feature"), Mapping):
+            fid = str(op["feature"].get("id", ""))
+            if fid and fid not in changed_ids:
+                changed_ids.append(fid)
+        elif op.get("id"):
+            fid = str(op.get("id"))
+            if fid and fid not in changed_ids:
+                changed_ids.append(fid)
+
+    next_version = document.version + 1
+    milestones = list(document.milestones)
+    if milestone_title or focus_params or ops:
+        parsed_focus: list[FocusParam] = []
+        for item in focus_params or ():
+            if isinstance(item, FocusParam):
+                parsed_focus.append(item)
+            elif isinstance(item, Mapping):
+                parsed_focus.append(focus_param_from_json(item))
+        title = milestone_title or (
+            f"调整 {', '.join(changed_ids)}" if changed_ids else f"v{next_version}"
+        )
+        milestones.append(
+            Milestone(
+                version=next_version,
+                parent_version=document.version if parent_version is None else parent_version,
+                title=str(title),
+                changed_features=tuple(changed_ids),
+                focus_params=tuple(parsed_focus[:_MAX_FOCUS]),
+                actor=actor,
+                intent_id=intent_id,
+                step_index=step_index,
+                created=time.time(),
+            )
+        )
+        milestones = _trim_milestones(milestones)
 
     history = (document.history + (features_digest(document.features),))[-_MAX_HISTORY:]
     updated = Document(
         id=document.id,
         name=name or document.name,
-        version=document.version + 1,
+        version=next_version,
         features=tuple(features),
+        milestones=tuple(milestones),
         history=history,
         seq=document.seq,
     )
@@ -254,7 +339,74 @@ def apply_ops(
     return updated
 
 
+def _trim_milestones(milestones: list[Milestone]) -> list[Milestone]:
+    """Keep the empty starting milestone and the recent history under one ceiling."""
+    if len(milestones) <= _MAX_MILESTONES:
+        return milestones
+    head = [item for item in milestones[:1] if item.version == 0]
+    return head + milestones[-(_MAX_MILESTONES - len(head)):]
+
+
 # ---------------------------------------------------------------- json
+
+def focus_param_to_json(value: FocusParam) -> dict[str, Any]:
+    return {
+        "feature_id": value.feature_id,
+        "param": value.param,
+        "label": value.label,
+        "unit": value.unit,
+        "minimum": value.minimum,
+        "maximum": value.maximum,
+        "origin": value.origin,
+    }
+
+
+def focus_param_from_json(payload: Mapping[str, Any]) -> FocusParam:
+    minimum = payload.get("minimum")
+    maximum = payload.get("maximum")
+    return FocusParam(
+        feature_id=str(payload.get("feature_id", "")),
+        param=str(payload.get("param", "")),
+        label=str(payload.get("label", "")),
+        unit=str(payload.get("unit", "")),
+        minimum=float(minimum) if minimum is not None else None,
+        maximum=float(maximum) if maximum is not None else None,
+        origin=str(payload.get("origin", "derived")),
+    )
+
+
+def milestone_to_json(value: Milestone) -> dict[str, Any]:
+    return {
+        "version": value.version,
+        "parent_version": value.parent_version,
+        "title": value.title,
+        "actor": value.actor,
+        "intent_id": value.intent_id,
+        "step_index": value.step_index,
+        "created": value.created,
+        "changed_features": list(value.changed_features),
+        "changed_face_indices": list(value.changed_face_indices),
+        "metrics": {key: item for key, item in value.metrics},
+        "focus_params": [focus_param_to_json(item) for item in value.focus_params],
+    }
+
+
+def milestone_from_json(payload: Mapping[str, Any]) -> Milestone:
+    parent = payload.get("parent_version")
+    index = payload.get("step_index")
+    return Milestone(
+        version=int(payload.get("version", 0)),
+        parent_version=int(parent) if parent is not None else None,
+        title=str(payload.get("title", "")),
+        actor=str(payload.get("actor", "agent")),
+        intent_id=payload.get("intent_id"),
+        step_index=int(index) if index is not None else None,
+        created=float(payload.get("created", 0.0) or 0.0),
+        changed_features=tuple(str(x) for x in (payload.get("changed_features") or ())),
+        changed_face_indices=tuple(int(x) for x in (payload.get("changed_face_indices") or ())),
+        metrics=tuple(sorted((str(k), v) for k, v in dict(payload.get("metrics") or {}).items())),
+        focus_params=tuple(focus_param_from_json(item) for item in (payload.get("focus_params") or ())),
+    )
 
 def filter_to_json(value: Filter) -> dict[str, Any]:
     return {
@@ -322,6 +474,7 @@ def document_to_json(value: Document) -> dict[str, Any]:
         "name": value.name,
         "version": value.version,
         "features": [feature_to_json(item) for item in value.features],
+        "milestones": [milestone_to_json(item) for item in value.milestones],
         "history": list(value.history),
         "seq": value.seq,
     }
@@ -331,10 +484,41 @@ def document_from_json(payload: Mapping[str, Any]) -> Document:
     document = Document(
         id=str(payload.get("id", "")),
         name=str(payload.get("name", "Untitled")),
-        version=int(payload.get("version", 1)),
+        version=int(payload.get("version", 0)),
         features=tuple(feature_from_json(item) for item in payload.get("features") or ()),
+        milestones=tuple(milestone_from_json(item) for item in payload.get("milestones") or ()),
         history=tuple(payload.get("history") or ()),
         seq=int(payload.get("seq", 0) or 0),
     )
     validate_layout(document)
     return document
+
+
+def ensure_chain(document: Document) -> Document:
+    """Keep a loaded store document satisfying the milestone invariants."""
+    milestones = list(document.milestones)
+    if not milestones:
+        if document.version == 0:
+            milestones = [Milestone(version=0, title="空白文档", parent_version=None,
+                                    actor="human", created=time.time())]
+        else:
+            milestones = [Milestone(version=document.version, title="当前状态",
+                                    parent_version=None, actor="human", created=time.time())]
+        return Document(id=document.id, name=document.name, version=document.version,
+                        features=document.features, milestones=tuple(milestones),
+                        history=document.history, seq=document.seq)
+    if milestones[-1].version == document.version:
+        return document
+    previous = milestones[-1].version
+    milestones.append(
+        Milestone(
+            version=document.version,
+            parent_version=previous if previous < document.version else None,
+            title="当前状态",
+            actor="human",
+            created=time.time(),
+        )
+    )
+    return Document(id=document.id, name=document.name, version=document.version,
+                    features=document.features, milestones=tuple(milestones),
+                    history=document.history, seq=document.seq)
