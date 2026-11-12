@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -16,6 +17,7 @@ from cadwork.design.document import (
     ensure_chain,
     new_document,
 )
+from cadwork.design.plan import ModelingPlan, plan_from_json, plan_to_json
 
 _MAX_HISTORY = 100
 
@@ -43,11 +45,14 @@ class Store:
     def _history_path(self, document_id: str) -> Path:
         return self.root / f"{document_id}.history.json"
 
+    def _plan_path(self, document_id: str) -> Path:
+        return self.root / f"{document_id}.plan.json"
+
     def _document_paths(self) -> list[Path]:
-        """Only document files; history and intent sidecars share the suffix."""
+        """Only document files; history/intent/plan sidecars share the suffix."""
         paths: list[Path] = []
         for path in self.root.glob("*.json"):
-            if path.name.endswith(".history.json") or path.name.endswith(".intents.json"):
+            if path.name.endswith((".history.json", ".intents.json", ".plan.json")):
                 continue
             paths.append(path)
         return paths
@@ -96,6 +101,7 @@ class Store:
                 raise StoreError("NOT_FOUND", f"no document {document_id!r}", status=404)
             path.unlink()
             self._history_path(document_id).unlink(missing_ok=True)
+            self._plan_path(document_id).unlink(missing_ok=True)
 
     def get(self, document_id: str) -> Document:
         path = self._path(document_id)
@@ -215,6 +221,55 @@ class Store:
             entries = self._read_intents(document_id)
             self._write_intents(document_id, [])
             return len(entries)
+
+    # ------------------------------------------------------------ plans
+    def get_plan(self, document_id: str) -> ModelingPlan | None:
+        with self._lock:
+            path = self._plan_path(document_id)
+            if not path.exists():
+                return None
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                return plan_from_json(payload)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise StoreError("PLAN_CORRUPT", f"cannot read plan for {document_id}: {exc}",
+                                 status=500) from exc
+
+    def save_plan(self, plan: ModelingPlan) -> ModelingPlan:
+        with self._lock:
+            path = self._plan_path(plan.document_id)
+            temp = path.with_suffix(".tmp")
+            temp.write_text(json.dumps(plan_to_json(plan), ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+            os.replace(temp, path)
+            return plan
+
+    def delete_plan(self, document_id: str) -> None:
+        with self._lock:
+            self._plan_path(document_id).unlink(missing_ok=True)
+
+    # ------------------------------------------------------------ imports
+    def _imports_dir(self) -> Path:
+        path = self.root / "imports"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def put_import(self, payload: bytes, suffix: str) -> tuple[Path, str]:
+        """Freeze imported bytes under their digest; rebuild reads this copy."""
+        digest = hashlib.sha256(payload).hexdigest()
+        cleaned = "".join(ch for ch in suffix.lower() if ch.isalnum())[:8] or "bin"
+        path = self._imports_dir() / f"{digest}.{cleaned}"
+        with self._lock:
+            if not path.is_file():
+                temp = path.with_suffix(".tmp")
+                temp.write_bytes(payload)
+                os.replace(temp, path)
+        return path, digest
+
+    def import_path(self, digest: str, suffix: str = "step") -> Path | None:
+        cleaned = "".join(ch for ch in suffix.lower() if ch.isalnum())[:8] or "bin"
+        path = self._imports_dir() / f"{digest}.{cleaned}"
+        return path if path.is_file() else None
 
     # ------------------------------------------------------------ internals
     def _intents_path(self, document_id: str) -> Path:

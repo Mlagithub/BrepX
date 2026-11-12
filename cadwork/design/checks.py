@@ -126,3 +126,13 @@ def extent(value: Any, minimum: float = 0.0) -> CheckResult:
 
     return _guard("extent", f"extent > {minimum}", action)
 
+
+def items(value: Any, minimum: int = 1) -> CheckResult:
+    """A shape-list result (wrapped curves, split faces, cells) must be non-empty."""
+
+    def action() -> dict[str, Any]:
+        count = len(value) if hasattr(value, "__len__") else 1
+        return {"_ok": count >= minimum, "items": count, "min": minimum}
+
+    return _guard("items", f"at least {minimum} item(s)", action)
+

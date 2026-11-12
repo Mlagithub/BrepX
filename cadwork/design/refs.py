@@ -6,17 +6,28 @@ from typing import Any, Mapping
 
 from .document import Filter, Ref
 
-_SELECTS = {"self", "faces", "edges", "solids", "vertices"}
+_SELECTS = {
+    "self", "faces", "edges", "solids", "vertices",
+    "voids", "cells", "shells", "wires",
+}
 
 _METHODS = {
     "top", "bottom", "left", "right", "front", "back",
-    "nearest", "at", "within",
+    "nearest", "at",
     "concave", "convex", "cylinders", "planar", "circles", "lines", "fillets",
     "parallel_to", "perpendicular_to", "facing",
     "largest", "smallest", "one", "of_type", "smooth",
+    "new", "derived_from", "joining", "shared",
+    "tangent_chain", "g1", "g2", "hit_by",
+    "group_by", "max_by", "min_by", "sort_by", "sort_by_distance",
+    "edges", "faces", "vertices", "wires",
 }
 _PROPERTIES = {"first", "last", "count"}
-_AXIS_METHODS = {"parallel_to", "perpendicular_to", "facing"}
+_AXIS_METHODS = {
+    "parallel_to", "perpendicular_to", "facing",
+    "group_by", "max_by", "min_by", "sort_by",
+}
+_SPECIAL = {"new", "derived_from", "joining"}
 
 
 class RefError(Exception):
@@ -46,11 +57,11 @@ def resolve(ref: Ref, outputs: Mapping[str, Any]) -> Any:
     items = accessor()
 
     for item in ref.filters:
-        items = _apply(items, item)
+        items = _apply(items, item, ref, outputs)
     return items
 
 
-def _apply(items: Any, item: Filter) -> Any:
+def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> Any:
     name = item.method
     if name in _PROPERTIES:
         if item.args or item.kwargs:
@@ -64,6 +75,30 @@ def _apply(items: Any, item: Filter) -> Any:
                 "REF_UNSUPPORTED",
                 f"{name} is not available after {type(items).__name__}",
             ) from exc
+
+    if name in _SPECIAL:
+        shapes = [outputs[source] for source in (*ref.since, *ref.extra) if source in outputs]
+        if name == "new":
+            if not ref.since:
+                raise RefError("REF_INVALID_ARG", "new(since=...) needs Ref.since")
+            shapes = [outputs[source] for source in ref.since if source in outputs]
+        else:
+            shapes = [outputs[source] for source in ref.extra if source in outputs]
+        if not shapes:
+            raise RefError(
+                "REF_NOT_FOUND",
+                f"{name}: none of the referenced features has an output",
+            )
+        try:
+            if name == "new":
+                return items.new(shapes)
+            if name == "derived_from":
+                return items.derived_from(*shapes)
+            return items.joining(*shapes)
+        except TypeError as exc:
+            raise RefError("REF_INVALID_ARG", f"{name}: {exc}") from exc
+        except Exception as exc:
+            raise RefError("REF_UNSUPPORTED", f"{name}: {exc}") from exc
 
     if name not in _METHODS:
         raise RefError("REF_UNSUPPORTED", f"filter method {name!r} is not allowed")

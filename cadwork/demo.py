@@ -37,7 +37,7 @@ def _export(result, directory: str) -> list[str]:
 
     os.makedirs(directory, exist_ok=True)
     written: list[str] = []
-    solid = result.outputs.get("f5")
+    solid = result.outputs.get("b_fillet")
     if solid is not None:
         path = os.path.join(directory, "impeller.step")
         S.export_step(solid, path)
@@ -45,7 +45,7 @@ def _export(result, directory: str) -> list[str]:
         path = os.path.join(directory, "impeller.stl")
         S.export_stl(solid, path)
         written.append(path)
-    fluid = result.outputs.get("f9")
+    fluid = result.outputs.get("c1")
     if fluid is not None:
         path = os.path.join(directory, "fluid.step")
         S.export_step(fluid, path)

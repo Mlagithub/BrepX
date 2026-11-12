@@ -1,9 +1,7 @@
-"""The hollow blade: a third part family, again only generic steps.
+"""The hollow blade: one twisted loft, then a shell.
 
-One twisted loft, then a shell. Nothing here is blade-specific machinery — it
-is the same `blade_loft` and `shell` an impeller or a duct would use.
-
-    python -m cadwork.demo --sample blade
+All steps are generated kernel actions; the blade-specific numbers live here,
+not in the registry.
 """
 
 from __future__ import annotations
@@ -19,20 +17,32 @@ def blade_document(
     sections: int = 6,
     name: str = "Hollow blade",
 ) -> Document:
-    features = (
-        Feature(
-            "b1", "blade_loft",
-            params={"r_in": 18.0, "r_out": 44.0, "b_out": b_out, "beta_in": 25.0,
-                    "beta_out": 35.0, "wrap": wrap, "t": t, "sections": sections},
-            note="twisted blade section",
-        ),
-        Feature(
-            "b2", "shell",
-            params={"thickness": thickness, "outward": False, "corners": "round"},
-            refs={"target": Ref("b1", "self")},
-            note="hollow interior",
-        ),
-    )
-    document = Document(id="blade", name=name, features=features)
+    features: list[Feature] = []
+    section_ids: list[str] = []
+    for index in range(sections):
+        u = index / (sections - 1)
+        base = f"s{index}"
+        features.extend([
+            Feature(f"{base}a", "k_rectangle", params={"width": t, "height": b_out}),
+            Feature(f"{base}b", "place_on", params={"plane": "YZ"},
+                    refs={"shape": Ref(f"{base}a", "self")}),
+            Feature(f"{base}c", "k_rotate", params={"axis": "X", "angle": 25.0 + 10.0 * u},
+                    refs={"target": Ref(f"{base}b", "self")}),
+            Feature(f"{base}d", "k_translate",
+                    params={"x": 18.0 + 26.0 * u, "y": 0.0, "z": b_out / 2.0},
+                    refs={"target": Ref(f"{base}c", "self")}),
+            Feature(f"{base}e", "k_rotate", params={"axis": "Z", "angle": wrap * u},
+                    refs={"target": Ref(f"{base}d", "self")}),
+        ])
+        section_ids.append(f"{base}e")
+
+    features.extend([
+        Feature("b_loft", "k_loft", {},
+                refs={"sections": tuple(Ref(fid, "self") for fid in section_ids)}),
+        Feature("b_shell", "k_shell",
+                params={"thickness": thickness, "outward": False, "corners": "round"},
+                refs={"target": Ref("b_loft", "self")}),
+    ])
+    document = Document(id="blade", name=name, features=tuple(features))
     validate_layout(document)
     return document

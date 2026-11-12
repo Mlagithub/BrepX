@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 from cadwork.design.build import BuildError, BuildResult
 from cadwork.design.document import Document, DocumentError, apply_ops
-from cadwork.design.features import FEATURES
+from cadwork.design.features import spec_for
 
 MAX_VARIANTS = 4
 MAX_SETS = 8
@@ -175,7 +175,7 @@ class VariantBook:
         feature = next((item for item in document.features if item.id == feature_id), None)
         if feature is None:
             raise ValueError(f"no feature {feature_id!r} in this document")
-        spec = FEATURES.get(feature.type)
+        spec = spec_for(feature.type)
         unknown = [name for name in params if spec is None or name not in spec.params]
         if unknown:
             raise ValueError(

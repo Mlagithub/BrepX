@@ -1,10 +1,11 @@
-"""Agent surface: ten tools covering perceive, probe, preview, commit and self-check."""
+"""Agent surface: perceive, plan, execute and verify a parametric CAD document.
+
+The tool names are short because dsh already namespaces them as ``mcp__cad__*``.
+"""
 
 from __future__ import annotations
 
 import io
-import os
-import tempfile
 from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
@@ -24,7 +25,7 @@ def _compose(views: list[tuple[str, bytes]]) -> bytes:
     from PIL import Image as PILImage
 
     images = []
-    for label, data in views:
+    for _label, data in views:
         try:
             images.append(PILImage.open(io.BytesIO(data)).convert("RGB"))
         except Exception:
@@ -51,10 +52,12 @@ def build_mcp_server(service: CADService) -> MCPServer:
     server = MCPServer(
         "cadwork",
         instructions=(
-            "A parametric CAD document whose geometry is a compiled product. "
-            "Perceive with cad_state, measure with cad_probe, plan with cad_begin_intent, "
-            "try changes with cad_preview or cad_variants, then commit with cad_commit. "
-            "Every write needs the current base_version, and a commit must pass all checks."
+            "A parametric CAD document. Read with state, measure with probe, and resolve "
+            "spoken references with resolve. For a modelling request, maintain the plan "
+            "(plan, plan_edit, plan_compile) and execute one ready node at a time with "
+            "plan_run; never invent kernel code. Use preview when a direct edit is simpler, "
+            "render for visual checks, and import to freeze a STEP/IGES base body. Every "
+            "write needs the current base_version; a node must pass its own checks."
         ),
     )
 
@@ -67,15 +70,15 @@ def build_mcp_server(service: CADService) -> MCPServer:
         return service.store.create("Workbench").id
 
     @server.tool()
-    def cad_state(document_id: str | None = None) -> dict[str, Any]:
-        """Read the document's projection: version, features, milestone chain, checks, metrics and active intent."""
+    def state(document_id: str | None = None) -> dict[str, Any]:
+        """Read the document projection: version, features, checks, metrics and the plan summary."""
         try:
             return service.state(_active_document(document_id))
         except ServiceError as exc:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_probe(
+    def probe(
         document_id: str,
         ref: dict[str, Any] | None = None,
         feature_id: str | None = None,
@@ -83,7 +86,7 @@ def build_mcp_server(service: CADService) -> MCPServer:
         picked_normal: list[float] | None = None,
         picked_area: float | None = None,
     ) -> dict[str, Any]:
-        """Measure the real bounding box, dry-run a semantic selector, or resolve a picked point to a reference."""
+        """Measure the real bounding box, dry-run a semantic selector, or resolve a picked point."""
         try:
             return service.probe(
                 document_id,
@@ -97,16 +100,16 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_resolve(document_id: str, phrase: str) -> dict[str, Any]:
-        """Map a spoken reference such as "左边的沉头" to feature ids with confidence and a clarifying question."""
+    def resolve(document_id: str, phrase: str) -> dict[str, Any]:
+        """Map a spoken reference such as "左边的沉头" to feature ids with a clarifying question."""
         try:
             return service.resolve_reference(document_id, phrase)
         except ServiceError as exc:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_catalog(category: str | None = None) -> list[dict[str, Any]]:
-        """List the declarative geometry steps with their parameter schemas and input roles."""
+    def catalog(category: str | None = None) -> list[dict[str, Any]]:
+        """List the generated actions and adapters with their parameter schemas and input roles."""
         try:
             entries = service.catalog()
         except ServiceError as exc:
@@ -120,17 +123,8 @@ def build_mcp_server(service: CADService) -> MCPServer:
         ]
 
     @server.tool()
-    def cad_begin_intent(document_id: str, prompt: str, steps: list[str],
-                         base_version: int | None = None) -> dict[str, Any]:
-        """Register this turn's intent and its milestone titles so the canvas can light up the stepper."""
-        try:
-            return service.begin_intent(document_id, prompt, steps, base_version)
-        except ServiceError as exc:
-            raise _fail(exc) from exc
-
-    @server.tool()
-    def cad_preview(document_id: str, ops: list[dict[str, Any]],
-                    base_version: int | None = None) -> dict[str, Any]:
+    def preview(document_id: str, ops: list[dict[str, Any]],
+                base_version: int | None = None) -> dict[str, Any]:
         """Compile a candidate edit without writing it; returns checks, metrics and changed faces."""
         try:
             return service.preview(document_id, ops, base_version)
@@ -138,7 +132,7 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_variants(
+    def variants(
         document_id: str,
         variants: list[dict[str, Any]] | None = None,
         feature: str | None = None,
@@ -158,7 +152,7 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_commit(
+    def commit(
         document_id: str,
         base_version: int,
         ops: list[dict[str, Any]],
@@ -167,7 +161,7 @@ def build_mcp_server(service: CADService) -> MCPServer:
         intent_id: str | None = None,
         step_index: int | None = None,
     ) -> dict[str, Any]:
-        """Atomically write a milestone: check the version lock, compile, pass every check, then broadcast."""
+        """Atomically write a milestone: version lock, compile, all checks, then broadcast."""
         try:
             return service.commit(
                 document_id,
@@ -183,8 +177,8 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_revert(document_id: str, target_version: int,
-                   title: str | None = None) -> dict[str, Any]:
+    def revert(document_id: str, target_version: int,
+               title: str | None = None) -> dict[str, Any]:
         """Republish an earlier version's features as a new milestone instead of rewriting history."""
         try:
             return service.revert(document_id, target_version, title)
@@ -192,8 +186,8 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def cad_render(document_id: str, views: list[str] | None = None,
-                   feature: str | None = None) -> Image:
+    def render(document_id: str, views: list[str] | None = None,
+               feature: str | None = None) -> Image:
         """Compose a qualitative multi-view picture for shape and orientation self-checking."""
         wanted = views or ["iso", "front", "top"]
         frames: list[tuple[str, bytes]] = []
@@ -207,5 +201,63 @@ def build_mcp_server(service: CADService) -> MCPServer:
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
         return Image(data=data, format="png")
+
+    @server.tool()
+    def plan(document_id: str) -> dict[str, Any]:
+        """Read the current plan: goal, revision, node status, parameters, refs and observations."""
+        try:
+            return service.plan(document_id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def plan_edit(
+        document_id: str,
+        ops: list[dict[str, Any]],
+        base_revision: int | None = None,
+        goal: str | None = None,
+    ) -> dict[str, Any]:
+        """Add, update or remove plan nodes. Ops: add_node, update_node, remove_node, set_goal."""
+        try:
+            return service.plan_edit(document_id, ops, base_revision=base_revision, goal=goal)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def plan_compile(document_id: str) -> dict[str, Any]:
+        """Dry-run the whole plan: validate it, lower every node, and report issues and coverage."""
+        try:
+            return service.plan_compile(document_id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def plan_run(document_id: str, node_id: str,
+                 base_version: int | None = None) -> dict[str, Any]:
+        """Execute one ready node, commit its milestone, evaluate its checks and return the plan."""
+        try:
+            return service.plan_run(document_id, node_id, base_version=base_version)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def intents(document_id: str, action: str = "list") -> dict[str, Any]:
+        """List or clear the human's pending intent notes for this document."""
+        try:
+            if action == "clear":
+                return {"cleared": service.store.clear_intents(document_id)}
+            if action != "list":
+                raise ServiceError("INVALID_ACTION", "action must be list or clear", status=400)
+            return {"intents": service.store.list_intents(document_id)}
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool(name="import")
+    def import_file(document_id: str, path: str, format: str = "step") -> dict[str, Any]:
+        """Freeze a local STEP/IGES/B-Rep file into the document as a base body."""
+        try:
+            return service.import_file(document_id, path, format=format)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
 
     return server

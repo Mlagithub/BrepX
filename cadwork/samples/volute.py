@@ -1,9 +1,7 @@
-"""The volute: a different part family, built only from generic steps.
+"""The volute: a spiral centre line, a growing section, a swept casing.
 
-Nothing in the step registry knows what a volute is. If this file stops
-building, the registry lost generality — not just a parameter.
-
-    python -m cadwork.demo --sample volute
+Nothing in the registry knows what a volute is.  If this stops building, the
+generated action set lost generality.
 """
 
 from __future__ import annotations
@@ -21,30 +19,17 @@ def volute_document(
     name: str = "Volute",
 ) -> Document:
     features = (
-        Feature(
-            "v1", "curve_spiral",
-            params={"r_start": r_start, "r_end": r_end, "turns": turns,
-                    "plane": "XY", "clockwise": False},
-            note="casing centre line",
-        ),
-        Feature(
-            "v2", "profile_rect",
-            params={"width": width, "height": height, "fillet": 0.0},
-            note="section at the start of the wrap",
-        ),
-        Feature(
-            "v3", "sweep",
-            params={"twist": 0.0, "scale_start": 0.35, "scale_end": 1.0,
-                    "orient": True, "translational": False},
-            refs={"profile": Ref("v2", "self"), "path": Ref("v1", "self")},
-            note="section grows along the wrap",
-        ),
-        Feature(
-            "v4", "shell",
-            params={"thickness": wall, "outward": False, "corners": "round"},
-            refs={"target": Ref("v3", "self")},
-            note="casing walls; the void is the flow passage",
-        ),
+        Feature("v1", "k_spiral",
+                params={"start_radius": r_start, "end_radius": r_end, "turns": turns,
+                        "plane": "XY", "clockwise": False}),
+        Feature("v2", "k_rectangle", params={"width": width, "height": height, "fillet": 0.0}),
+        Feature("v3", "k_sweep",
+                params={"twist": 0.0, "scale_start": 0.35, "scale_end": 1.0,
+                        "orient": True, "translational": False},
+                refs={"profile": Ref("v2", "self"), "path": Ref("v1", "self")}),
+        Feature("v4", "k_shell",
+                params={"thickness": wall, "outward": False, "corners": "round"},
+                refs={"target": Ref("v3", "self")}),
     )
     document = Document(id="volute", name=name, features=features)
     validate_layout(document)

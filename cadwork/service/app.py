@@ -90,6 +90,22 @@ class IntentRequest(BaseModel):
     base_version: int | None = None
 
 
+class PlanEditRequest(BaseModel):
+    ops: list[dict[str, Any]]
+    base_revision: int | None = None
+    goal: str | None = None
+
+
+class PlanRunRequest(BaseModel):
+    node_id: str
+    base_version: int | None = None
+
+
+class ImportRequest(BaseModel):
+    path: str
+    format: str = "step"
+
+
 class PickRequest(BaseModel):
     version: int | None = None
     point: list[float]
@@ -280,6 +296,32 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     @app.post("/api/docs/{document_id}/intents/{intent_id}/cancel")
     def cancel_intent(document_id: str, intent_id: str) -> dict[str, Any]:
         return service.cancel_intent(document_id, intent_id)
+
+    # ------------------------------------------------------------ plan
+    @app.get("/api/docs/{document_id}/plan")
+    def get_plan(document_id: str) -> dict[str, Any]:
+        return service.plan(document_id)
+
+    @app.post("/api/docs/{document_id}/plan/edit")
+    def edit_plan(document_id: str, body: PlanEditRequest) -> dict[str, Any]:
+        return service.plan_edit(document_id, body.ops,
+                                 base_revision=body.base_revision, goal=body.goal)
+
+    @app.post("/api/docs/{document_id}/plan/compile")
+    def compile_plan(document_id: str) -> dict[str, Any]:
+        return service.plan_compile(document_id)
+
+    @app.post("/api/docs/{document_id}/plan/run")
+    def run_plan(document_id: str, body: PlanRunRequest) -> dict[str, Any]:
+        return service.plan_run(document_id, body.node_id, base_version=body.base_version)
+
+    @app.get("/api/docs/{document_id}/timeline")
+    def timeline(document_id: str) -> list[dict[str, Any]]:
+        return service.timeline(document_id)
+
+    @app.post("/api/docs/{document_id}/import")
+    def import_file(document_id: str, body: ImportRequest) -> dict[str, Any]:
+        return service.import_file(document_id, body.path, format=body.format)
 
     # ------------------------------------------------------------ variants
     @app.post("/api/docs/{document_id}/variants")

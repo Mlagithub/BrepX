@@ -1,5 +1,8 @@
-# cadwork agent profile: the CAD MCP server, and nothing that can touch the host.
-# Every tool below the MCP insert is removed so the agent can only change documents.
+# cadwork agent profile: CAD MCP + read-only host files + skills.
+#
+# The agent may read skill references and STEP files, but every document write
+# goes through the `cad` MCP server.  Shell, web, subagents and plugin
+# management are disabled.
 
 - insert:
     - id: mcp-cad
@@ -10,12 +13,24 @@
         url: 'http://127.0.0.1:8765/mcp/'
         toolCallTimeoutMs: 300000
 
-# No shell, no files, no network, no plugin management, no delegation.
+    # The base bundle does not mount a host filesystem; add the read-only
+    # backend and its tools explicitly.
+    - id: fs-local
+      name: '@deepseek-ai/dsh-fs-local'
+    - id: tool-fs
+      name: '@deepseek-ai/dsh-tool-fs'
+      config:
+        read: true
+        readImage: true
+        write: false
+        edit: false
+        applyPatch: false
+        readLimit: 2000
+
+# No shell, no network, no plugin management, no delegation.
 - id: tool-bash
   disabled: true
 - id: tool-pwsh
-  disabled: true
-- id: tool-fs
   disabled: true
 - id: tool-fs-search
   disabled: true
@@ -36,30 +51,5 @@
 - id: tool-subagent-control
   disabled: true
 
-# Kept: todo, goal and skill. todo helps the model plan; skill carries the
-# impeller guide installed under $DSH_HOME/skills.
-
-# ── 模型路由不进仓库 ─────────────────────────────────────────
-# 这个文件随仓库发布，所以这里不写 provider、baseURL，也不写任何凭据。
-# 本机把自己的路由追加到 $DSH_HOME/cordis.patch.yml（home 级覆盖层，不被提交），
-# 形状如下：
-#
-#   - id: llm-pi-ai
-#     name: '@deepseek-ai/dsh-llm-pi-ai'
-#     config:
-#       providers:
-#         <provider>:
-#           api: openai-responses
-#           baseURL: <your endpoint>
-#           headers:
-#             Authorization: 'Bearer <token 从环境变量或密钥库读取>'
-#           models:
-#             - id: <model>
-#               name: <model>
-#   - id: agent-default-model
-#     name: '@deepseek-ai/dsh-agent-default-model'
-#     config:
-#       provider: <provider>
-#       model: <model>
-#
-# 提醒：token 一旦进过 git 历史，删文件不等于撤销，必须到服务端轮换。
+# Kept: todo, goal, ask_user, compact and skill.  The domain plan lives in the
+# document (`plan` / `plan_edit`), not in dsh's todo or goal.

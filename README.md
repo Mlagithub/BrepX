@@ -1,34 +1,41 @@
 # BrepX
 
-面向工程零件与流体机械前处理的**薄层**参数化 B-Rep 工作台：**文档是数据，几何是编译产物**。Agent 主导建模，人审阅与改参。
+面向工程零件与流体机械前处理的**参数化 B-Rep 工作台**：文档是数据，几何是编译产物。
+人给意图与方向，LLM 维护建模计划，确定性编译器生成内核调用，人审里程碑。
 
-几何由 [smlibpy](https://github.com/awv-informatik/smlibpy) 0.6（SMLib NURBS 内核）提供；宿主是 DeepSeek Harness（dsh）。
+几何由 [smlibpy](https://github.com/awv-informatik/smlibpy) 0.6（SMLib NURBS 内核）
+提供；宿主是 DeepSeek Harness（dsh）。
 
 ## 三条不变量
 
-1. **步骤只声明，不实现几何。** 注册表描述参数、输入角色、check 和一次内核调用；`sweep`/`loft`/`shell`/`helix` 这些形状操作由 smlibpy 提供。
-2. **几何只在 Python 侧编译一次。** 浏览器加载导出的精确 B-Rep 用于显示与拾取，不重放文档步骤 —— 双份编译逻辑是禁止的。
-3. **agent 只经 MCP 改文档。** 没有 shell、没有文件、没有网络；权限边界就是 MCP 的工具清单。
+1. **计划声明意图，编译器写代码。** LLM 产出 `ModelingPlan`（目标/特征/依赖/参数/验收），
+   编译器校验后 lower 成 `BuildProgram`；LLM 不直接写 smlib 调用，也不拥有 `run_script`。
+2. **文档是真相源。** 几何只在 Python 侧编译一次；脚本是 IR，smlibpy session 是缓存。
+   落盘的是文档、计划与内容哈希，不是脚本。
+3. **agent 只经 MCP 改文档。** 只读文件工具用于 skill references 和 STEP 导入；写入、
+   shell、网络、子 agent 默认关闭。
 
 ## 架构
 
 | 层 | 位置 | 职责 |
 | :--- | :--- | :--- |
-| 文档 | `cadwork/design/document.py` | 不可变 `Document` + 原子 `ops`（add/update/remove/reorder）+ 版本 |
-| 步骤 | `cadwork/design/steps.py` | 声明式步骤注册表：参数 schema、输入角色、check、一次内核调用 |
-| 引用 | `cadwork/design/refs.py` | 语义选择：`nearest` / `largest` / `planar` / `concave` … |
-| 校验 | `cadwork/design/checks.py` | 门禁；失败即 422，文档不动，返回可读 hint |
-| 编译 | `cadwork/design/build.py` | 重放步骤 + 内容寻址缓存（LRU，删掉只损失时间） |
-| 服务 | `cadwork/service/` | 一个 `CADService`，HTTP `/api` 与 MCP `/mcp` 同进程 |
-| 宿主 | `agent/profile/` | dsh profile：只挂 CAD MCP，禁用一切能碰宿主的工具 |
-| 视口 | `plugins/cadview/`（进行中） | DSH client plugin：`sidebarRightTabs` 视口 + `tool.call.toolview` 卡片，`smlibpy-three` 精确拾取 |
+| 内核动作 | `cadwork/design/kernel_actions.py` | 从 smlibpy 签名生成 `k_*`：参数、角色、返回类型；语义覆盖表只写角色/调用方式 |
+| 适配器 | `cadwork/design/adapters.py` | `pattern`、`tag_boundary`、`import_base`、`place_on`、`cavity` |
+| 计划 | `cadwork/design/plan.py` | `ModelingPlan`：goal/feature/check 节点、依赖、`Expect`、JSON、CAS |
+| 编译器 | `cadwork/design/plan_compile.py` | 校验 → 文档 ops / `BuildProgram` IR；报告 issues 与覆盖率 |
+| 验收 | `cadwork/design/verify.py` | volume/area/faces/edges/solids/watertight/bbox/distance/intersects |
+| 执行 | `cadwork/design/backends/` | `LocalBackend`（进程内）与 `ScriptBackend`（本地 `run_script`） |
+| 文档/构建 | `cadwork/design/document.py`、`build.py` | 不可变 `Document` + 原子 ops + 内容寻址缓存 |
+| 服务 | `cadwork/service/` | 一个 `CADService`：HTTP `/api` 与 MCP `/mcp` 同进程；JSONL 领域事件 |
+| 宿主 | `agent/profile/` | dsh profile：CAD MCP + 只读文件 + skills |
+| 视口 | `plugins/cadview/` | DSH client plugin：右侧 CAD 标签、计划树、拾取、toolview |
 
 ## 快速开始
 
 ```bash
 python -m pip install -r requirements.txt
 
-# 建出九特征叶轮（回归样本）
+# 构建四类样例（叶轮/蜗壳/空心叶片/法兰）
 python -m cadwork.demo
 python -m cadwork.demo --export .tmp/impeller
 
@@ -38,78 +45,87 @@ python -m unittest discover -s cadwork/tests -t .
 # 服务：HTTP + MCP 同进程
 python -m cadwork.service --port 8765
 
-# agent：装 profile 后只看见 CAD 工具
+# agent：安装 profile 与 skills，然后启动
 python agent/install.py
 dsh --profile cad-agent
 ```
 
-在 DSH 里看图：先起上面那个服务，再重启一次 `dsh web`。打开任意会话的右侧栏，指南里有 **CAD** 入口，点开就是一个 CAD 标签页：
+## 计划工作流
 
-- 顶部下拉选零件族（Impeller / Volute casing / Hollow blade）：**选中即按该族的默认参数重建**，不需要再点按钮；中间显示该族声明的参数，改完参数后按 **Build** 应用；
-- 每次构建都替换当前文档的特征（不追加），状态行给出 `built <sample> at vN · 特征 · 面数 · 体积`；下拉会按文档里实际的零件自动校正，标签与模型始终一致；
-- 特征芯片（`f1`、`v3`…）点击可启停单步，用来审阅「关掉这个圆角/抽壳会怎样」；底栏是 checks 结果，失败项带 hint；
-- 一键验收（不需要浏览器）：`python scripts/accept_volute.py --all`，构建三个样本、跑 checks、导出 STEP/STL/PNG 并在任何一项失败时非零退出；
-- 视口里拖拽转、滚轮缩放、点面读面积；状态行显示 `特征 · 面数 · 体积`。
-- 视口是 `cadwork` 提供的 `/api/kernel-view` 页面（iframe）：它用 **import map 直接加载内核包**，内核在浏览器里跑，所以点击得到的是真实 B-Rep 面与精确面积。
-- **不要用 esbuild 打包内核**：包的 `init` 用 `import.meta.url` 定位 wasm 和 probe worker，打包后 `init` 会永久 pending（同一份字节在 Node 里 164 ms）。`/api/probe` 保留了对照实验：打包版卡死、不打包版 491 ms 成功。
+工具（dsh 命名空间为 `mcp__cad__*`）：
 
-四个零件族都由同一套通用步骤组合出来：叶轮 = 回转 + 叶片放样 + 圆周阵列 + 布尔 + 圆角；蜗壳 = 螺旋 + 矩形截面 + 变截面扫掠 + 抽壳；空心叶片 = 扭转放样 + 抽壳；法兰 = 圆柱基本体 + 布尔 + 圆周阵列 + 倒角。
-
-步骤表（30 个，全部是一次内核调用）：
-
-| 类别 | 步骤 |
+| 工具 | 用途 |
 |---|---|
-| 基本体 | `solid_box` `solid_cylinder` `solid_cone` `solid_sphere` |
-| 轮廓 | `profile_rect` `profile_circle` `profile_polygon` `curve_spiral` `curve_helix` |
-| 成体 | `extrude` `revolve_profile` `hub_revolve` `blade_loft` `sweep` `shell`（可命名 `openings`） `thicken_faces` |
-| 孔 | `hole`（简单孔 / 沉头 / 沉孔，孔口自顶面起算，深度 0 为通孔） |
-| 布尔/阵列 | `boolean` `pattern_circular` `pattern_linear` `pattern_grid` `mirror_part` |
-| 修饰 | `fillet` `chamfer` `offset_solid` `split_part` `scale_part` |
-| 放置 | `transform` |
-| 场景扩展 | `tag_boundary` `cavity_extraction` |
+| `state` | 文档版本、特征、checks、metrics、计划摘要、待处理意图 |
+| `probe` / `resolve` | 量测、试解析引用/拾取点；自然语言 → 特征 |
+| `catalog` | 生成的 `k_*` 与适配器、参数 schema |
+| `plan` / `plan_edit` | 读计划；add/update/remove 节点，revision CAS |
+| `plan_compile` | dry-run：结构、action、参数、引用、覆盖率 |
+| `plan_run` | 执行一个 ready 节点；feature 提交里程碑，check 只量测 |
+| `preview` / `commit` / `revert` / `variants` | 直接编辑、回退、方案比选 |
+| `render` | 多视图 PNG；`import` 冻结 STEP/IGES 基准体 |
+| `intents` | 读/清人的待处理便签 |
 
-引用种类（`part`/`faces`/`edges`/`curve`/`profile`）是**注册表**，不是枚举：`register_input_kind()` 加一种新种类不需要改编译引擎。步骤还可以声明**可选输入**（如 `shell.openings`），缺省即走闭壳。
+一次典型建模：
 
-加一个新零件族 = 在 `cadwork/samples/` 写一个文档构造器；只有需要新几何能力时才往注册表加**通用**步骤。
+1. `state` 读版本与计划；
+2. `plan_edit` 加节点（按依赖顺序）；
+3. `plan_compile` 修完所有 issue；
+4. `plan_run` 逐个 ready 节点；失败即停，改参数后重跑；
+5. `render` / `state` 复核；`commit` 之外的所有写入都带 `base_version`。
 
-插件首次使用前要构建一次：`cd plugins/cadview && npm install && npm run build`（产出 `lib/viewport.mjs`，已被 `.gitignore` 忽略）。
+## 内核清单
 
-## 验收
+`python scripts/kernel_inventory.py --check` 枚举 smlibpy 0.6.2 的全部公开 callable
+（156 顶层函数 + 41 类的 497 个方法，共 653 个），每个标注去向：`GEN`/`ADAPTER`/
+`REF`/`MEASURE`/`SERVICE`/`DEFER`/`N/A`。未分类数必须为 0；新增/删除会进入
+`kernel_actions.baseline.json` 的 diff。
 
-v1 的唯一验收线是**蜗壳**：从零用通用步骤组合建出，**不出现任何零件专用步骤**，编译与文档引擎零改动，checks 全绿，导出 STEP/STL。
+`features.py` 不再手写 30 个 `FeatureSpec`：`FEATURES = generated_actions() + ADAPTERS`。
+域宏（叶轮/叶片/蜗壳）是计划模板或样例，不是文档类型。
 
-做不到，就说明「通用」还没兑现 —— 不是参数没调好。
+## 双执行后端
 
-## 目录
+- `LocalBackend`：进程内调用 `spec.build`，用于文档构建与等价性基准。
+- `ScriptBackend`：编译器把 AST 生成确定性脚本，经本地 `python -m smlibpy.mcp`
+  的 `run_script` 执行；每文档一个 session，失败事务回滚，重启从已提交节点重放。
+- 同一计划的最终 STEP sha256 应一致；不等价不切换默认后端。
 
+## 日志
+
+- agent 侧：dsh 的 session log（`~/.dsh/sessions/.../session.v4.jsonl.zstd`）、
+  startup log、Web 会话导出；**不重复开发**。
+- 领域侧：文档 `Milestone` + 计划节点状态是权威审计；`cadwork/service/events.py`
+  写一条薄 JSONL（`CADWORK_HOME/logs/events.jsonl`），只记 id/耗时/错误码，
+  不记几何 payload；`GET /api/docs/{id}/timeline` 从文档/计划派生。
+
+## 样例与验收
+
+四个样例都由生成的 `k_*` 组合：
+
+- **叶轮**：多边形回转轮盘 + 5 段叶片 loft + 圆周阵列 + 布尔 + 圆角 + 三个边界 + 流体域；
+- **蜗壳**：螺旋 + 矩形截面 + 变截面 sweep + shell；
+- **空心叶片**：扭转 loft + shell；
+- **法兰**：圆柱 + 融合 + 通孔 + 螺栓阵列 + 倒角。
+
+```bash
+python -m cadwork.demo --sample impeller
+python scripts/accept_plan.py        # 计划：编译、逐节点、checks、导出
+python scripts/accept_volute.py --all
 ```
-cadwork/design/     文档、步骤、引用、校验、编译
-cadwork/service/    HTTP + MCP + 存储 + 渲染
-cadwork/samples/    叶轮、蜗壳、空心叶片（回归 + 验收）
-plugins/cadview/    DSH client plugin（浏览器半 + 宿主空壳，无构建步骤）
-agent/profile/      dsh profile（不含任何凭据）
-scripts/            demo、内核探针、一键验收（accept_volute.py）
-```
 
-服务端只提供 API（`/api`）与 MCP（`/mcp`），不再挂独立前端；工作台只在 DSH 里。
+验收线：计划可编译、每个节点 checks 通过、失败不写文档、重启可重放、Local/Script
+最终 STEP 一致、旧文档类型报 `UNKNOWN_FEATURE_TYPE`。
 
-`docs/` 与 `tasks/` 是本机知识（计划、架构说明），被 `.gitignore` 忽略，不进版本库。
+## 视口
 
-## 状态
+`plugins/cadview` 需要构建一次：`cd plugins/cadview && npm install && npm run build`
+（产出 `lib/viewport.mjs`，被 `.gitignore` 忽略）。视口用 import map 直接加载内核包，
+点选得到真实 B-Rep 面与面积；不要用 esbuild 打包内核（`init` 会 pending）。
 
-| 部分 | 状态 |
-| :--- | :--- |
-| 文档模型、语义引用、校验门禁、缓存、HTTP/MCP | 已完成 |
-| 九特征叶轮样本（回归） | 已完成 |
-| smlibpy 0.6 升级、通用步骤（`curve_spiral`/`curve_helix`/`profile_rect`/`sweep`/`shell`） | 已完成 |
-| 蜗壳验收（螺旋 + 变截面扫掠 + 抽壳，4 步全通用） | 已完成 |
-| DSH client plugin 骨架（装进 web profile、进入 boot 图） | 已完成 |
-| 右侧栏 `CAD` tab（`sidebarRightTabs` + `sidebar.right.pane.tab`） | 已完成，浏览器实测 |
-| 视口：three.js + 服务端 `scene`，轨道 / 缩放 / 点面拾取 | 已完成 |
-| 交互式生成：样本下拉 + 参数 + Build | 已完成（叶轮 / 蜗壳 / 空心叶片 / 法兰） |
-| 特征芯片启停、checks 面板、文档版本自动刷新 | 已完成，浏览器实测 |
-| web 会话内的 agent 挂载 CAD MCP（`cad_*` 工具） | 已完成（服务日志见 `POST /mcp/` 会话） |
-| 独立前端 `web/` | 已删除，工作台只在 DSH |
-| `smlibpy-three` 精确拾取 | 已完成：视口是一个带 import map 的 iframe 页面，内核用它自己的模块运行；点面返回真实 B-Rep 面与精确面积（`face · 4259.3 mm²`）。原因见下 |
-| CFD 边界字典、STEP 导入改造、交互式草图、多用户部署 | 不在 v1 |
-| 旧栈（Command-Centric + 31 算子 + 静态前端） | 已删除，见 git 历史 |
+## 边界
+
+- 窄域：叶轮/蜗壳/叶片/法兰与同类回转/扫掠/布尔零件；不是通用 CAD。
+- 拓扑命名未解决：上游改动后引用可能 `REF_RETARGETED`，必须显式重选。
+- `DEFER` 的内核能力（deform/NURBS/region 等）不在 v1 生成动作内；需要时先在
+  `kernel_actions.py` 加语义覆盖，再写测试。

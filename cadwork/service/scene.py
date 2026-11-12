@@ -12,7 +12,7 @@ _EDGE_SAMPLES = 12
 def display_feature(document: Document) -> str | None:
     """The body the viewport shows: last solid feature, skipping fluid domains."""
     for feature in reversed(document.features):
-        if feature.enabled and feature.type != "cavity_extraction":
+        if feature.enabled and feature.type not in {"cavity_extraction", "cavity"}:
             return feature.id
     for feature in reversed(document.features):
         if feature.enabled:

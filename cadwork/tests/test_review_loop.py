@@ -16,7 +16,7 @@ def _box_service(length: float = 40.0) -> tuple[CADService, str]:
         document.id,
         0,
         [{"op": "add", "feature": {
-            "id": "b1", "type": "solid_box",
+            "id": "b1", "type": "k_box",
             "params": {"length": length, "width": 20.0, "height": 10.0},
         }}],
         title="创建方块",
@@ -52,7 +52,8 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertEqual(latest.parent_version, 1)
         self.assertEqual(latest.actor, "human")
         self.assertEqual(latest.focus_params[0].param, "length")
-        self.assertEqual(latest.focus_params[0].maximum, 10000.0)
+        # Generated kernel parameters carry no artificial upper bound.
+        self.assertIsNone(latest.focus_params[0].maximum)
         state = service.state(document_id)
         self.assertAlmostEqual(state["metrics"]["volume"], 12000.0, places=1)
         self.assertEqual(state["focus_params"][0]["value"], 60.0)

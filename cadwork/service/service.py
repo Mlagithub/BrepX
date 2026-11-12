@@ -24,8 +24,24 @@ from cadwork.design.document import (
     features_digest,
     milestone_to_json,
 )
-from cadwork.design.features import FEATURES, catalog
+from cadwork.design.features import catalog, spec_for
+from cadwork.design.plan import (
+    ModelingPlan,
+    PlanError,
+    PlanNode,
+    new_plan,
+    plan_node_from_json,
+    plan_node_to_json,
+    plan_to_json,
+    validate_plan,
+    with_node,
+    with_revision,
+)
+from cadwork.design.plan_compile import CompileError, compile_node, compile_plan as compile_plan_report
 from cadwork.design.probe import pick_to_ref, probe_geometry, probe_ref
+from cadwork.design.verify import evaluate as evaluate_expects
+
+from .events import DomainEvent, EventLog, new_request_id, timeline as build_timeline
 
 from .export import export_bytes
 from .resolve import resolve as resolve_phrase
@@ -58,6 +74,19 @@ class ServiceError(Exception):
             payload["hint"] = self.hint
         payload.update(self.detail)
         return payload
+
+
+def _stale_descendants(nodes: Mapping[str, PlanNode], roots: set[str]) -> set[str]:
+    """Every node that transitively depends on a changed node must be re-run."""
+    affected: set[str] = set()
+    frontier = list(roots)
+    while frontier:
+        current = frontier.pop()
+        for node in nodes.values():
+            if current in node.deps and node.id not in affected:
+                affected.add(node.id)
+                frontier.append(node.id)
+    return affected - set(roots)
 
 
 class EventBus:
@@ -145,6 +174,8 @@ class CADService:
         self._lock = threading.RLock()
         self._intents: dict[str, IntentState] = {}
         self._active_intent: dict[str, str] = {}
+        self._plan_backend: Any | None = None
+        self._event_log = EventLog(Path(store.root) / "logs" / "events.jsonl")
 
     @staticmethod
     def _variant_preview(part: Any) -> bytes:
@@ -189,6 +220,21 @@ class CADService:
             metrics = self._metrics(result)
             checks = self._checks_projection(result)
         latest = document.milestones[-1] if document.milestones else None
+        plan = self.store.get_plan(document_id)
+        plan_summary = None
+        if plan is not None:
+            ready = [node.id for node in plan.nodes
+                     if node.kind == "feature" and node.status == "pending"]
+            plan_summary = {
+                "id": plan.id,
+                "goal": plan.goal,
+                "status": plan.status,
+                "revision": plan.revision,
+                "base_version": plan.base_version,
+                "nodes": len(plan.nodes),
+                "ready": ready[:12],
+                "failed": [node.id for node in plan.nodes if node.status == "failed"],
+            }
         return {
             "document": {"id": document.id, "name": document.name, "version": document.version},
             "vacant": vacant,
@@ -200,6 +246,8 @@ class CADService:
             "focus_params": self._focus_projection(document, latest),
             "features": self._feature_projection(document),
             "active_intent": self._intent_json(document.id),
+            "plan": plan_summary,
+            "pending_intents": self.store.list_intents(document_id),
         }
 
     def _milestone_projection(self, document: Document, item: Milestone) -> dict[str, Any]:
@@ -242,7 +290,7 @@ class CADService:
             feature = feature_map.get(feature_id)
             if feature is None or not feature.enabled:
                 continue
-            spec = FEATURES.get(feature.type)
+            spec = spec_for(feature.type)
             numeric = [
                 key for key, value in feature.params.items()
                 if isinstance(value, (int, float)) and not isinstance(value, bool)
@@ -367,6 +415,8 @@ class CADService:
         step_index: int | None = None,
         parent_version: int | None = None,
         name: str | None = None,
+        plan_id: str | None = None,
+        node_id: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             document = self.read(document_id)
@@ -383,6 +433,8 @@ class CADService:
                     intent_id=intent_id,
                     step_index=step_index,
                     parent_version=parent_version,
+                    plan_id=plan_id,
+                    node_id=node_id,
                 )
             except DocumentError as exc:
                 raise _document_error(exc) from exc
@@ -415,6 +467,312 @@ class CADService:
                 "tags": result.tags if result is not None else {},
                 "milestone": payload,
             }
+
+    # ---------------------------------------------------------------- plans
+    def _emit(self, event: str, **fields: Any) -> None:
+        self._event_log.write(DomainEvent(event=event, **fields))
+
+    def _plan_json(self, plan: ModelingPlan, document: Document) -> dict[str, Any]:
+        nodes = []
+        enabled_ids = {feature.id for feature in document.features if feature.enabled}
+        for node in plan.nodes:
+            status = node.status
+            if status == "done" and (
+                node.milestone_version is None
+                or node.milestone_version > document.version
+                or (node.kind == "feature"
+                    and (node.feature_id or node.id) not in enabled_ids)
+            ):
+                status = "pending"
+            nodes.append({
+                "id": node.id,
+                "kind": node.kind,
+                "title": node.title,
+                "action": node.action,
+                "status": status,
+                "deps": list(node.deps),
+                "feature_id": node.feature_id,
+                "milestone_version": node.milestone_version,
+                "params": dict(node.params),
+                "refs": {role: self._ref_json(value) for role, value in node.refs.items()},
+                "expect": [
+                    {"metric": item.metric, "op": item.op, "value": item.value,
+                     "tolerance": item.tolerance}
+                    for item in node.expect
+                ],
+                "observed": dict(node.observed),
+                "error": node.error,
+                "note": node.note,
+            })
+        payload = plan_to_json(plan)
+        payload["nodes"] = nodes
+        payload["base_version"] = plan.base_version
+        payload["document_version"] = document.version
+        return payload
+
+    @staticmethod
+    def _ref_json(value: Any) -> Any:
+        from cadwork.design.plan import ref_to_json
+
+        if isinstance(value, (list, tuple)):
+            return [ref_to_json(item) for item in value]
+        return ref_to_json(value)
+
+    def plan(self, document_id: str) -> dict[str, Any]:
+        document = self.read(document_id)
+        plan = self.store.get_plan(document_id)
+        intents = self.store.list_intents(document_id)
+        if plan is None:
+            return {"document_id": document_id, "document_version": document.version,
+                    "plan": None, "pending_intents": intents}
+        return {"document_id": document_id, "document_version": document.version,
+                "plan": self._plan_json(plan, document), "pending_intents": intents}
+
+    def plan_edit(
+        self,
+        document_id: str,
+        ops: list[Mapping[str, Any]],
+        base_revision: int | None = None,
+        goal: str | None = None,
+        actor: str = "agent",
+    ) -> dict[str, Any]:
+        with self._lock:
+            document = self.read(document_id)
+            plan = self.store.get_plan(document_id)
+            if plan is None:
+                plan = new_plan(document_id, goal or "模型", document.version)
+                if goal:
+                    plan = replace(plan, goal=goal)
+            if base_revision is not None and plan.revision != base_revision:
+                raise ServiceError("PLAN_STALE", f"plan is at revision {plan.revision}, edit expected {base_revision}",
+                                   status=409)
+            nodes = {node.id: node for node in plan.nodes}
+            touched: list[str] = []
+            for op in ops or []:
+                kind = str(op.get("op", ""))
+                if kind == "add_node":
+                    node = plan_node_from_json(op.get("node") or op)
+                    if node.id in nodes:
+                        raise ServiceError("NODE_ID_CONFLICT", f"node {node.id!r} already exists", status=409)
+                    nodes[node.id] = node
+                elif kind == "update_node":
+                    payload = dict(op.get("node") or op)
+                    node_id = str(payload.get("id") or op.get("id") or "")
+                    current = nodes.get(node_id)
+                    if current is None:
+                        raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
+                    merged = dict(plan_node_to_json(current))
+                    merged.update(payload)
+                    merged["id"] = node_id
+                    merged["status"] = "pending"
+                    merged["milestone_version"] = None
+                    merged["observed"] = {}
+                    merged["error"] = None
+                    nodes[node_id] = plan_node_from_json(merged)
+                    touched.append(node_id)
+                elif kind == "remove_node":
+                    node_id = str(op.get("id") or (op.get("node") or {}).get("id") or "")
+                    if node_id not in nodes:
+                        raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
+                    nodes.pop(node_id)
+                    touched.append(node_id)
+                elif kind == "set_goal":
+                    goal = str(op.get("goal") or op.get("text") or "")
+                else:
+                    raise ServiceError("PLAN_INVALID", f"unknown plan op {kind!r}", status=400)
+            if touched:
+                stale = _stale_descendants(nodes, set(touched))
+                for node_id in stale:
+                    if node_id in nodes:
+                        nodes[node_id] = replace(
+                            nodes[node_id], status="pending", milestone_version=None,
+                            observed={}, error=None,
+                        )
+            updated = replace(
+                plan,
+                goal=goal or plan.goal,
+                nodes=tuple(nodes.values()),
+                base_version=document.version,
+                revision=plan.revision + 1,
+            )
+            try:
+                validate_plan(updated, document)
+            except PlanError as exc:
+                raise ServiceError(exc.code, exc.message, status=400, hint=exc.hint) from exc
+            self.store.save_plan(updated)
+            self._emit("plan.edit", document_id=document_id, plan_id=updated.id,
+                       actor=actor, detail={"revision": updated.revision, "ops": len(ops or ())})
+            return self.plan(document_id)
+
+    def plan_compile(self, document_id: str) -> dict[str, Any]:
+        document = self.read(document_id)
+        plan = self.store.get_plan(document_id)
+        if plan is None:
+            raise ServiceError("PLAN_NOT_FOUND", "this document has no plan", status=404)
+        report = compile_plan_report(plan, document)
+        return report.to_json()
+
+    def plan_run(self, document_id: str, node_id: str, base_version: int | None = None,
+                 request_id: str | None = None) -> dict[str, Any]:
+        request_id = request_id or new_request_id()
+        with self._lock:
+            document = self.read(document_id)
+            plan = self.store.get_plan(document_id)
+            if plan is None:
+                raise ServiceError("PLAN_NOT_FOUND", "this document has no plan", status=404)
+            if base_version is not None and base_version != document.version:
+                raise ServiceError("STALE_VERSION", "document changed before the node ran", status=409)
+            if plan.base_version != document.version:
+                raise ServiceError(
+                    "PLAN_STALE",
+                    f"plan is based on v{plan.base_version}, document is v{document.version}",
+                    status=409,
+                    hint="re-read the plan and update or re-run the affected nodes",
+                )
+            node = next((item for item in plan.nodes if item.id == node_id), None)
+            if node is None:
+                raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
+            if node.kind == "goal":
+                raise ServiceError("PLAN_INVALID", "a goal node is not executable", status=400)
+            done = {item.id for item in plan.nodes if item.status == "done"}
+            blocked = [dep for dep in node.deps if dep not in done]
+            if blocked:
+                raise ServiceError("NODE_NOT_READY", f"node {node_id!r} is blocked",
+                                   status=409, detail={"blocked_by": blocked})
+            started = time.perf_counter()
+            self._emit("plan.run.start", document_id=document_id, plan_id=plan.id,
+                       node_id=node_id, request_id=request_id, tool="plan_run")
+            try:
+                if node.kind == "check":
+                    result = self._build(document)
+                    dep_id = node.deps[0] if node.deps else ""
+                    dep_node = next((item for item in plan.nodes if item.id == dep_id), None)
+                    target_id = (dep_node.feature_id or dep_node.id) if dep_node else dep_id
+                    target = result.outputs.get(target_id, result.final)
+                    checks = evaluate_expects(
+                        node.expect, target,
+                        {"outputs": result.outputs, "plan": plan, "document": document},
+                    )
+                    failed = [item for item in checks if not item.ok]
+                    observed = {item.name: item.observed for item in checks}
+                    if failed:
+                        error = f"{failed[0].name}: {failed[0].hint or 'failed'}"
+                        self._finish_node(plan, node, "failed", document.version,
+                                          observed=observed, error=error)
+                        raise ServiceError("EXPECT_FAILED", error, status=422,
+                                           detail={"checks": [item.to_json() for item in checks]})
+                    self._finish_node(plan, node, "done", document.version, observed=observed)
+                    return self.plan(document_id)
+                ops = compile_node(plan, node, document)
+                candidate = apply_ops(document, list(ops), document.version)
+                if node.expect:
+                    result = self._build(candidate)
+                    feature_id = node.feature_id or node.id
+                    target = result.outputs.get(feature_id, result.final)
+                    checks = evaluate_expects(
+                        node.expect, target,
+                        {"outputs": result.outputs, "plan": plan, "document": candidate},
+                    )
+                    failed = [item for item in checks if not item.ok]
+                    if failed:
+                        error = f"{failed[0].name}: {failed[0].hint or 'failed'}"
+                        self._finish_node(plan, node, "failed", document.version,
+                                          error=error, observed={item.name: item.observed for item in checks})
+                        raise ServiceError("EXPECT_FAILED", error, status=422,
+                                           detail={"checks": [item.to_json() for item in checks]})
+                payload = self.commit(
+                    document_id, document.version, list(ops),
+                    title=node.title, actor="agent",
+                    plan_id=plan.id, node_id=node.id,
+                )
+                version = int(payload["document"]["version"])
+                metrics = dict((payload.get("milestone") or {}).get("metrics") or {})
+                self._finish_node(plan, node, "done", version, observed=metrics)
+                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
+                           node_id=node_id, request_id=request_id, tool="plan_run",
+                           backend="local", duration_ms=int((time.perf_counter() - started) * 1000),
+                           detail={"version": version})
+                return self.plan(document_id)
+            except ServiceError:
+                raise
+            except (PlanError, CompileError, DocumentError) as exc:
+                code = getattr(exc, "code", "PLAN_INVALID")
+                self._finish_node(plan, node, "failed", document.version,
+                                  error=f"{code}: {exc}")
+                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
+                           node_id=node_id, request_id=request_id, tool="plan_run",
+                           code=code, hint=getattr(exc, "hint", "") or "",
+                           duration_ms=int((time.perf_counter() - started) * 1000))
+                raise ServiceError(code, str(exc), status=400,
+                                   hint=getattr(exc, "hint", None)) from exc
+            except BuildError as exc:
+                self._finish_node(plan, node, "failed", document.version,
+                                  error=f"{exc.code}: {exc.message}")
+                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
+                           node_id=node_id, request_id=request_id, tool="plan_run",
+                           code=exc.code, hint=exc.hint or "",
+                           duration_ms=int((time.perf_counter() - started) * 1000))
+                raise ServiceError(exc.code, exc.message, status=422, hint=exc.hint,
+                                   detail={"blocked_by": list(exc.blocked)}) from exc
+
+    def _finish_node(self, plan: ModelingPlan, node: PlanNode, status: str, version: int,
+                     observed: Mapping[str, Any] | None = None,
+                     error: str | None = None) -> None:
+        updated_node = replace(node, status=status, milestone_version=version,
+                               observed=dict(observed or {}), error=error)
+        updated = with_node(plan, updated_node)
+        statuses = [item.status for item in updated.nodes]
+        if statuses and all(item == "done" for item in statuses):
+            plan_status = "done"
+        elif any(item == "failed" for item in statuses):
+            plan_status = "failed"
+        elif any(item in {"done", "running", "failed"} for item in statuses):
+            plan_status = "running"
+        else:
+            plan_status = plan.status
+        updated = replace(updated, revision=plan.revision + 1, base_version=version,
+                          status=plan_status)
+        self.store.save_plan(updated)
+
+    def timeline(self, document_id: str) -> list[dict[str, Any]]:
+        document = self.read(document_id)
+        plan = self.store.get_plan(document_id)
+        return build_timeline(document, plan)
+
+    def import_file(self, document_id: str, path: str, format: str = "step",
+                    request_id: str | None = None) -> dict[str, Any]:
+        from pathlib import Path as _Path
+
+        format = format.lower().strip()
+        if format not in {"step", "iges", "brep", "stl"}:
+            raise ServiceError("IMPORT_FORMAT", f"unsupported import format {format!r}", status=400)
+        source = _Path(path)
+        if not source.is_file():
+            raise ServiceError("IMPORT_NOT_FOUND", f"no file at {path!r}", status=404)
+        try:
+            payload = source.read_bytes()
+        except OSError as exc:
+            raise ServiceError("IMPORT_NOT_FOUND", f"cannot read {path!r}: {exc}", status=404) from exc
+        stored, digest = self.store.put_import(payload, format)
+        feature_id = f"import_{digest[:8]}"
+        document = self.read(document_id)
+        if any(feature.id == feature_id for feature in document.features):
+            feature_id = f"import_{digest[:10]}"
+        ops = [{
+            "op": "add",
+            "feature": {
+                "id": feature_id,
+                "type": "import_base",
+                "params": {"ref": str(stored), "format": format, "sha256": digest, "heal": False},
+                "refs": {},
+            },
+        }]
+        payload_out = self.commit(document_id, document.version, ops,
+                                  title=f"导入基准体 {source.name}", actor="human")
+        self._emit("import.stored", document_id=document_id, request_id=request_id or new_request_id(),
+                   tool="import", detail={"sha256": digest, "format": format, "feature_id": feature_id})
+        return {"feature_id": feature_id, "sha256": digest, "path": str(stored),
+                "format": format, "version": payload_out["document"]["version"]}
 
     def _resolve_focus(
         self,
@@ -453,7 +811,7 @@ class CADService:
         feature = next((item for item in document.features if item.id == focus.feature_id), None)
         if feature is None or focus.param not in feature.params:
             return None
-        spec = FEATURES.get(feature.type)
+        spec = spec_for(feature.type)
         param = spec.params.get(focus.param) if spec else None
         return FocusParam(
             feature_id=focus.feature_id,
@@ -1049,7 +1407,7 @@ def focus_param_json_with_bounds(focus: FocusParam, feature: Any) -> dict[str, A
         "value": None,
     }
     if feature is not None:
-        spec = FEATURES.get(feature.type)
+        spec = spec_for(feature.type)
         param = spec.params.get(focus.param) if spec else None
         if param is not None:
             payload["unit"] = payload["unit"] or (param.unit or "")

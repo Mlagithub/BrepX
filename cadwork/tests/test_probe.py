@@ -16,7 +16,7 @@ class ProbeGeometryTests(unittest.TestCase):
             name="ProbeBox",
             version=1,
             features=(
-                Feature("b1", "solid_box", params={"length": 40.0, "width": 20.0, "height": 10.0}),
+                Feature("b1", "k_box", params={"length": 40.0, "width": 20.0, "height": 10.0}),
             ),
         )
         self.result = build(self.doc)

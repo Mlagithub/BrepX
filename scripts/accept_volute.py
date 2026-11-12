@@ -119,9 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for item in reports:
             if item["ok"]:
-                print(f"ok   {item['sample']:9} {item['features']} features · "
-                      f"{item['faces']} faces · {item['volume']} mm³ · "
-                      f"{item['seconds']}s · {len(item['checks'])} checks")
+                print(f"ok   {item['sample']:9} {item['features']} features | "
+                      f"{item['faces']} faces | {item['volume']} mm3 | "
+                      f"{item['seconds']}s | {len(item['checks'])} checks")
                 for path in item.get("files", []):
                     print(f"     wrote {path}")
             else:

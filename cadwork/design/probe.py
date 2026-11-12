@@ -22,7 +22,7 @@ def _display_feature_id(document: Document, result: BuildResult, feature_id: str
     if feature_id:
         return feature_id
     for feature in reversed(document.features):
-        if feature.enabled and feature.type != "cavity_extraction" and feature.id in result.outputs:
+        if feature.enabled and feature.type not in {"cavity_extraction", "cavity"} and feature.id in result.outputs:
             return feature.id
     for feature in reversed(document.features):
         if feature.enabled and feature.id in result.outputs:

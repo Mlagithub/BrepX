@@ -15,10 +15,14 @@ class VoluteTests(unittest.TestCase):
         result = build(document)
 
         self.assertEqual([item.feature_id for item in result.features], ["v1", "v2", "v3", "v4"])
+        checks = [check for item in result.features for check in item.checks]
+        self.assertEqual(len(checks), 10)
+        self.assertTrue(all(check.ok for check in checks))
         final = result.final
         self.assertTrue(final.is_valid())
         self.assertTrue(final.mesh().is_closed())
-        self.assertGreater(float(final.volume), 0.0)
+        self.assertEqual(len(final.faces()), 12)
+        self.assertAlmostEqual(float(final.volume), 13458.29, delta=10.0)
 
     def test_registry_has_no_part_specific_step(self) -> None:
         for name, spec in FEATURES.items():

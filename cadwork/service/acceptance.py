@@ -47,29 +47,28 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
         f"checks_ok={_checks_ok(service, document.id)}, "
         f"step={len(step_bytes)}B cfd={len(cfd_bytes)}B"
     )
-    assert len(document.features) == 9
+    assert len(document.features) == 36
     assert _checks_ok(service, document.id)
     assert len(step_bytes) > 1000 and b"boundaries" in cfd_bytes
 
     # 2. change blade count; boundaries still resolve.
     preview = service.preview(document.id, [
-        {"op": "update", "id": "f3", "params": {"count": 11}},
+        {"op": "update", "id": "b_pattern", "params": {"count": 11}},
     ])
-    assert "f3" in preview["diff"]["changed"]
+    assert "b_pattern" in preview["diff"]["changed"]
     service.apply(document.id, document.version, [
-        {"op": "update", "id": "f3", "params": {"count": 11}},
+        {"op": "update", "id": "b_pattern", "params": {"count": 11}},
     ])
     document = service.read(document.id)
     tags = service.checks(document.id)["tags"]
     steps.append(
         f"2 count=11 at v{document.version}, boundaries={sorted(tags)}"
     )
-    assert sorted(tags) == ["f6", "f7", "f8"]
+    assert sorted(tags) == ["t_in", "t_out", "t_wall"]
 
-    # Back to nine blades: the fillet edge is a geometric query, and at eleven
-    # blades the nearest edge changes (see the known limitation in the doc).
+    # Back to nine blades: the fillet edge is a geometric query.
     service.apply(document.id, document.version, [
-        {"op": "update", "id": "f3", "params": {"count": 9}},
+        {"op": "update", "id": "b_pattern", "params": {"count": 9}},
     ])
     document = service.read(document.id)
     steps.append(f"3 count back to 9 at v{document.version}")
@@ -79,14 +78,14 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     failure: ServiceError | None = None
     try:
         service.apply(document.id, version, [
-            {"op": "update", "id": "f5", "params": {"radius": 2.0}},
+            {"op": "update", "id": "b_fillet", "params": {"radius": 2.0}},
         ])
     except ServiceError as exc:
         failure = exc
     assert failure is not None and failure.status == 422
     assert service.read(document.id).version == version
     service.apply(document.id, version, [
-        {"op": "update", "id": "f5", "params": {"radius": 0.3}},
+        {"op": "update", "id": "b_fillet", "params": {"radius": 0.3}},
     ])
     document = service.read(document.id)
     steps.append(
@@ -100,7 +99,7 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     scene = restarted.scene(document.id)
     assert scene["faces"] and scene["edges"]
     restarted.apply(document.id, restarted.read(document.id).version, [
-        {"op": "update", "id": "f3", "params": {"count": 10}},
+        {"op": "update", "id": "b_pattern", "params": {"count": 10}},
     ])
     exported, _ = restarted.export(document.id, "step")
     edited_version = restarted.read(document.id).version

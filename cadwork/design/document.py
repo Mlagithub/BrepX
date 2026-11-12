@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 import uuid
@@ -44,10 +45,34 @@ def features_digest(features: tuple["Feature", ...]) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:16]
 
 
-def _check_scalar(name: str, value: Any) -> Scalar:
+def _check_param_value(name: str, value: Any) -> Any:
+    """A parameter is a scalar, a numeric vector, or a point list."""
     if isinstance(value, bool) or isinstance(value, (int, float, str)):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise DocumentError("INVALID_VALUE", f"{name} must be finite")
         return value
-    raise DocumentError("INVALID_VALUE", f"{name} must be a scalar, got {type(value).__name__}")
+    if isinstance(value, (list, tuple)) and value:
+        if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value):
+            return list(value)
+        if all(
+            isinstance(item, (list, tuple))
+            and len(item) in (2, 3)
+            and all(isinstance(number, (int, float)) and not isinstance(number, bool) for number in item)
+            for item in value
+        ):
+            return [list(item) for item in value]
+    raise DocumentError(
+        "INVALID_VALUE",
+        f"{name} must be a scalar, a numeric vector, or a point list, got {type(value).__name__}",
+    )
+
+
+def _iter_refs(value: Any):
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            yield item
+    else:
+        yield value
 
 
 def _check_arg(name: str, value: Any) -> Arg:
@@ -77,25 +102,37 @@ class Filter:
 
 @dataclass(frozen=True)
 class Ref:
-    """A semantic query against an earlier feature's output."""
+    """A semantic query against an earlier feature's output.
+
+    ``since``/``extra`` name earlier features whose outputs are passed as shape
+    arguments to ``new(since=...)`` / ``joining(a, b)`` / ``shared(...)``.
+    """
 
     source: str
     select: str = "faces"
     filters: tuple[Filter, ...] = ()
+    since: tuple[str, ...] = ()
+    extra: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not _ID.match(self.source):
             raise DocumentError("INVALID_REF", f"invalid ref source {self.source!r}")
-        if self.select not in {"self", "faces", "edges", "solids", "vertices"}:
+        if self.select not in {
+            "self", "faces", "edges", "solids", "vertices",
+            "voids", "cells", "shells", "wires",
+        }:
             raise DocumentError("INVALID_REF", f"invalid select {self.select!r}")
+        for name in self.since + self.extra:
+            if not _ID.match(name):
+                raise DocumentError("INVALID_REF", f"invalid ref source {name!r}")
 
 
 @dataclass(frozen=True)
 class Feature:
     id: str
     type: str
-    params: Mapping[str, Scalar] = field(default_factory=dict)
-    refs: Mapping[str, Ref] = field(default_factory=dict)
+    params: Mapping[str, Any] = field(default_factory=dict)
+    refs: Mapping[str, Ref | tuple[Ref, ...]] = field(default_factory=dict)
     enabled: bool = True
     note: str = ""
     actor: str = "human"
@@ -106,7 +143,11 @@ class Feature:
         if not _TYPE.match(self.type):
             raise DocumentError("INVALID_FEATURE", f"invalid feature type {self.type!r}")
         for key, value in self.params.items():
-            _check_scalar(f"param {key}", value)
+            _check_param_value(f"param {key}", value)
+        for role, value in self.refs.items():
+            for ref in _iter_refs(value):
+                if not isinstance(ref, Ref):
+                    raise DocumentError("INVALID_REF", f"{role} must hold Ref values")
         if self.actor not in {"human", "agent"}:
             raise DocumentError("INVALID_FEATURE", f"invalid actor {self.actor!r}")
         object.__setattr__(self, "params", dict(self.params))
@@ -138,6 +179,8 @@ class Milestone:
     actor: str = "agent"
     intent_id: str | None = None
     step_index: int | None = None
+    plan_id: str | None = None
+    node_id: str | None = None
     created: float = 0.0
     changed_face_indices: tuple[int, ...] = ()
     metrics: tuple[tuple[str, Any], ...] = ()
@@ -173,13 +216,15 @@ def validate_layout(document: Document) -> None:
     for feature in document.features:
         if feature.id in seen:
             raise DocumentError("DUPLICATE_ID", f"duplicate feature id {feature.id!r}")
-        for role, ref in feature.refs.items():
-            if ref.source not in seen:
-                raise DocumentError(
-                    "FORWARD_REF",
-                    f"feature {feature.id} ref {role} points to {ref.source!r}, "
-                    "which is not an earlier feature",
-                )
+        for role, value in feature.refs.items():
+            for ref in _iter_refs(value):
+                for source in (ref.source, *ref.since, *ref.extra):
+                    if source not in seen:
+                        raise DocumentError(
+                            "FORWARD_REF",
+                            f"feature {feature.id} ref {role} points to {source!r}, "
+                            "which is not an earlier feature",
+                        )
         seen.add(feature.id)
 
 
@@ -210,13 +255,13 @@ def _apply_update(features: list[Feature], op: Mapping[str, Any]) -> None:
         raise DocumentError("INVALID_OP", "feature type is immutable; remove and re-add instead")
     params = dict(current.params)
     for key, value in dict(op.get("params") or {}).items():
-        params[key] = _check_scalar(f"param {key}", value)
+        params[key] = _check_param_value(f"param {key}", value)
     refs = dict(current.refs)
     for role, payload in dict(op.get("refs") or {}).items():
         if payload is None:
             refs.pop(role, None)
         else:
-            refs[role] = ref_from_json(payload)
+            refs[role] = refs_from_json(payload)
     enabled = bool(op.get("enabled", current.enabled))
     features[index] = Feature(
         id=current.id,
@@ -233,12 +278,13 @@ def _apply_remove(features: list[Feature], op: Mapping[str, Any]) -> None:
     feature_id = str(op.get("id"))
     index = _find(features, feature_id)
     for later in features:
-        for role, ref in later.refs.items():
-            if ref.source == feature_id:
-                raise DocumentError(
-                    "DANGLING_REF",
-                    f"cannot remove {feature_id}: {later.id}.{role} still references it",
-                )
+        for role, value in later.refs.items():
+            for ref in _iter_refs(value):
+                if feature_id in (ref.source, *ref.since, *ref.extra):
+                    raise DocumentError(
+                        "DANGLING_REF",
+                        f"cannot remove {feature_id}: {later.id}.{role} still references it",
+                    )
     del features[index]
 
 
@@ -271,6 +317,8 @@ def apply_ops(
     intent_id: str | None = None,
     step_index: int | None = None,
     parent_version: int | None = None,
+    plan_id: str | None = None,
+    node_id: str | None = None,
 ) -> Document:
     """Apply a batch atomically. Any failure leaves the input untouched."""
     if base_version is not None and base_version != document.version:
@@ -320,6 +368,8 @@ def apply_ops(
                 actor=actor,
                 intent_id=intent_id,
                 step_index=step_index,
+                plan_id=plan_id,
+                node_id=node_id,
                 created=time.time(),
             )
         )
@@ -383,6 +433,8 @@ def milestone_to_json(value: Milestone) -> dict[str, Any]:
         "actor": value.actor,
         "intent_id": value.intent_id,
         "step_index": value.step_index,
+        "plan_id": value.plan_id,
+        "node_id": value.node_id,
         "created": value.created,
         "changed_features": list(value.changed_features),
         "changed_face_indices": list(value.changed_face_indices),
@@ -401,6 +453,8 @@ def milestone_from_json(payload: Mapping[str, Any]) -> Milestone:
         actor=str(payload.get("actor", "agent")),
         intent_id=payload.get("intent_id"),
         step_index=int(index) if index is not None else None,
+        plan_id=payload.get("plan_id"),
+        node_id=payload.get("node_id"),
         created=float(payload.get("created", 0.0) or 0.0),
         changed_features=tuple(str(x) for x in (payload.get("changed_features") or ())),
         changed_face_indices=tuple(int(x) for x in (payload.get("changed_face_indices") or ())),
@@ -429,6 +483,8 @@ def ref_to_json(value: Ref) -> dict[str, Any]:
         "source": value.source,
         "select": value.select,
         "filters": [filter_to_json(item) for item in value.filters],
+        "since": list(value.since),
+        "extra": list(value.extra),
     }
 
 
@@ -439,7 +495,21 @@ def ref_from_json(payload: Mapping[str, Any] | None) -> Ref:
         source=str(payload.get("source", "")),
         select=str(payload.get("select", "faces")),
         filters=tuple(filter_from_json(item) for item in payload.get("filters") or ()),
+        since=tuple(str(item) for item in payload.get("since") or ()),
+        extra=tuple(str(item) for item in payload.get("extra") or ()),
     )
+
+
+def refs_to_json(value: Ref | tuple[Ref, ...]) -> Any:
+    if isinstance(value, (list, tuple)):
+        return [ref_to_json(item) for item in value]
+    return ref_to_json(value)
+
+
+def refs_from_json(payload: Any) -> Ref | tuple[Ref, ...]:
+    if isinstance(payload, (list, tuple)):
+        return tuple(ref_from_json(item) for item in payload)
+    return ref_from_json(payload)
 
 
 def feature_to_json(value: Feature) -> dict[str, Any]:
@@ -447,7 +517,7 @@ def feature_to_json(value: Feature) -> dict[str, Any]:
         "id": value.id,
         "type": value.type,
         "params": dict(value.params),
-        "refs": {role: ref_to_json(ref) for role, ref in value.refs.items()},
+        "refs": {role: refs_to_json(ref) for role, ref in value.refs.items()},
         "enabled": value.enabled,
         "note": value.note,
         "actor": value.actor,
@@ -461,7 +531,7 @@ def feature_from_json(payload: Mapping[str, Any] | None) -> Feature:
         id=str(payload.get("id", "")),
         type=str(payload.get("type", "")),
         params=dict(payload.get("params") or {}),
-        refs={role: ref_from_json(ref) for role, ref in dict(payload.get("refs") or {}).items()},
+        refs={role: refs_from_json(ref) for role, ref in dict(payload.get("refs") or {}).items()},
         enabled=bool(payload.get("enabled", True)),
         note=str(payload.get("note", "")),
         actor=str(payload.get("actor", "human")),

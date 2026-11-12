@@ -1,0 +1,3924 @@
+{
+  "records": [
+    {
+      "destination": "N/A",
+      "name": "at",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "distance_to",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "is_parallel",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "moved",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "position_along",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "project",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "reversed",
+      "owner": "Axis",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "contains",
+      "owner": "BoundBox",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "of_points",
+      "owner": "BoundBox",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "union",
+      "owner": "BoundBox",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "ClosestPoints",
+      "reason": "closest-points result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "ClosestPoints",
+      "reason": "closest-points result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "Continuity",
+      "reason": "continuity result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "Continuity",
+      "reason": "continuity result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "Curvature",
+      "reason": "curvature result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "Curvature",
+      "reason": "curvature result"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "bbox",
+      "owner": "DrawingView",
+      "reason": "drawing view produced by the render service"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "count",
+      "owner": "DrawingView",
+      "reason": "drawing view produced by the render service"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "index",
+      "owner": "DrawingView",
+      "reason": "drawing view produced by the render service"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "continuity",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "curvature_at",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "edges",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "export",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "extend",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "faces",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "from_nurbs",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "inflections",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersection_params",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersections",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "is_convex",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "match",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mesh",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "min_radius",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "min_radius_at",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mirror",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moved",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "nurbs",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "offset",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "on",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "param_at_point",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "point_at",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "radius_at",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "remove_knots",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "reversed",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "rotate",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "scale",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "self_intersections",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "show",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "split",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "tangent_at",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "tangent_chain",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "through",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_arcs",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "translate",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "trim",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "vertices",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "wires",
+      "owner": "Edge",
+      "reason": "edge topology/measurement query (Edge class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "curvature_at",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "REF",
+      "name": "edges",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export",
+      "owner": "Face",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "extend",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "extrude",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "faces",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "flipped",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "inner_wires",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "interior_point",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "iso",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "mesh",
+      "owner": "Face",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "min_radius",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "mirror",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "moved",
+      "owner": "Face",
+      "reason": "takes a Location builder; placement goes through the place_on adapter"
+    },
+    {
+      "destination": "REF",
+      "name": "neighbors",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "normal_at",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "N/A",
+      "name": "nurbs",
+      "owner": "Face",
+      "reason": "NURBS data export; no v1 document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "ADAPTER",
+      "name": "on",
+      "owner": "Face",
+      "reason": "placement adapter place_on"
+    },
+    {
+      "destination": "REF",
+      "name": "outer_wire",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "position_at",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "project",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "rotate",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "scale",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "show",
+      "owner": "Face",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "split",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "to_shell",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "to_sketch",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "translate",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "untrimmed",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "uv_at",
+      "owner": "Face",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "REF",
+      "name": "vertices",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "wires",
+      "owner": "Face",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "wrap",
+      "owner": "Face",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "FitReport",
+      "reason": "curve-fit result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "FitReport",
+      "reason": "curve-fit result"
+    },
+    {
+      "destination": "N/A",
+      "name": "add_note",
+      "owner": "FontError",
+      "reason": "error class"
+    },
+    {
+      "destination": "N/A",
+      "name": "with_traceback",
+      "owner": "FontError",
+      "reason": "error class"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "Hit",
+      "reason": "raycast result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "Hit",
+      "reason": "raycast result"
+    },
+    {
+      "destination": "N/A",
+      "name": "add_note",
+      "owner": "KernelError",
+      "reason": "error class"
+    },
+    {
+      "destination": "N/A",
+      "name": "with_traceback",
+      "owner": "KernelError",
+      "reason": "error class"
+    },
+    {
+      "destination": "DEFER",
+      "name": "apply",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "copy",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "layer",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "map",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "move",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "reset",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "rotate",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "DEFER",
+      "name": "scale",
+      "owner": "Lattice",
+      "reason": "deformation lattice; deferred with deform"
+    },
+    {
+      "destination": "N/A",
+      "name": "about",
+      "owner": "Location",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "inverse",
+      "owner": "Location",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "rotate_vector",
+      "owner": "Location",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "append",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "clear",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "copy",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "count",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "extend",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "index",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "insert",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "on",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "pop",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "remove",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "reverse",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "sort",
+      "owner": "Locations",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "inertia_about",
+      "owner": "MassProperties",
+      "reason": "mass-properties result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moment_about",
+      "owner": "MassProperties",
+      "reason": "mass-properties result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "decimate",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "dispose",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "export",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "fill_holes",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "is_closed",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mass_properties",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mirror",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moved",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast_many",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "repaired",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "rotate",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "scale",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "section",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "slices",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_part",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "translate",
+      "owner": "Mesh",
+      "reason": "tessellation measurement query (Mesh class default)"
+    },
+    {
+      "destination": "N/A",
+      "name": "add_note",
+      "owner": "ModelingError",
+      "reason": "error class"
+    },
+    {
+      "destination": "N/A",
+      "name": "with_traceback",
+      "owner": "ModelingError",
+      "reason": "error class"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "count",
+      "owner": "Nurbs",
+      "reason": "NURBS data carrier (export path)"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "index",
+      "owner": "Nurbs",
+      "reason": "NURBS data carrier (export path)"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "count",
+      "owner": "NurbsSurface",
+      "reason": "NURBS surface data carrier (export path)"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "index",
+      "owner": "NurbsSurface",
+      "reason": "NURBS surface data carrier (export path)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "bend",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bends",
+      "owner": "Part",
+      "reason": "sheet-metal bend report"
+    },
+    {
+      "destination": "REF",
+      "name": "cell_at",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "cells",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "chamfer",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "check",
+      "owner": "Part",
+      "reason": "kernel validity probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "classify",
+      "owner": "Part",
+      "reason": "point-in-body query"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_points",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "N/A",
+      "name": "colored",
+      "owner": "Part",
+      "reason": "display metadata"
+    },
+    {
+      "destination": "N/A",
+      "name": "compact",
+      "owner": "Part",
+      "reason": "cache/memory management"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "contains",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "cut",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "deform",
+      "owner": "Part",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "draft",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "draft_analysis",
+      "owner": "Part",
+      "reason": "draft analysis report"
+    },
+    {
+      "destination": "REF",
+      "name": "edges",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export",
+      "owner": "Part",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "REF",
+      "name": "faces",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "fillet",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "fillet_preview",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "flange",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "flat_pattern",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "DEFER",
+      "name": "flatten",
+      "owner": "Part",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "fold",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_mesh",
+      "owner": "Part",
+      "reason": "mesh -> part conversion (import path)"
+    },
+    {
+      "destination": "GEN",
+      "name": "fuse",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "heal",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "imprint",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "info",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "intersect",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersection_curves",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "is_valid",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mass_properties",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "merge",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "mesh",
+      "owner": "Part",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "mirror",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "move_faces",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "moved",
+      "owner": "Part",
+      "reason": "takes a Location builder; placement goes through the place_on adapter"
+    },
+    {
+      "destination": "N/A",
+      "name": "named",
+      "owner": "Part",
+      "reason": "display/export metadata"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset_faces",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "ADAPTER",
+      "name": "on",
+      "owner": "Part",
+      "reason": "placement adapter place_on"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "outline",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "parting_line",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "project",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "DEFER",
+      "name": "push",
+      "owner": "Part",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast_many",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "remove_faces",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "remove_fillets",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "rotate",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "scale",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "section",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "shell",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "shells",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "show",
+      "owner": "Part",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "silhouette",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "slices",
+      "owner": "Part",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "REF",
+      "name": "solids",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "split",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "taper",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_nurbs",
+      "owner": "Part",
+      "reason": "NURBS representation conversion"
+    },
+    {
+      "destination": "GEN",
+      "name": "translate",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "twist",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "unfold",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "unroll",
+      "owner": "Part",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "vertices",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "voids",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "DEFER",
+      "name": "warp",
+      "owner": "Part",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "REF",
+      "name": "wires",
+      "owner": "Part",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "at",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "contains",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "distance_to",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "flipped",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "from_local",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "is_coplanar",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "moved",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "offset",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "project",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "rotated",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "shifted",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "to_local",
+      "owner": "Plane",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "Problem",
+      "reason": "kernel validity result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "Problem",
+      "reason": "kernel validity result"
+    },
+    {
+      "destination": "N/A",
+      "name": "arc",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "arc_to",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "chamfer",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "close",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "fillet",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "forward",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "line_by",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "line_to",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "mirror",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "turn",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "turn_to",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "wire",
+      "owner": "Profile",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "RepairReport",
+      "reason": "repair result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "RepairReport",
+      "reason": "repair result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Shape",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Shape",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "REF",
+      "name": "edges",
+      "owner": "Shape",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export",
+      "owner": "Shape",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "REF",
+      "name": "faces",
+      "owner": "Shape",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "mesh",
+      "owner": "Shape",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "mirror",
+      "owner": "Shape",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "moved",
+      "owner": "Shape",
+      "reason": "takes a Location builder; placement goes through the place_on adapter"
+    },
+    {
+      "destination": "ADAPTER",
+      "name": "on",
+      "owner": "Shape",
+      "reason": "placement adapter place_on"
+    },
+    {
+      "destination": "GEN",
+      "name": "rotate",
+      "owner": "Shape",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "scale",
+      "owner": "Shape",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "show",
+      "owner": "Shape",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "translate",
+      "owner": "Shape",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "vertices",
+      "owner": "Shape",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "wires",
+      "owner": "Shape",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "append",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "at",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "back",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "bbox",
+      "owner": "ShapeList",
+      "reason": "measurement-only; the ShapeList split is 40 REF / 20 N/A"
+    },
+    {
+      "destination": "REF",
+      "name": "bottom",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "center",
+      "owner": "ShapeList",
+      "reason": "measurement-only; the ShapeList split is 40 REF / 20 N/A"
+    },
+    {
+      "destination": "REF",
+      "name": "circles",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "clear",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "concave",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "convex",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "copy",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "count",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "cylinders",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "derived_from",
+      "owner": "ShapeList",
+      "reason": "Ref.extra provenance helper"
+    },
+    {
+      "destination": "REF",
+      "name": "edges",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "extend",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "faces",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "facing",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "fillets",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "DEFER",
+      "name": "filter",
+      "owner": "ShapeList",
+      "reason": "callable/ambiguous criterion; refs.py rejects callables, so deferred"
+    },
+    {
+      "destination": "DEFER",
+      "name": "filter_by",
+      "owner": "ShapeList",
+      "reason": "callable/ambiguous criterion; refs.py rejects callables, so deferred"
+    },
+    {
+      "destination": "REF",
+      "name": "front",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "g1",
+      "owner": "ShapeList",
+      "reason": "continuity selector"
+    },
+    {
+      "destination": "REF",
+      "name": "g2",
+      "owner": "ShapeList",
+      "reason": "continuity selector"
+    },
+    {
+      "destination": "REF",
+      "name": "group_by",
+      "owner": "ShapeList",
+      "reason": "selector grouping helper"
+    },
+    {
+      "destination": "REF",
+      "name": "hit_by",
+      "owner": "ShapeList",
+      "reason": "spatial pick filter with vector arguments"
+    },
+    {
+      "destination": "N/A",
+      "name": "index",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "insert",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "joining",
+      "owner": "ShapeList",
+      "reason": "Ref.extra relationship helper"
+    },
+    {
+      "destination": "REF",
+      "name": "largest",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "left",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "lines",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "max_by",
+      "owner": "ShapeList",
+      "reason": "selector ranking helper"
+    },
+    {
+      "destination": "REF",
+      "name": "min_by",
+      "owner": "ShapeList",
+      "reason": "selector ranking helper"
+    },
+    {
+      "destination": "N/A",
+      "name": "moved",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "nearest",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "new",
+      "owner": "ShapeList",
+      "reason": "Ref.since builder (starts a selection chain)"
+    },
+    {
+      "destination": "REF",
+      "name": "of_type",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "on",
+      "owner": "ShapeList",
+      "reason": "list placement; place_on consumes a single shape"
+    },
+    {
+      "destination": "REF",
+      "name": "one",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "parallel_to",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "perpendicular_to",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "planar",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "pop",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "remove",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "reverse",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "right",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "rotate",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "shared",
+      "owner": "ShapeList",
+      "reason": "Ref.extra relationship helper"
+    },
+    {
+      "destination": "REF",
+      "name": "smallest",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "smooth",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "sort",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "sort_by",
+      "owner": "ShapeList",
+      "reason": "selector ordering helper"
+    },
+    {
+      "destination": "REF",
+      "name": "sort_by_distance",
+      "owner": "ShapeList",
+      "reason": "selector ordering helper"
+    },
+    {
+      "destination": "REF",
+      "name": "tangent_chain",
+      "owner": "ShapeList",
+      "reason": "topology continuity selector"
+    },
+    {
+      "destination": "REF",
+      "name": "top",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "N/A",
+      "name": "translate",
+      "owner": "ShapeList",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "REF",
+      "name": "vertices",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "REF",
+      "name": "wires",
+      "owner": "ShapeList",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "DEFER",
+      "name": "within",
+      "owner": "ShapeList",
+      "reason": "BoundBox argument is not a scalar/vector filter, so deferred"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "check",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_points",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "colored",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "compact",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "cut",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "edges",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "export",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "extend",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "faces",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "flatten",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "flipped",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "from_nurbs",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "fuse",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "heal",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "info",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersect",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersection_curves",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "match_edge",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "merge_faces",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mesh",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mirror",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moved",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "named",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "offset",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "on",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "outline",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "project",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "push",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast_many",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "rotate",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "scale",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "show",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "silhouette",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "thicken",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_nurbs",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "translate",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "trim",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "vertices",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "warp",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "wires",
+      "owner": "Shell",
+      "reason": "sheet topology/measurement query (Shell class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "chamfer",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "check",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_points",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "N/A",
+      "name": "colored",
+      "owner": "Sketch",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "N/A",
+      "name": "compact",
+      "owner": "Sketch",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "cut",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "REF",
+      "name": "edges",
+      "owner": "Sketch",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export",
+      "owner": "Sketch",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "extend",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "extrude",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "REF",
+      "name": "faces",
+      "owner": "Sketch",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "fillet",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "flatten",
+      "owner": "Sketch",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "flipped",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "from_nurbs",
+      "owner": "Sketch",
+      "reason": "NURBS surface data; deferred with nurbs_surface"
+    },
+    {
+      "destination": "GEN",
+      "name": "fuse",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "heal",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "info",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "intersect",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersection_curves",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "match_edge",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "merge_faces",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "mesh",
+      "owner": "Sketch",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "mirror",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "moved",
+      "owner": "Sketch",
+      "reason": "takes a Location builder; placement goes through the place_on adapter"
+    },
+    {
+      "destination": "N/A",
+      "name": "named",
+      "owner": "Sketch",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "ADAPTER",
+      "name": "on",
+      "owner": "Sketch",
+      "reason": "placement adapter place_on"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "outline",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "project",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "DEFER",
+      "name": "push",
+      "owner": "Sketch",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "raycast_many",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "revolve",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "rotate",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "scale",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "section_properties",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "show",
+      "owner": "Sketch",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "silhouette",
+      "owner": "Sketch",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "sweep",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "swing",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "thicken",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_nurbs",
+      "owner": "Sketch",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "translate",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "trim",
+      "owner": "Sketch",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "REF",
+      "name": "vertices",
+      "owner": "Sketch",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "DEFER",
+      "name": "warp",
+      "owner": "Sketch",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "REF",
+      "name": "wires",
+      "owner": "Sketch",
+      "reason": "ShapeList selector / topology query consumed by refs.py"
+    },
+    {
+      "destination": "GEN",
+      "name": "xor",
+      "owner": "Sketch",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "frame",
+      "owner": "StepModel",
+      "reason": "STEP import model (service path)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "count",
+      "owner": "StitchReport",
+      "reason": "stitch result"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "index",
+      "owner": "StitchReport",
+      "reason": "stitch result"
+    },
+    {
+      "destination": "N/A",
+      "name": "angle_to",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "any_perpendicular",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "cross",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "distance_to",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "dot",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "is_close",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "is_parallel",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "is_perpendicular",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "normalized",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "project_to",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "rotate",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "N/A",
+      "name": "to_tuple",
+      "owner": "Vector",
+      "reason": "geometry constant / builder"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "edges",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "export",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "faces",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mesh",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mirror",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moved",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "on",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "rotate",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "scale",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "show",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "translate",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "vertices",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "wires",
+      "owner": "Vertex",
+      "reason": "vertex measurement query (Vertex class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bbox",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "center",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "close",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "closest_point",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "continuity",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "distance_to",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "edges",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "export",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "faces",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "fillet",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersections",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mesh",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "min_radius",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "min_radius_at",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "mirror",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "moved",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "offset",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "on",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "plane",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "point_at",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "reversed",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "rotate",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "scale",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "show",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "split",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "tangent_at",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_arcs",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_edge",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "to_sketch",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "translate",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "trim",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "vertices",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "wires",
+      "owner": "Wire",
+      "reason": "wire topology/measurement query (Wire class default)"
+    },
+    {
+      "destination": "GEN",
+      "name": "AnnularSector",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "ArcSlot",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Bezier",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Box",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "CenterArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Circle",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Cone",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "ConicArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "CounterBoreHole",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "CounterSinkHole",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Cylinder",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Ellipse",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "EllipticalArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "FilletPolyline",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "N/A",
+      "name": "GridLocations",
+      "owner": "smlibpy",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "Helix",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "N/A",
+      "name": "HexLocations",
+      "owner": "smlibpy",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "Hole",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Hull",
+      "owner": "smlibpy",
+      "reason": "the plan list spells this name 'hull'"
+    },
+    {
+      "destination": "GEN",
+      "name": "HyperbolicArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Line",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "ParabolicArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "PolarLine",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "N/A",
+      "name": "PolarLocations",
+      "owner": "smlibpy",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "Polygon",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Polyline",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "N/A",
+      "name": "Pos",
+      "owner": "smlibpy",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "Pyramid",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "RadiusArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Rectangle",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "RegularPolygon",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "N/A",
+      "name": "Rot",
+      "owner": "smlibpy",
+      "reason": "not a modeling capability (data class, error, builder or metadata)"
+    },
+    {
+      "destination": "GEN",
+      "name": "RoundedRectangle",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "SagittaArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Slot",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Sphere",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Spiral",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Spline",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Stroke",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "TangentArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Text",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "ThreePointArc",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Torus",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Trapezoid",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Triangle",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "Wedge",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "bend",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bend_allowance",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "bend_deduction",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "blend",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "chamfer",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "cut",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "deform",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "developed_length",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "diff_images",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "draft",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "drawing_views",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_brep",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_dxf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_glb",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_gltf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_obj",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_step",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_stl",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_svg",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "export_usd",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "extend",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "extrude",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "fill",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "fillet",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "fillet_preview",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "fit_curve",
+      "owner": "smlibpy",
+      "reason": "curve fit; public in smlibpy 0.6.2 but missing from the plan list"
+    },
+    {
+      "destination": "GEN",
+      "name": "flange",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "flat_pattern",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "DEFER",
+      "name": "flatten",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "fold",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_brep",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_dxf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_dxf_wires",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_file",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_iges",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_smb",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_smp",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_step",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_step_model",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_stl",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "from_usd",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "fuse",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_brep",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_dxf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_dxf_wires",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_iges",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_step",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_stl",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "import_usd",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "imprint",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "intersect",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "intersection_curves",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "load",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "loft",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "make_compatible",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "make_face",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "match_edge",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "merge",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "merge_faces",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "mirror",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "move_faces",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "network",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "nurbs_surface",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "offset_faces",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "outline",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "parting_line",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "project",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "DEFER",
+      "name": "push",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "read_step",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "remove_faces",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "remove_fillets",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "render",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "revolve",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "ruled",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "save",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "scale",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "section",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "shell",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "show",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "silhouette",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "MEASURE",
+      "name": "slices",
+      "owner": "smlibpy",
+      "reason": "measurement or query consumed by verify.py / probe"
+    },
+    {
+      "destination": "GEN",
+      "name": "split",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "stitch",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "surface",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "surface_fillet",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "sweep",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "swing",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "taper",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "tessellate",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "GEN",
+      "name": "thicken",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_brep",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_dxf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_file",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_glb",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_gltf",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_obj",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_smb",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_smp",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_step",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_stl",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_svg",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "SERVICE",
+      "name": "to_usd",
+      "owner": "smlibpy",
+      "reason": "IO / render / export / import / mesh path owned by service/"
+    },
+    {
+      "destination": "DEFER",
+      "name": "trim",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "twist",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "unfold",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "GEN",
+      "name": "unroll",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    },
+    {
+      "destination": "DEFER",
+      "name": "warp",
+      "owner": "smlibpy",
+      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+    },
+    {
+      "destination": "GEN",
+      "name": "xor",
+      "owner": "smlibpy",
+      "reason": "single kernel call; exposed as a k_* document action"
+    }
+  ],
+  "schema_version": 1,
+  "smlibpy_version": "0.6.2"
+}
