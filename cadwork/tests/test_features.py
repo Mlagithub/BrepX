@@ -27,10 +27,11 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("pattern", names)
         self.assertIn("cavity", names)
         self.assertIn("tag_boundary", names)
-        # The hand-written v1 types are gone: the kernel generates the steps.
-        for old in ("hub_revolve", "blade_loft", "solid_box", "boolean",
-                    "pattern_circular", "solid_cylinder"):
-            self.assertNotIn(old, names)
+        # The registry must not contain part-macro names: the kernel generates
+        # the steps.
+        for macro_name in ("hub_revolve", "blade_loft", "solid_box", "boolean",
+                           "pattern_circular", "solid_cylinder"):
+            self.assertNotIn(macro_name, names)
         self.assertGreaterEqual(len(names), 90)
 
     def test_tiers_and_origins_are_declared(self) -> None:

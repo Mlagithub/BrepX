@@ -19,17 +19,17 @@ def volute_document(
     name: str = "Volute",
 ) -> Document:
     features = (
-        Feature("v1", "k_spiral",
+        Feature("spiral", "k_spiral",
                 params={"start_radius": r_start, "end_radius": r_end, "turns": turns,
                         "plane": "XY", "clockwise": False}),
-        Feature("v2", "k_rectangle", params={"width": width, "height": height, "fillet": 0.0}),
-        Feature("v3", "k_sweep",
+        Feature("section", "k_rectangle", params={"width": width, "height": height, "fillet": 0.0}),
+        Feature("sweep", "k_sweep",
                 params={"twist": 0.0, "scale_start": 0.35, "scale_end": 1.0,
                         "orient": True, "translational": False},
-                refs={"profile": Ref("v2", "self"), "path": Ref("v1", "self")}),
-        Feature("v4", "k_shell",
+                refs={"profile": Ref("section", "self"), "path": Ref("spiral", "self")}),
+        Feature("shell", "k_shell",
                 params={"thickness": wall, "outward": False, "corners": "round"},
-                refs={"target": Ref("v3", "self")}),
+                refs={"target": Ref("sweep", "self")}),
     )
     document = Document(id="volute", name=name, features=features)
     validate_layout(document)

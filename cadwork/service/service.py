@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import queue
 import threading
 import time
@@ -37,7 +38,12 @@ from cadwork.design.plan import (
     with_node,
     with_revision,
 )
-from cadwork.design.plan_compile import CompileError, compile_node, compile_plan as compile_plan_report
+from cadwork.design.plan_compile import (
+    CompileError,
+    compile_node,
+    compile_plan as compile_plan_report,
+    compile_program,
+)
 from cadwork.design.probe import pick_to_ref, probe_geometry, probe_ref
 from cadwork.design.verify import evaluate as evaluate_expects
 
@@ -175,6 +181,7 @@ class CADService:
         self._intents: dict[str, IntentState] = {}
         self._active_intent: dict[str, str] = {}
         self._plan_backend: Any | None = None
+        self._script_backend: Any | None = None
         self._event_log = EventLog(Path(store.root) / "logs" / "events.jsonl")
 
     @staticmethod
@@ -187,7 +194,6 @@ class CADService:
     def _variant_step(part: Any) -> bytes:
         return export_bytes(part, "step")[0]
 
-    # ------------------------------------------------------------ reads
     def list_documents(self) -> list[dict[str, Any]]:
         return self.store.list()
 
@@ -208,7 +214,6 @@ class CADService:
     def catalog(self) -> list[dict[str, Any]]:
         return catalog()
 
-    # ------------------------------------------------------------ state
     def state(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         vacant = document.version == 0 or not document.features
@@ -318,8 +323,10 @@ class CADService:
     def _feature_projection(self, document: Document) -> list[dict[str, Any]]:
         referenced: set[str] = set()
         for feature in document.features:
-            for ref in feature.refs.values():
-                referenced.add(ref.source)
+            for value in feature.refs.values():
+                items = value if isinstance(value, (list, tuple)) else (value,)
+                for ref in items:
+                    referenced.update((ref.source, *ref.since, *ref.extra))
         entries: list[dict[str, Any]] = []
         for feature in document.features:
             entries.append({
@@ -376,7 +383,6 @@ class CADService:
         result = self._build(document)
         return result.summary()
 
-    # ------------------------------------------------------------ writes
     def delete_document(self, document_id: str) -> None:
         try:
             self.store.delete(document_id)
@@ -468,9 +474,15 @@ class CADService:
                 "milestone": payload,
             }
 
-    # ---------------------------------------------------------------- plans
     def _emit(self, event: str, **fields: Any) -> None:
         self._event_log.write(DomainEvent(event=event, **fields))
+
+    def _script(self) -> Any:
+        if self._script_backend is None:
+            from cadwork.design.backends.script import ScriptBackend
+
+            self._script_backend = ScriptBackend()
+        return self._script_backend
 
     def _plan_json(self, plan: ModelingPlan, document: Document) -> dict[str, Any]:
         nodes = []
@@ -613,7 +625,7 @@ class CADService:
         return report.to_json()
 
     def plan_run(self, document_id: str, node_id: str, base_version: int | None = None,
-                 request_id: str | None = None) -> dict[str, Any]:
+                 request_id: str | None = None, executor: str | None = None) -> dict[str, Any]:
         request_id = request_id or new_request_id()
         with self._lock:
             document = self.read(document_id)
@@ -680,6 +692,31 @@ class CADService:
                                           error=error, observed={item.name: item.observed for item in checks})
                         raise ServiceError("EXPECT_FAILED", error, status=422,
                                            detail={"checks": [item.to_json() for item in checks]})
+                chosen = executor or os.environ.get("CADWORK_EXECUTOR", "local")
+                backend_used = "local"
+                if chosen == "script":
+                    try:
+                        program = compile_program(plan, document)
+                        index = next(i for i, item in enumerate(program.steps)
+                                     if item.node_id == node.id)
+                        backend = self._script()
+                        backend.replay(document_id, program.steps[:index])
+                        backend.build_node(document_id, program.steps[index], {})
+                        backend_used = "script"
+                    except ServiceError:
+                        raise
+                    except Exception as exc:
+                        self._finish_node(plan, node, "failed", document.version,
+                                          error=f"SCRIPT_FAILED: {exc}")
+                        self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
+                                   node_id=node_id, request_id=request_id, tool="plan_run",
+                                   backend="script", code="SCRIPT_FAILED", hint=str(exc),
+                                   duration_ms=int((time.perf_counter() - started) * 1000))
+                        raise ServiceError(
+                            "SCRIPT_FAILED", f"script backend could not run {node.id}: {exc}",
+                            status=422,
+                            hint="use executor=local for actions the script emitter does not cover",
+                        ) from exc
                 payload = self.commit(
                     document_id, document.version, list(ops),
                     title=node.title, actor="agent",
@@ -690,7 +727,7 @@ class CADService:
                 self._finish_node(plan, node, "done", version, observed=metrics)
                 self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
                            node_id=node_id, request_id=request_id, tool="plan_run",
-                           backend="local", duration_ms=int((time.perf_counter() - started) * 1000),
+                           backend=backend_used, duration_ms=int((time.perf_counter() - started) * 1000),
                            detail={"version": version})
                 return self.plan(document_id)
             except ServiceError:
@@ -885,7 +922,6 @@ class CADService:
             "checks_total": checks["total"],
         }
 
-    # ------------------------------------------------------------ intents
     def begin_intent(self, document_id: str, prompt: str, steps: list[str],
                      base_version: int | None = None) -> dict[str, Any]:
         document = self.read(document_id)
@@ -969,7 +1005,6 @@ class CADService:
         self.read(document_id)
         return {"cleared": self.store.clear_intents(document_id)}
 
-    # ------------------------------------------------------------ review edits
     def tweak(
         self,
         document_id: str,
@@ -1175,7 +1210,6 @@ class CADService:
             **report,
         }
 
-    # ------------------------------------------------------------ legacy reads
     def summary(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         if not document.features:
@@ -1185,7 +1219,6 @@ class CADService:
     def resolve_reference(self, document_id: str, phrase: str) -> dict[str, Any]:
         return resolve_phrase(self.read(document_id), phrase)
 
-    # ------------------------------------------------------------ variants
     def create_variants(self, document_id: str, *,
                         variants: list[dict[str, Any]] | None = None,
                         feature: str | None = None,
@@ -1283,7 +1316,6 @@ class CADService:
             actor="human",
         )
 
-    # ------------------------------------------------------------ derived
     def scene(self, document_id: str, feature: str | None = None) -> dict[str, Any]:
         document = self.read(document_id)
         if not document.features:
@@ -1381,7 +1413,6 @@ class CADService:
     def _checks_projection_empty() -> dict[str, Any]:
         return {"passed": 0, "total": 0, "ok": True}
 
-    # ------------------------------------------------------------ helpers
     def _build(self, document: Document):
         if not document.features:
             raise ServiceError("EMPTY_DOCUMENT", "empty document has no geometry", status=409)

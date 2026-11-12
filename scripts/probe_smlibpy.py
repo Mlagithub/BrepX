@@ -1,10 +1,10 @@
-"""M0 probe: validate the smlibpy capabilities the architecture depends on.
+"""Probe the smlibpy capabilities the workbench relies on.
 
-Standalone. No project imports. Run:
+Standalone: no project imports. Run:
 
     python scripts/probe_smlibpy.py
 
-Writes JSON + PNG + STEP under docs/probe/.
+Writes its JSON, PNG and STEP report files to the probe output directory.
 """
 
 from __future__ import annotations
@@ -20,8 +20,6 @@ import smlibpy as s
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "probe")
 
-
-# ---------------------------------------------------------------- harness
 
 @dataclass
 class Probe:
@@ -92,8 +90,6 @@ def capability_report() -> dict[str, bool]:
     return checks
 
 
-# ---------------------------------------------------------------- features
-
 def hub_revolve(r_out: float = 45.0, z_out: float = 25.0, back_t: float = 4.0) -> Any:
     profile = [(0.0, 0.0), (r_out, z_out), (r_out, z_out - back_t), (0.0, -back_t)]
     return s.revolve(s.Polygon(*profile).on(s.Plane.XZ), s.Z)
@@ -144,8 +140,6 @@ def build_impeller(count: int = 9, wrap_deg: float = 30.0) -> dict[str, Any]:
     return {"hub": hub, "blade": blade, "blades": blades, "impeller": impeller, "marks": marks}
 
 
-# ---------------------------------------------------------------- selectors
-
 SELECTORS: dict[str, Callable[[Any], Any]] = {
     "faces().top()": lambda p: p.faces().top(),
     "faces().planar()": lambda p: p.faces().planar(),
@@ -167,8 +161,6 @@ def selector_report(part: Any) -> dict[str, Any]:
             report[name] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     return report
 
-
-# ---------------------------------------------------------------- main
 
 def main() -> int:
     os.makedirs(OUT, exist_ok=True)

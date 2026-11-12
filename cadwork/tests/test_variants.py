@@ -25,7 +25,7 @@ class VariantTests(unittest.TestCase):
         self.client.__exit__(None, None, None)
         self._folder.cleanup()
 
-    def _variants(self, params: dict, feature: str = "p9") -> dict:
+    def _variants(self, params: dict, feature: str = "chamfer") -> dict:
         response = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
             json={"feature": feature, "params": params},
@@ -50,7 +50,7 @@ class VariantTests(unittest.TestCase):
         self._variants({"length": [0.6, 2.5]})
         document = self.client.get(f"/api/docs/{self.doc_id}").json()
         self.assertEqual(document["version"], self.version)
-        chamfer = next(item for item in document["features"] if item["id"] == "p9")
+        chamfer = next(item for item in document["features"] if item["id"] == "chamfer")
         self.assertEqual(chamfer["params"]["length"], 1.5)
 
     def test_thumbnail_is_served(self) -> None:
@@ -66,7 +66,7 @@ class VariantTests(unittest.TestCase):
         applied = self.client.post(
             f"/api/variants/{payload['set']}/0/apply").json()
         self.assertEqual(applied["document"]["version"], self.version + 1)
-        chamfer = next(item for item in applied["document"]["features"] if item["id"] == "p9")
+        chamfer = next(item for item in applied["document"]["features"] if item["id"] == "chamfer")
         self.assertEqual(chamfer["params"]["length"], 2.5)
 
     def test_sheet_composes_every_variant(self) -> None:
@@ -86,8 +86,8 @@ class VariantTests(unittest.TestCase):
         payload = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
             json={"variants": [
-                {"label": "无倒角", "ops": [{"op": "update", "id": "p9", "enabled": False}]},
-                {"label": "倒角 3", "ops": [{"op": "update", "id": "p9",
+                {"label": "无倒角", "ops": [{"op": "update", "id": "chamfer", "enabled": False}]},
+                {"label": "倒角 3", "ops": [{"op": "update", "id": "chamfer",
                                               "params": {"length": 3.0}}]},
             ]},
         ).json()
@@ -103,7 +103,7 @@ class VariantTests(unittest.TestCase):
     def test_a_label_is_generated_when_missing(self) -> None:
         payload = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
-            json={"variants": [{"ops": [{"op": "update", "id": "p9",
+            json={"variants": [{"ops": [{"op": "update", "id": "chamfer",
                                           "params": {"length": 2.0}}]}]},
         ).json()
         self.assertEqual(payload["variants"][0]["label"], "length 2")
@@ -113,7 +113,7 @@ class VariantTests(unittest.TestCase):
         payload = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
             json={"include_base": True,
-                  "variants": [{"label": "倒角 3", "ops": [{"op": "update", "id": "p9",
+                  "variants": [{"label": "倒角 3", "ops": [{"op": "update", "id": "chamfer",
                                                             "params": {"length": 3.0}}]}]},
         ).json()
         base = payload["variants"][0]
@@ -148,12 +148,12 @@ class VariantTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 400)
         unknown = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
-            json={"feature": "p9", "params": {"nope": [1]}},
+            json={"feature": "chamfer", "params": {"nope": [1]}},
         )
         self.assertEqual(unknown.status_code, 400)
         too_many = self.client.post(
             f"/api/docs/{self.doc_id}/variants",
-            json={"feature": "p9", "params": {"length": [0.5, 1.0, 1.5, 2.0, 3.0]}},
+            json={"feature": "chamfer", "params": {"length": [0.5, 1.0, 1.5, 2.0, 3.0]}},
         )
         self.assertEqual(too_many.status_code, 400)
         absent = self.client.get("/api/variants/vs_missing")

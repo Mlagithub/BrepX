@@ -53,9 +53,6 @@ class PlanError(Exception):
         return {"code": self.code, "message": self.message, "hint": self.hint}
 
 
-# ---------------------------------------------------------------- dataclasses
-
-
 @dataclass(frozen=True)
 class Expect:
     """One assertion about a built output."""
@@ -136,7 +133,6 @@ class ModelingPlan:
     def __post_init__(self) -> None:
         object.__setattr__(self, "nodes", tuple(self.nodes))
 
-    # -- helpers ---------------------------------------------------------
     def to_json(self) -> dict[str, Any]:
         return plan_to_json(self)
 
@@ -159,9 +155,6 @@ class ModelingPlan:
 
     def validate(self, document: Any | None = None) -> None:
         validate_plan(self, document)
-
-
-# ---------------------------------------------------------------- constructors
 
 
 def new_plan(document_id: str, goal: str, base_version: int,
@@ -215,9 +208,6 @@ def next_node_id(plan: ModelingPlan | Iterable[PlanNode] | None = None,
     while f"{prefix}{index}" in used:
         index += 1
     return f"{prefix}{index}"
-
-
-# ---------------------------------------------------------------- validation
 
 
 def validate_expect(expect: Expect) -> None:
@@ -308,7 +298,7 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
     reference sources must be feature nodes in this plan even when a document
     is supplied.  This makes a submitted plan checkable before any replay.
     """
-    del document  # documented above; intentionally not consulted
+    del document  # self-contained: reference sources are validated against plan features only
 
     if not isinstance(plan, ModelingPlan):
         raise PlanError("PLAN_INVALID", f"expected a ModelingPlan, got {type(plan).__name__}")
@@ -396,9 +386,6 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
     _check_acyclic(tuple(plan.nodes))
 
 
-# ---------------------------------------------------------------- json
-
-
 def _filter_to_json(value: Filter) -> dict[str, Any]:
     helper = getattr(_document, "filter_to_json", None)
     if callable(helper):
@@ -422,14 +409,15 @@ def _filter_from_json(payload: Mapping[str, Any]) -> Filter:
 
 
 def ref_to_json(ref: Ref) -> dict[str, Any]:
-    """Serialize a document reference, including newer optional fields."""
+    """Serialize a document reference including ``since`` and ``extra``."""
     payload: dict[str, Any] = {
         "source": ref.source,
         "select": ref.select,
         "filters": [_filter_to_json(item) for item in getattr(ref, "filters", ())],
     }
-    # ``since`` and ``extra`` are part of the v2 contract.  Include them even
-    # when empty so the payload matches ``document.ref_to_json`` exactly.
+    # ``since`` and ``extra`` are always present: ``document.ref_to_json`` emits
+    # them even when empty, so omitting them here would give the two serializers
+    # different shapes.
     for name in ("since", "extra"):
         payload[name] = list(getattr(ref, name, ()) or ())
     return payload
@@ -450,7 +438,7 @@ def ref_from_json(payload: Mapping[str, Any] | None) -> Ref:
     try:
         return Ref(**kwargs)
     except TypeError:
-        # The installed Ref predates ``since``/``extra``.
+        # Fall back for a Ref without ``since``/``extra`` fields.
         kwargs.pop("since", None)
         kwargs.pop("extra", None)
         try:

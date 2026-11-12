@@ -23,8 +23,9 @@ Thumbs.db
 tasks/
 docs/
 
-*.md 
+*.md
 !README.md
+!AGENTS.md
 cadwork-data/
 
 # Node plugin build

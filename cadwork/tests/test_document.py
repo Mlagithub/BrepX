@@ -152,7 +152,7 @@ class DocumentEditTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "FORWARD_REF")
 
 
-class V2ValueRoundtripTests(unittest.TestCase):
+class ValueRoundtripTests(unittest.TestCase):
     def setUp(self) -> None:
         self.doc = new_document("test", "d_test")
 
@@ -239,7 +239,7 @@ class V2ValueRoundtripTests(unittest.TestCase):
         self.assertIsInstance(feature, Feature)
 
 
-class MilestoneV2Tests(unittest.TestCase):
+class MilestoneIdentityTests(unittest.TestCase):
     def test_apply_records_plan_and_node_identity(self) -> None:
         doc = new_document("test", "d_test")
         doc = apply_ops(

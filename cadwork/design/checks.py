@@ -17,6 +17,15 @@ class CheckResult:
     expected: str | None = None
     hint: str | None = None
 
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "ok": self.ok,
+            "observed": dict(self.observed),
+            "expected": self.expected,
+            "hint": self.hint,
+        }
+
 
 def _guard(name: str, expected: str | None, action) -> CheckResult:
     try:

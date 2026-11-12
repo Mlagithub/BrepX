@@ -1,7 +1,7 @@
 """Build the impeller from the command line.
 
     python -m cadwork.demo
-    python -m cadwork.demo --count 11 --export docs/demo
+    python -m cadwork.demo --count 11 --export .tmp/demo
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def _export(result, directory: str) -> list[str]:
         path = os.path.join(directory, "impeller.stl")
         S.export_stl(solid, path)
         written.append(path)
-    fluid = result.outputs.get("c1")
+    fluid = result.outputs.get("fluid_cavity")
     if fluid is not None:
         path = os.path.join(directory, "fluid.step")
         S.export_step(fluid, path)

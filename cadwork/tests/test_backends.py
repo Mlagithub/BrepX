@@ -50,7 +50,7 @@ def _server(cls: type) -> type:
 
 @dataclass(frozen=True)
 class Step:
-    """Duck-typed copy of the plan IR's Step (plan_compile may not exist yet)."""
+    """Minimal plan-step stand-in so the emitter tests need no compiler."""
 
     node_id: str
     action: str

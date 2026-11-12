@@ -501,7 +501,6 @@ const prefetch = (documentId, version) => {
   fetchBytes(documentId, version).catch(() => {})
 }
 
-// ---------------------------------------------------------------- picking
 const raycaster = new THREE.Raycaster()
 const pickAt = (event) => {
   if (!display) return null
@@ -555,7 +554,6 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     + (found.area != null ? ` · ${Number(found.area).toFixed(1)} mm²` : ''))
 })
 
-// ---------------------------------------------------------------- protocol
 addEventListener('message', (event) => {
   const data = event.data
   if (!data || data.from !== 'brepx-workbench') return

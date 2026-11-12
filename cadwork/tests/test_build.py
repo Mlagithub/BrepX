@@ -24,7 +24,7 @@ class BuildTests(unittest.TestCase):
         self.assertTrue(all(check.ok for item in result.features for check in item.checks))
         self.assertEqual(sorted(result.tags), ["t_in", "t_out", "t_wall"])
         self.assertIsNotNone(result.final)
-        self.assertAlmostEqual(float(result.final.volume), 152725.69, delta=1.0)
+        self.assertAlmostEqual(float(result.final.volume), 139342.57, delta=1.0)
 
     def test_two_fresh_builds_are_identical(self) -> None:
         first = build(impeller_document(), BuildCache())
@@ -57,14 +57,14 @@ class BuildTests(unittest.TestCase):
 
     def test_disabling_a_leaf_feature_removes_it(self) -> None:
         document = apply_ops(impeller_document(), [
-            {"op": "update", "id": "c1", "enabled": False},
+            {"op": "update", "id": "fluid_cavity", "enabled": False},
         ])
         result = build(document, BuildCache())
-        self.assertNotIn("c1", result.outputs)
+        self.assertNotIn("fluid_cavity", result.outputs)
         self.assertIs(result.final, result.outputs["t_wall"])
 
     def test_fillet_failure_is_structured_and_leaves_version(self) -> None:
-        document = impeller_document(fillet_radius=2.0)
+        document = impeller_document(fillet_radius=3.0)
         before = document.version
         with self.assertRaises(BuildError) as caught:
             build(document, BuildCache())
@@ -74,7 +74,8 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(document.version, before)
         payload = json.loads(json.dumps(error.to_json()))
         self.assertIn("blocked_downstream", payload)
-        self.assertEqual(payload["blocked_downstream"], ["t_in", "t_out", "t_wall", "c1"])
+        self.assertEqual(payload["blocked_downstream"],
+                         ["t_in", "t_out", "t_wall", "fluid_cavity"])
         self.assertTrue(error.hint)
 
     def test_count_change_keeps_boundaries(self) -> None:

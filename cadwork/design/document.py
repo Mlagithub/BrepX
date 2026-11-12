@@ -199,7 +199,7 @@ class Document:
 
 def new_document(name: str = "Untitled", document_id: str | None = None,
                  seq: int = 0, actor: str = "human") -> Document:
-    """Every document starts at v0: one empty milestone and no features."""
+    """A new document has one empty milestone at version 0 and no features."""
     return Document(
         id=document_id or f"d_{uuid.uuid4().hex[:10]}",
         name=name,
@@ -227,8 +227,6 @@ def validate_layout(document: Document) -> None:
                         )
         seen.add(feature.id)
 
-
-# ---------------------------------------------------------------- editing
 
 def _find(features: list[Feature], feature_id: str) -> int:
     for index, feature in enumerate(features):
@@ -396,8 +394,6 @@ def _trim_milestones(milestones: list[Milestone]) -> list[Milestone]:
     head = [item for item in milestones[:1] if item.version == 0]
     return head + milestones[-(_MAX_MILESTONES - len(head)):]
 
-
-# ---------------------------------------------------------------- json
 
 def focus_param_to_json(value: FocusParam) -> dict[str, Any]:
     return {

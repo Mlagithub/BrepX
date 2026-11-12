@@ -1,4 +1,4 @@
-"""Tests for the smlibpy kernel inventory (P0 of the v2 plan).
+"""Tests for the smlibpy kernel inventory.
 
 The inventory is the classification contract for every public kernel callable:
 the generated baseline under ``cadwork/design/`` must cover it exactly, and no

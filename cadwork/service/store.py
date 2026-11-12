@@ -38,7 +38,6 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
-    # ------------------------------------------------------------ paths
     def _path(self, document_id: str) -> Path:
         return self.root / f"{document_id}.json"
 
@@ -70,7 +69,6 @@ class Store:
             highest = max(highest, int(payload.get("seq", 0) or 0))
         return highest + 1
 
-    # ------------------------------------------------------------ queries
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
             entries: list[dict[str, Any]] = []
@@ -112,7 +110,6 @@ class Store:
         except (OSError, json.JSONDecodeError) as exc:
             raise StoreError("CORRUPT", f"cannot read {document_id}: {exc}", status=500) from exc
 
-    # ------------------------------------------------------------ writes
     def create(self, name: str = "Untitled") -> Document:
         with self._lock:
             document = new_document(name, seq=self._next_seq())
@@ -172,7 +169,6 @@ class Store:
             self._write_history(document_id, history[:match_index])
             return target
 
-    # ------------------------------------------------------------ step cache
     def _steps_dir(self) -> Path:
         path = self.root / "steps"
         path.mkdir(parents=True, exist_ok=True)
@@ -195,7 +191,6 @@ class Store:
             os.replace(temp, path)
         return path
 
-    # ------------------------------------------------------------ intents
     def add_intent(self, document_id: str, text: str,
                    base_version: int | None = None) -> dict[str, Any]:
         with self._lock:
@@ -222,7 +217,6 @@ class Store:
             self._write_intents(document_id, [])
             return len(entries)
 
-    # ------------------------------------------------------------ plans
     def get_plan(self, document_id: str) -> ModelingPlan | None:
         with self._lock:
             path = self._plan_path(document_id)
@@ -248,7 +242,6 @@ class Store:
         with self._lock:
             self._plan_path(document_id).unlink(missing_ok=True)
 
-    # ------------------------------------------------------------ imports
     def _imports_dir(self) -> Path:
         path = self.root / "imports"
         path.mkdir(parents=True, exist_ok=True)
@@ -271,7 +264,6 @@ class Store:
         path = self._imports_dir() / f"{digest}.{cleaned}"
         return path if path.is_file() else None
 
-    # ------------------------------------------------------------ internals
     def _intents_path(self, document_id: str) -> Path:
         return self.root / f"{document_id}.intents.json"
 
@@ -291,7 +283,6 @@ class Store:
         temp.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(temp, path)
 
-    # ------------------------------------------------------------ internals
     def _write(self, document: Document) -> None:
         path = self._path(document.id)
         temp = path.with_suffix(".tmp")

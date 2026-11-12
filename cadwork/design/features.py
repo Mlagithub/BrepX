@@ -1,9 +1,9 @@
-"""The v2 step registry: generated kernel actions plus a few adapters.
+"""Feature registry: generated kernel actions plus a few adapters.
 
-A feature is still a pure function: resolved inputs + params -> output value.
-The registry no longer hand-mirrors the kernel; ``kernel_actions`` generates a
-``FeatureSpec`` per bindable kernel call and ``adapters`` adds the few
-operations the kernel expresses as Python operators or document metadata.
+A feature is a pure function: resolved inputs + params -> output value.
+``kernel_actions`` generates a ``FeatureSpec`` per bindable kernel call and
+``adapters`` adds the few operations the kernel expresses as Python operators
+or document metadata.
 """
 
 from __future__ import annotations
@@ -24,9 +24,6 @@ class FeatureError(Exception):
         self.code = code
         self.message = message
         self.hint = hint
-
-
-# ---------------------------------------------------------------- params
 
 
 @dataclass(frozen=True)
@@ -123,9 +120,6 @@ class FeatureOutput:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-# ---------------------------------------------------------------- input kinds
-
-
 @dataclass(frozen=True)
 class InputKind:
     """One way a reference resolves: the selectors it accepts and the kernel
@@ -176,8 +170,6 @@ class FeatureSpec:
     origin: str = ""
     return_kind: str = "part"
 
-
-# ---------------------------------------------------------------- registry
 
 FEATURES: dict[str, FeatureSpec] = {}
 _REGISTRY_LOADED = False

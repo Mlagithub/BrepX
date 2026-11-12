@@ -98,7 +98,6 @@ class VariantBook:
         self._sets: dict[str, VariantSet] = {}
         self._lock = threading.RLock()
 
-    # ------------------------------------------------------------------ query
     def get(self, set_id: str) -> VariantSet:
         with self._lock:
             entry = self._sets.get(set_id)
@@ -106,7 +105,6 @@ class VariantBook:
                 raise KeyError(set_id)
             return entry
 
-    # ------------------------------------------------------------------ create
     def create(
         self,
         document: Document,
@@ -237,7 +235,6 @@ class VariantBook:
                 for check in getattr(exc, "checks", ())
             ]
 
-    # ------------------------------------------------------------------ housekeeping
     def _evict_locked(self) -> None:
         now = time.time()
         stale = [key for key, item in self._sets.items()
@@ -259,7 +256,6 @@ class VariantBook:
                 self._drop_locked(key)
             shutil.rmtree(self._root, ignore_errors=True)
 
-    # ------------------------------------------------------------------ contact sheet
     def sheet(self, set_id: str) -> bytes:
         """One picture of the whole set: every variant side by side, labelled.
 

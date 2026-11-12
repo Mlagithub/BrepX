@@ -59,8 +59,8 @@ def main() -> int:
         for feature in source.features
     ]
     nodes.append(PlanNode(
-        id="c1_check", kind="check", title="fluid is one closed solid",
-        deps=("c1",),
+        id="fluid_check", kind="check", title="fluid is one closed solid",
+        deps=("fluid_cavity",),
         expect=(
             Expect("solids", "eq", 1),
             Expect("watertight", "true"),
@@ -89,19 +89,19 @@ def main() -> int:
     current = store.get(document.id)
     print(f"all nodes done at v{current.version}")
 
-    # Failure isolation: a 2 mm fillet must fail without writing a version.
+    # Failure isolation: a 3 mm fillet must fail without writing a version.
     version = current.version
     service.plan_edit(document.id, [{
         "op": "update_node",
-        "node": {"id": "b_fillet", "params": {"radius": 2.0}},
+        "node": {"id": "b_fillet", "params": {"radius": 3.0}},
     }])
     view = service.plan(document.id)
     downstream = {node["id"]: node["status"] for node in view["plan"]["nodes"]}
-    if downstream.get("c1") != "pending":
-        print(f"FAIL: downstream c1 was not invalidated: {downstream.get('c1')}")
+    if downstream.get("fluid_cavity") != "pending":
+        print(f"FAIL: downstream fluid_cavity was not invalidated: {downstream.get('fluid_cavity')}")
         return 1
     try:
-        service.plan_run(document.id, "c1_check")
+        service.plan_run(document.id, "fluid_check")
         print("UNEXPECTED: the check ran while its dependency was stale")
         return 1
     except ServiceError as exc:
@@ -111,7 +111,7 @@ def main() -> int:
         print(f"stale check blocked: {exc.code}")
     try:
         service.plan_run(document.id, "b_fillet")
-        print("UNEXPECTED: the 2 mm fillet succeeded")
+        print("UNEXPECTED: the 3 mm fillet succeeded")
         return 1
     except ServiceError as exc:
         if store.get(document.id).version != version:
@@ -123,8 +123,8 @@ def main() -> int:
         "node": {"id": "b_fillet", "params": {"radius": 0.3}},
     }])
     service.plan_run(document.id, "b_fillet")
-    service.plan_run(document.id, "c1")
-    service.plan_run(document.id, "c1_check")
+    service.plan_run(document.id, "fluid_cavity")
+    service.plan_run(document.id, "fluid_check")
     final = store.get(document.id)
     print(f"recovered at v{final.version}; timeline {len(service.timeline(document.id))}")
 

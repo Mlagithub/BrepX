@@ -233,10 +233,12 @@ def build_mcp_server(service: CADService) -> MCPServer:
 
     @server.tool()
     def plan_run(document_id: str, node_id: str,
-                 base_version: int | None = None) -> dict[str, Any]:
+                 base_version: int | None = None,
+                 executor: str | None = None) -> dict[str, Any]:
         """Execute one ready node, commit its milestone, evaluate its checks and return the plan."""
         try:
-            return service.plan_run(document_id, node_id, base_version=base_version)
+            return service.plan_run(document_id, node_id, base_version=base_version,
+                                    executor=executor)
         except ServiceError as exc:
             raise _fail(exc) from exc
 

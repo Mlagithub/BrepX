@@ -4,11 +4,12 @@
     python scripts/accept_volute.py --sample blade  # any registered sample
     python scripts/accept_volute.py --all           # every sample, one run
 
-What "accept" means here, in order:
-  1. the document builds and every feature check passes;
-  2. the final body is closed and has volume;
-  3. STEP and STL export to non-trivial files;
-  4. a PNG renders (skipped with --no-render).
+What "accept" means here:
+
+- the document builds and every feature check passes;
+- the final body is closed and has volume;
+- STEP and STL export to non-trivial files;
+- a PNG renders (skipped with --no-render).
 
 Exit code 0 only when all of that holds for every requested sample.
 """

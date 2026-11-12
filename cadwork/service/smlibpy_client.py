@@ -9,8 +9,6 @@ with fifteen tools.  The backend only needs five of them (``run_script``,
 instructions are 44 KB, which is why this module talks to it through the
 official ``mcp`` SDK instead of the harness' own proxy.
 
-Layering
---------
 ``SmlibpyClient`` is **async** and must live entirely inside one event loop:
 enter it with ``await client.start()`` / ``await client.close()`` or use it as
 ``async with``.  ``SyncSmlibpyClient`` is a thin synchronous facade that owns a
@@ -132,7 +130,6 @@ class SmlibpyClient:
         self.server_info: Any = None
         self._closed = False
 
-    # -- lifecycle -------------------------------------------------------
     @property
     def started(self) -> bool:
         return self._session is not None
@@ -232,7 +229,6 @@ class SmlibpyClient:
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         await self.close()
 
-    # -- tools -----------------------------------------------------------
     async def list_tools(self) -> list[Any]:
         """List the server's tools; the health check used by tests."""
         async with self._get_lock():
@@ -308,7 +304,6 @@ class SmlibpyClient:
                 "restore", {"session": session, "label": label}, CONTROL_TIMEOUT_S
             )
 
-    # -- internals -------------------------------------------------------
     def _require_session(self, tool: str) -> ClientSession:
         if self._session is None:
             raise BackendError(
@@ -365,7 +360,6 @@ class SyncSmlibpyClient:
             except Exception:
                 pass
 
-    # -- plumbing --------------------------------------------------------
     def _submit(self, coro: Any, timeout: float | None) -> Any:
         if self._closed:
             raise BackendError("smlibpy client is closed", code="SCRIPT_FAILED")
@@ -387,7 +381,6 @@ class SyncSmlibpyClient:
     def started(self) -> bool:
         return self._started
 
-    # -- lifecycle -------------------------------------------------------
     def start(self) -> "SyncSmlibpyClient":
         if self._closed:
             raise BackendError("smlibpy client is closed", code="SCRIPT_FAILED")
@@ -424,7 +417,6 @@ class SyncSmlibpyClient:
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         self.close()
 
-    # -- tools -----------------------------------------------------------
     def list_tools(self) -> list[Any]:
         self.start()
         return self._submit(self._inner.list_tools(), START_TIMEOUT_S + 30.0)

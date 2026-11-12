@@ -58,9 +58,6 @@ class CompileError(Exception):
         }
 
 
-# ---------------------------------------------------------------- IR
-
-
 @dataclass(frozen=True)
 class Step:
     node_id: str
@@ -176,11 +173,8 @@ class CompileReport:
         }
 
 
-# ---------------------------------------------------------------- feature registry
-
-
 def spec_for(action: str):
-    """Look up an action without assuming which registry generation exists."""
+    """Look up an action, tolerating a feature module that exposes only ``FEATURES``."""
     getter = getattr(_features, "spec_for", None)
     if callable(getter):
         try:
@@ -248,9 +242,6 @@ def _fallback_validate(action: str, refs: Mapping[str, Any]) -> Any:
     return spec
 
 
-# ---------------------------------------------------------------- plan ids
-
-
 def _variable(node_id: str) -> str:
     return "n" + _VARIABLE_BAD.sub("_", str(node_id))
 
@@ -275,9 +266,6 @@ def _feature_variables(plan: ModelingPlan) -> dict[str, str]:
     }
 
 
-# ---------------------------------------------------------------- refs and ops
-
-
 def _translate_ref(ref: Any, id_map: Mapping[str, str], node_id: str) -> Ref:
     source = getattr(ref, "source", None)
     if not isinstance(source, str) or source not in id_map:
@@ -288,7 +276,8 @@ def _translate_ref(ref: Any, id_map: Mapping[str, str], node_id: str) -> Ref:
             hint="reference sources must name an earlier feature node",
         )
     kwargs: dict[str, Any] = {"source": id_map[source]}
-    # v2 Ref carries since/extra; they are feature ids in document space too.
+    # ``since``/``extra`` name earlier features too, so they need the same id
+    # translation as ``source``.
     for name in ("since", "extra"):
         if hasattr(ref, name):
             values = tuple(getattr(ref, name) or ())
@@ -420,9 +409,6 @@ def _compile_feature_parts(plan: ModelingPlan, node: PlanNode,
         ) from exc
 
     return _Parts(spec=spec, feature_id=_feature_id(node), params=params, refs=refs)
-
-
-# ---------------------------------------------------------------- public API
 
 
 def compile_node(plan: ModelingPlan, node: PlanNode,

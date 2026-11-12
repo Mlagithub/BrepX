@@ -1,9 +1,9 @@
-"""Inventory of every public ``smlibpy`` callable and its v2 destination.
+"""Inventory of every public ``smlibpy`` callable and its destination.
 
-The v2 feature registry does not hand-mirror the kernel: ``kernel_actions``
-generates one document action per bindable kernel call, a few adapters cover
-operators and document metadata, and everything else enters the document
-through ``refs``/``verify``/``service`` or is deliberately deferred.
+``kernel_actions`` generates one document action per bindable kernel call, a
+few adapters cover operators and document metadata, and everything else enters
+the document through ``refs``/``verify``/``service`` or is deliberately
+deferred.
 
 This module is the auditable map of that split.  It enumerates the installed
 ``smlibpy`` API at import time (top-level public functions plus every public
@@ -24,18 +24,19 @@ destination:
 ``SERVICE``
     IO / render / export / import / mesh path owned by ``service/``.
 ``DEFER``
-    Not in v1: a non-scalar, variadic, list or callback signature.
+    A signature the document action layer cannot bind: non-scalar, variadic,
+    list or callback.
 ``N/A``
     Not a modeling capability (data class, error, builder or metadata).
 ``EXCLUDED``
     An internal/dunder callable; enumeration skips these.
 
-The classification tables are explicit.  The five large classes (``Part``,
-``Sketch``, ``Profile``, ``ShapeList`` and ``Face``) have a complete per-method
-table so a kernel upgrade that adds a method surfaces it as *unclassified*
-instead of silently defaulting it; other classes use a class-level default.
-``scripts/kernel_inventory.py --check`` turns any unclassified callable into a
-non-zero exit code.
+The classification tables are explicit.  The six large classes (``Part``,
+``Sketch``, ``Profile``, ``ShapeList``, ``Face`` and ``Shape``) have a complete
+per-method table so a kernel upgrade that adds a method surfaces it as
+*unclassified* instead of silently defaulting it; other classes use a
+class-level default.  ``scripts/kernel_inventory.py --check`` turns any
+unclassified callable into a non-zero exit code.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ _REASONS: dict[str, str] = {
     REF: "ShapeList selector / topology query consumed by refs.py",
     MEASURE: "measurement or query consumed by verify.py / probe",
     SERVICE: "IO / render / export / import / mesh path owned by service/",
-    DEFER: "not in v1: non-scalar, variadic, list or callback signature",
+    DEFER: "non-scalar, variadic, list or callback signature",
     NA: "not a modeling capability (data class, error, builder or metadata)",
     EXCLUDED: "internal / dunder callable",
 }
@@ -100,11 +101,10 @@ def _table(*groups: tuple[str, Iterable[str]]) -> dict[str, str]:
     return merged
 
 
-# --------------------------------------------------------------- top level
-# The plan's 156-name list is the contract.  Two entries differ in smlibpy
-# 0.6.2: the list spells ``hull``/``heal`` but the package exposes ``Hull``
-# (``heal`` only exists as ``Part.heal``), and ``fit_curve`` is a public
-# callable the list omits.
+# The expected top-level surface is 156 names.  The table follows smlibpy
+# 0.6.2 spellings: it lists ``Hull`` (there is no ``hull``), omits ``heal``
+# (it exists only as ``Part.heal``), and includes ``fit_curve`` (a public
+# top-level callable).
 _TOP_LEVEL: dict[str, str] = _table(
     (GEN, {
         "AnnularSector", "ArcSlot", "Bezier", "Box", "CenterArc", "Circle",
@@ -150,11 +150,10 @@ _TOP_LEVEL: dict[str, str] = _table(
 )
 
 _TOP_LEVEL_NOTES: dict[str, str] = {
-    "fit_curve": "curve fit; public in smlibpy 0.6.2 but missing from the plan list",
-    "Hull": "the plan list spells this name 'hull'",
+    "fit_curve": "curve fit; public top-level callable in smlibpy 0.6.2",
+    "Hull": "exported spelling is Hull; there is no top-level hull",
 }
 
-# ------------------------------------------------------------ method tables
 _PART: dict[str, str] = _table(
     (GEN, {
         "bend", "chamfer", "cut", "draft", "fillet", "flange", "fold", "fuse",
@@ -207,7 +206,7 @@ _PROFILE: dict[str, str] = _table(
 )
 
 # ``first``/``last`` are properties on ShapeList (not callable), so they are
-# not enumerated; refs.py still reads them as REF selection properties.
+# not enumerated; refs.py reads them as REF selection properties.
 _SHAPE_LIST: dict[str, str] = _table(
     (REF, {
         "at", "back", "bottom", "circles", "concave", "convex", "count",
@@ -265,9 +264,8 @@ _METHOD_TABLES: dict[str, dict[str, str]] = {
     "Shape": _SHAPE,
 }
 
-# Class-level defaults are only used for classes whose methods all share one
-# destination (per the plan); the six tables above are complete and must not
-# fall back.
+# Class-level defaults are used only for classes whose methods all share one
+# destination; the six tables above are complete and must not fall back.
 _CLASS_DEFAULTS: dict[str, tuple[str, str]] = {
     "Edge": (MEASURE, "edge topology/measurement query (Edge class default)"),
     "Wire": (MEASURE, "wire topology/measurement query (Wire class default)"),
@@ -322,7 +320,7 @@ _METHOD_NOTES: dict[tuple[str, str], str] = {
     ("Sketch", "moved"): "takes a Location builder; placement goes through the place_on adapter",
     ("Sketch", "on"): "placement adapter place_on",
     ("Face", "moved"): "takes a Location builder; placement goes through the place_on adapter",
-    ("Face", "nurbs"): "NURBS data export; no v1 document action",
+    ("Face", "nurbs"): "NURBS data export; consumed by the service/export path, not a document action",
     ("Face", "on"): "placement adapter place_on",
     ("Shape", "moved"): "takes a Location builder; placement goes through the place_on adapter",
     ("Shape", "on"): "placement adapter place_on",
@@ -454,7 +452,7 @@ def inventory() -> list[dict[str, Any]]:
 
 
 def unclassified() -> list[dict[str, Any]]:
-    """Every enumerated callable that still lacks a destination."""
+    """Every enumerated callable that lacks a destination."""
 
     return [record for record in inventory() if record["destination"] is None]
 
@@ -524,7 +522,7 @@ def check() -> int:
 
 
 def render_markdown(records: Iterable[dict[str, Any]] | None = None) -> str:
-    """The generated ``docs/kernel-inventory.md`` document."""
+    """Render the inventory as markdown."""
 
     rows = inventory() if records is None else list(records)
     counts = destination_counts(rows)

@@ -6,6 +6,12 @@
 几何由 [smlibpy](https://github.com/awv-informatik/smlibpy) 0.6（SMLib NURBS 内核）
 提供；宿主是 DeepSeek Harness（dsh）。
 
+## 开发规范
+
+本仓库的强制工程约束见 [AGENTS.md](AGENTS.md)：代码不引用文档、不使用阶段/批次
+标记符、注释只写第一性内容（为什么必须这样，而不是复述代码）。所有改动与代码评审
+都必须遵守。
+
 ## 三条不变量
 
 1. **计划声明意图，编译器写代码。** LLM 产出 `ModelingPlan`（目标/特征/依赖/参数/验收），
@@ -81,7 +87,7 @@ dsh --profile cad-agent
 `REF`/`MEASURE`/`SERVICE`/`DEFER`/`N/A`。未分类数必须为 0；新增/删除会进入
 `kernel_actions.baseline.json` 的 diff。
 
-`features.py` 不再手写 30 个 `FeatureSpec`：`FEATURES = generated_actions() + ADAPTERS`。
+`features.py` 的 `FeatureSpec` 由内核签名生成：`FEATURES = generated_actions() + ADAPTERS`。
 域宏（叶轮/叶片/蜗壳）是计划模板或样例，不是文档类型。
 
 ## 双执行后端
@@ -90,6 +96,8 @@ dsh --profile cad-agent
 - `ScriptBackend`：编译器把 AST 生成确定性脚本，经本地 `python -m smlibpy.mcp`
   的 `run_script` 执行；每文档一个 session，失败事务回滚，重启从已提交节点重放。
 - 同一计划的最终 STEP sha256 应一致；不等价不切换默认后端。
+- `plan_run(..., executor="script")` 可让一个节点先经脚本后端执行，再提交本地文档；
+  发射器未覆盖的 action 会返回 `SCRIPT_FAILED`，此时用 `executor="local"`。
 
 ## 日志
 
@@ -111,6 +119,7 @@ dsh --profile cad-agent
 ```bash
 python -m cadwork.demo --sample impeller
 python scripts/accept_plan.py        # 计划：编译、逐节点、checks、导出
+python scripts/accept_face_volute.py # 面锚定：拾取面 -> 螺旋扫掠 -> 布尔
 python scripts/accept_volute.py --all
 ```
 
@@ -127,5 +136,5 @@ python scripts/accept_volute.py --all
 
 - 窄域：叶轮/蜗壳/叶片/法兰与同类回转/扫掠/布尔零件；不是通用 CAD。
 - 拓扑命名未解决：上游改动后引用可能 `REF_RETARGETED`，必须显式重选。
-- `DEFER` 的内核能力（deform/NURBS/region 等）不在 v1 生成动作内；需要时先在
+- `DEFER` 的内核能力（deform/NURBS/region 等）没有被绑定为生成动作；需要时先在
   `kernel_actions.py` 加语义覆盖，再写测试。

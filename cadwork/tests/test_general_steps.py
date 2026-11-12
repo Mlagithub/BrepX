@@ -90,14 +90,14 @@ class ProfileAndFormTests(unittest.TestCase):
 
     def test_spiral_sweep_with_scale_grows_the_section(self) -> None:
         result = _build(
-            Feature("v1", "k_spiral",
+            Feature("spiral", "k_spiral",
                     params={"start_radius": 20.0, "end_radius": 40.0, "turns": 0.5,
                             "plane": "XY", "clockwise": False}),
-            Feature("v2", "k_rectangle", params={"width": 4.0, "height": 6.0}),
-            Feature("v3", "k_sweep",
+            Feature("section", "k_rectangle", params={"width": 4.0, "height": 6.0}),
+            Feature("sweep", "k_sweep",
                     params={"scale_start": 0.5, "scale_end": 1.0,
                             "orient": True, "translational": False, "twist": 0.0},
-                    refs={"profile": Ref("v2", "self"), "path": Ref("v1", "self")}),
+                    refs={"profile": Ref("section", "self"), "path": Ref("spiral", "self")}),
         )
         final = result.final
         self.assertTrue(final.is_valid())

@@ -14,7 +14,7 @@ from cadwork.service import create_app
 
 EXPECTED = {
     # name: (features, checks, final volume)
-    "impeller": (36, 55, 152725.69),
+    "impeller": (36, 55, 139342.57),
     "blade": (32, 38, 1627.83),
     "flange": (12, 40, 161388.72),
     "volute": (4, 10, 13458.29),

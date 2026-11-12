@@ -1,7 +1,7 @@
-"""The four acceptance criteria, run against the real service in one script.
+"""Run the end-to-end acceptance checks against the real service in one script.
 
-Used by `scripts/demo.py` and by the acceptance test. No HTTP server required:
-every call goes through the same CADService the HTTP and MCP surfaces use.
+No HTTP server required: every call goes through the same CADService the HTTP and
+MCP surfaces use, so these checks cover the same build, export and undo paths.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     steps: list[str] = []
     report: dict[str, Any] = {"folder": folder, "steps": steps, "ok": False}
 
-    # 1. build the impeller and export STEP + CFD.
+    # A complete impeller must compile, pass every check and export STEP and CFD bytes.
     applied = service.apply(document.id, document.version, _add_ops())
     document = service.read(document.id)
     step_bytes, _ = service.export(document.id, "step")
@@ -51,7 +51,7 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     assert _checks_ok(service, document.id)
     assert len(step_bytes) > 1000 and b"boundaries" in cfd_bytes
 
-    # 2. change blade count; boundaries still resolve.
+    # Changing the pattern count must still resolve the cavity boundaries by name.
     preview = service.preview(document.id, [
         {"op": "update", "id": "b_pattern", "params": {"count": 11}},
     ])
@@ -66,19 +66,19 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     )
     assert sorted(tags) == ["t_in", "t_out", "t_wall"]
 
-    # Back to nine blades: the fillet edge is a geometric query.
+    # Back to nine blades proves the fillet edge is found by geometric query, not by a remembered index.
     service.apply(document.id, document.version, [
         {"op": "update", "id": "b_pattern", "params": {"count": 9}},
     ])
     document = service.read(document.id)
     steps.append(f"3 count back to 9 at v{document.version}")
 
-    # 4. an impossible fillet fails without touching the document; a small one works.
+    # An impossible fillet must fail without touching the document; a legal radius must then succeed.
     version = document.version
     failure: ServiceError | None = None
     try:
         service.apply(document.id, version, [
-            {"op": "update", "id": "b_fillet", "params": {"radius": 2.0}},
+            {"op": "update", "id": "b_fillet", "params": {"radius": 3.0}},
         ])
     except ServiceError as exc:
         failure = exc
@@ -89,12 +89,12 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     ])
     document = service.read(document.id)
     steps.append(
-        f"4 fillet 2mm -> {failure.code} on {failure.detail.get('feature_id')}, "
+        f"4 fillet 3mm -> {failure.code} on {failure.detail.get('feature_id')}, "
         f"version stayed {version}; 0.3mm -> v{document.version}"
     )
     assert document.version == version + 1
 
-    # 5. a fresh service on the same store: scene, edit, export and undo still work.
+    # A fresh service over the same store must reproduce scene, edit, export and undo from persisted state.
     restarted = CADService(Store(folder))
     scene = restarted.scene(document.id)
     assert scene["faces"] and scene["edges"]

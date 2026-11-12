@@ -3,7 +3,7 @@
 Usage::
 
     python scripts/kernel_inventory.py --check   # fail if any callable is unclassified
-    python scripts/kernel_inventory.py --write   # regenerate docs + baseline JSON
+    python scripts/kernel_inventory.py --write   # regenerate the markdown inventory and the baseline JSON
     python scripts/kernel_inventory.py --check --write
 
 ``--write`` refuses to generate artifacts while any public callable is still
@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--write",
         action="store_true",
-        help="regenerate docs/kernel-inventory.md and the baseline JSON",
+        help="regenerate the markdown inventory and the baseline JSON",
     )
     args = parser.parse_args(argv)
     if not (args.check or args.write):

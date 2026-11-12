@@ -14,8 +14,8 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 class BackendError(RuntimeError):
     """A backend could not execute a node.
 
-    ``code`` follows the contract error codes (``SCRIPT_FAILED`` here); ``raw``
-    keeps the kernel's own text so the service layer can show the real cause.
+    ``code`` is a stable error code (``SCRIPT_FAILED`` here); ``raw`` keeps the
+    kernel's own text so the service layer can show the real cause.
     """
 
     def __init__(self, message: str, *, code: str = "SCRIPT_FAILED", raw: str | None = None) -> None:
@@ -28,7 +28,7 @@ class BackendError(RuntimeError):
 
 
 class BackendTimeout(BackendError):
-    """The node did not finish in time (contract code ``SCRIPT_TIMEOUT``)."""
+    """The node did not finish in time (``SCRIPT_TIMEOUT``)."""
 
     def __init__(self, message: str = "the script did not finish in time", *, raw: str | None = None) -> None:
         super().__init__(message, code="SCRIPT_TIMEOUT", raw=raw)

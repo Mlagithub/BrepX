@@ -3,7 +3,7 @@
 ``evaluate`` is intentionally independent of the build engine: the caller
 passes the value for the current node plus a context containing all outputs.
 That keeps local checks cheap and makes the module usable by both the document
-build loop and the v2 plan backend.
+build loop and the plan backend.
 
 All measurement happens here, but no geometry is *created*.  Unsupported
 metrics and operators are rejected by ``plan.validate_expect`` before a build
@@ -47,9 +47,6 @@ class VerifyContext:
 
 class _MetricError(Exception):
     """A metric cannot be measured on this value."""
-
-
-# ---------------------------------------------------------------- helpers
 
 
 def _context_parts(context: Any) -> tuple[Mapping[str, Any], Any, Any]:
@@ -214,11 +211,8 @@ def _bbox(value: Any) -> tuple[tuple[float, float, float], ...]:
     raise _MetricError("bbox() did not expose min, max and size")
 
 
-# ---------------------------------------------------------------- refs
-
-
 def _resolve_lazily(ref: Any, outputs: Mapping[str, Any]) -> Any:
-    """Resolve through refs.resolve; fall back to a local reader if it moved."""
+    """Resolve through ``refs.resolve``, or a local reader when it is unavailable."""
     try:
         from .refs import resolve  # type: ignore[attr-defined]
     except Exception:
@@ -393,9 +387,6 @@ def _intersects(one: Any, other: Any) -> bool:
     )
 
 
-# ---------------------------------------------------------------- measurement
-
-
 def _measure(metric: str, value: Any, expect: Expect,
              outputs: Mapping[str, Any], plan: Any) -> Any:
     value = _unwrap(value)
@@ -430,9 +421,6 @@ def _measure(metric: str, value: Any, expect: Expect,
         f"unknown expectation metric {metric!r}",
         hint=f"known metrics: {', '.join(sorted(METRICS))}",
     )
-
-
-# ---------------------------------------------------------------- comparison
 
 
 def _compare_scalar(observed: Any, expected: Any, op: str, tolerance: float) -> bool:
@@ -514,9 +502,6 @@ def _observed_payload(metric: str, op: str, expect: Expect, observed: Any) -> di
     if metric in {"distance", "intersects"} and expect.ref is not None:
         payload["ref"] = expect.ref.source
     return payload
-
-
-# ---------------------------------------------------------------- public API
 
 
 def evaluate(expects: Iterable[Expect] | Expect | None, value: Any,

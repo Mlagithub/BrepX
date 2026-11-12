@@ -1,4 +1,4 @@
-"""Tests for the v2 modeling-plan data model and structural validation."""
+"""Tests for the modeling-plan data model and structural validation."""
 
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 """Turning what a person says into an address in the document.
 
-A non-expert says "把左边的沉头改大点" and should not have to know that the
-feature is called `h2`. Two things make that possible, both deterministic:
+A non-expert says "把左边的沉头改大点" and should not have to know the
+document id of that feature. Two things make that possible, both deterministic:
 
 * `summarize` names every feature the way a person would ("沉头孔 Ø18"),
   and reports what the build produced, so a model can talk about the document

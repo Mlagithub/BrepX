@@ -115,13 +115,13 @@ class ServiceTests(unittest.TestCase):
                 f"/api/docs/{document_id}",
                 json={"base_version": 1,
                       "ops": [{"op": "update", "id": "b_fillet",
-                               "params": {"radius": 2.0}}]},
+                               "params": {"radius": 3.0}}]},
             )
             self.assertEqual(response.status_code, 422, response.text)
             error = response.json()["error"]
             self.assertEqual(error["feature_id"], "b_fillet")
             self.assertEqual(error["blocked_downstream"],
-                             ["t_in", "t_out", "t_wall", "c1"])
+                             ["t_in", "t_out", "t_wall", "fluid_cavity"])
             current = client.get(f"/api/docs/{document_id}").json()
             self.assertEqual(current["version"], 1)
 
@@ -289,7 +289,7 @@ class ServiceTests(unittest.TestCase):
 
 
 class PlanServiceTests(unittest.TestCase):
-    """The v2 planning surface: plan CRUD, compile, run, timeline and import."""
+    """The planning surface: plan CRUD, compile, run, timeline and import."""
 
     def setUp(self) -> None:
         self.folder = tempfile.TemporaryDirectory()

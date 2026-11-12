@@ -224,7 +224,6 @@ export function mountViewport(host, base) {
 
   const root = el('div', 'bx-root')
 
-  // ---------------------------------------------------------------- header
   const head = el('div', 'bx-top')
   const brand = el('span', 'bx-brand', 'BrepX')
   const docLabel = el('span', 'bx-doc', '连接中…')
@@ -233,7 +232,6 @@ export function mountViewport(host, base) {
   head.append(brand, docLabel, checkBadge, metricText)
   root.append(head)
 
-  // ---------------------------------------------------------------- stage
   const stage = el('div', 'bx-stage')
   const frame = el('iframe')
   frame.title = 'BrepX 模型'
@@ -313,7 +311,6 @@ export function mountViewport(host, base) {
   replayBar.append(replayText, replayBack)
   stage.append(replayBar)
 
-  // ---------------------------------------------------------------- hub
   const hub = el('div', 'bx-hub')
   const banner = el('div', 'bx-row bx-banner')
   const bannerText = el('span', 'grow', '')
@@ -346,7 +343,6 @@ export function mountViewport(host, base) {
   root.append(stage)
   host.append(root)
 
-  // ---------------------------------------------------------------- state
   let serviceBase = base
   let currentDoc = null
   let state = null
@@ -446,7 +442,6 @@ export function mountViewport(host, base) {
     shownVersion = -1
   })
 
-  // ---------------------------------------------------------------- render
   const renderHeader = () => {
     if (!currentDoc) {
       docLabel.textContent = 'service unreachable'
@@ -721,7 +716,6 @@ export function mountViewport(host, base) {
     pushDesign()
   }
 
-  // ---------------------------------------------------------------- data
   const loadState = async (documentId) => {
     currentDoc = await fetchJSON(`${serviceBase}/api/docs/${documentId}/state`)
     activeIntent = currentDoc.active_intent || null
@@ -794,7 +788,6 @@ export function mountViewport(host, base) {
     }
   }
 
-  // ---------------------------------------------------------------- actions
   const viewMilestone = async (version) => {
     replayVersion = version === liveVersion() ? null : version
     renderReplay()

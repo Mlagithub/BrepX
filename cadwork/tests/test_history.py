@@ -33,18 +33,18 @@ class HistoryStackTests(unittest.TestCase):
 
     def test_history_stack_jump_and_revert(self) -> None:
         stack = HistoryStack()
-        v0 = new_document("Part", "d_jump")
-        stack.push(v0)
-        v1 = apply_ops(v0, [{"op": "add", "feature": {"id": "f1", "type": "solid_box"}}])
-        stack.push(v1)
-        v2 = apply_ops(v1, [{"op": "update", "id": "f1", "params": {"length": 100.0}}])
+        initial = new_document("Part", "d_jump")
+        stack.push(initial)
+        with_box = apply_ops(initial, [{"op": "add", "feature": {"id": "f1", "type": "solid_box"}}])
+        stack.push(with_box)
+        resized = apply_ops(with_box, [{"op": "update", "id": "f1", "params": {"length": 100.0}}])
 
         self.assertEqual(stack.list_versions(), [0, 1])
         fetched = stack.get_version(0)
         self.assertEqual(fetched.version, 0)
         self.assertEqual(len(fetched.features), 0)
 
-        reverted = stack.revert_to(v2, 1)
+        reverted = stack.revert_to(resized, 1)
         self.assertEqual(reverted.version, 1)
         self.assertEqual(stack.list_versions(), [0])
 
@@ -56,10 +56,10 @@ class HistoryStackTests(unittest.TestCase):
             store = Store(tmp)
             doc = store.create("Test")
             self.assertEqual(doc.version, 0)
-            v1 = apply_ops(doc, [{"op": "add", "feature": {"id": "f1", "type": "solid_box"}}])
-            store.save(v1)
-            v2 = apply_ops(v1, [{"op": "update", "id": "f1", "params": {"length": 120.0}}])
-            store.save(v2)
+            with_box = apply_ops(doc, [{"op": "add", "feature": {"id": "f1", "type": "solid_box"}}])
+            store.save(with_box)
+            resized = apply_ops(with_box, [{"op": "update", "id": "f1", "params": {"length": 120.0}}])
+            store.save(resized)
 
             self.assertEqual(store.get_version(doc.id, 0).version, 0)
             self.assertEqual(store.get_version(doc.id, 1).version, 1)

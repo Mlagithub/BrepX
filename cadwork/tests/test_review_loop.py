@@ -61,11 +61,11 @@ class ReviewLoopTests(unittest.TestCase):
     def test_revert_republishes_an_earlier_snapshot(self) -> None:
         service, document_id = _box_service()
         service.tweak(document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1)
-        reverted = service.revert(document_id, 1, title="回到 v1")
+        reverted = service.revert(document_id, 1, title="回到初始版本")
         document = service.read(document_id)
         self.assertEqual(document.version, 3)
         self.assertEqual(document.milestones[-1].parent_version, 1)
-        self.assertEqual(document.milestones[-1].title, "回到 v1")
+        self.assertEqual(document.milestones[-1].title, "回到初始版本")
         self.assertEqual(document.features[0].params["length"], 40.0)
         self.assertIsNotNone(reverted["milestone"])
 

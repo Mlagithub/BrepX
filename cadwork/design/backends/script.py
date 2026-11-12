@@ -61,7 +61,6 @@ class ScriptBackend:
         self._committed: dict[str, set[str]] = {}
         self._closed = False
 
-    # -- lifecycle -------------------------------------------------------
     def start(self) -> "ScriptBackend":
         self._start_client()
         return self
@@ -89,7 +88,6 @@ class ScriptBackend:
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         self.close()
 
-    # -- observation -----------------------------------------------------
     def session_id(self, document_id: str) -> str | None:
         """The smlibpy session currently mapped to ``document_id``, if any."""
         return self._sessions.get(document_id)
@@ -98,7 +96,6 @@ class ScriptBackend:
         """Node ids that ran successfully for ``document_id``."""
         return frozenset(self._committed.get(document_id, ()))
 
-    # -- execution -------------------------------------------------------
     def build_node(
         self,
         document_id: str,
@@ -177,7 +174,7 @@ class ScriptBackend:
         previous = self._sessions.pop(document_id, None)
         self._committed.pop(document_id, None)
         if previous is not None:
-            # Best effort: an old session may already be gone.
+            # Best effort: the previous session may already be gone.
             try:
                 self._client.clear(previous)
             except BackendError:
@@ -248,7 +245,6 @@ class ScriptBackend:
             # build_node opens a new one.
             pass
 
-    # -- internals -------------------------------------------------------
     def _ensure_session(self, document_id: str) -> str:
         session = self._sessions.get(document_id)
         if session is not None:

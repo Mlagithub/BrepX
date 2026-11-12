@@ -39,9 +39,6 @@ def _face_signature(face: Any) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------- pattern
-
-
 def _build_pattern(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     target = inputs["target"]
     kind = params["kind"]
@@ -113,9 +110,6 @@ PATTERN = FeatureSpec(
 )
 
 
-# ---------------------------------------------------------------- tag
-
-
 def _build_tag(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     faces = _items(inputs["faces"])
     signatures = []
@@ -157,9 +151,6 @@ TAG = FeatureSpec(
 )
 
 
-# ---------------------------------------------------------------- import
-
-
 _IMPORTERS = {
     "step": S.import_step,
     "iges": S.import_iges,
@@ -198,9 +189,6 @@ IMPORT_BASE = FeatureSpec(
     origin="adapter:import_base",
     return_kind="part",
 )
-
-
-# ---------------------------------------------------------------- place_on
 
 
 def _build_place(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
@@ -247,9 +235,6 @@ PLACE_ON = FeatureSpec(
 
 
 ADAPTERS = (PATTERN, TAG, IMPORT_BASE, PLACE_ON)
-
-
-# ---------------------------------------------------------------- cavity
 
 
 def _build_cavity(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:

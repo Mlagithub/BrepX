@@ -14,7 +14,8 @@ class VoluteTests(unittest.TestCase):
         document = volute_document()
         result = build(document)
 
-        self.assertEqual([item.feature_id for item in result.features], ["v1", "v2", "v3", "v4"])
+        self.assertEqual([item.feature_id for item in result.features],
+                         ["spiral", "section", "sweep", "shell"])
         checks = [check for item in result.features for check in item.checks]
         self.assertEqual(len(checks), 10)
         self.assertTrue(all(check.ok for check in checks))

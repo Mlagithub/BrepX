@@ -99,6 +99,7 @@ class PlanEditRequest(BaseModel):
 class PlanRunRequest(BaseModel):
     node_id: str
     base_version: int | None = None
+    executor: str | None = None
 
 
 class ImportRequest(BaseModel):
@@ -219,7 +220,6 @@ def register_routes(app: FastAPI, service: CADService) -> None:
             name=SAMPLE_TITLES.get(name, sample.name),
         )
 
-    # ------------------------------------------------------------ review loop
     @app.get("/api/docs/{document_id}/state")
     def state(document_id: str) -> dict[str, Any]:
         return service.state(document_id)
@@ -280,7 +280,6 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def revert(document_id: str, body: RevertRequest) -> dict[str, Any]:
         return service.revert(document_id, body.target_version, body.title)
 
-    # ------------------------------------------------------------ intents
     @app.post("/api/docs/{document_id}/intents")
     def add_intent(document_id: str, body: IntentRequest) -> dict[str, Any]:
         return service.add_intent_note(document_id, body.text, base_version=body.base_version)
@@ -297,7 +296,6 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def cancel_intent(document_id: str, intent_id: str) -> dict[str, Any]:
         return service.cancel_intent(document_id, intent_id)
 
-    # ------------------------------------------------------------ plan
     @app.get("/api/docs/{document_id}/plan")
     def get_plan(document_id: str) -> dict[str, Any]:
         return service.plan(document_id)
@@ -313,7 +311,8 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.post("/api/docs/{document_id}/plan/run")
     def run_plan(document_id: str, body: PlanRunRequest) -> dict[str, Any]:
-        return service.plan_run(document_id, body.node_id, base_version=body.base_version)
+        return service.plan_run(document_id, body.node_id, base_version=body.base_version,
+                                executor=body.executor)
 
     @app.get("/api/docs/{document_id}/timeline")
     def timeline(document_id: str) -> list[dict[str, Any]]:
@@ -323,7 +322,6 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def import_file(document_id: str, body: ImportRequest) -> dict[str, Any]:
         return service.import_file(document_id, body.path, format=body.format)
 
-    # ------------------------------------------------------------ variants
     @app.post("/api/docs/{document_id}/variants")
     def create_variants(document_id: str, body: VariantRequest) -> dict[str, Any]:
         return service.create_variants(
@@ -357,7 +355,6 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def apply_variant(set_id: str, index: int) -> dict[str, Any]:
         return service.apply_variant(set_id, index)
 
-    # ------------------------------------------------------------ derived
     @app.get("/api/docs/{document_id}/checks")
     def checks(document_id: str) -> dict[str, Any]:
         return service.checks(document_id)

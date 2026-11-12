@@ -490,7 +490,7 @@
       "destination": "N/A",
       "name": "nurbs",
       "owner": "Face",
-      "reason": "NURBS data export; no v1 document action"
+      "reason": "NURBS data export; consumed by the service/export path, not a document action"
     },
     {
       "destination": "GEN",
@@ -1042,7 +1042,7 @@
       "destination": "DEFER",
       "name": "deform",
       "owner": "Part",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "MEASURE",
@@ -1108,7 +1108,7 @@
       "destination": "DEFER",
       "name": "flatten",
       "owner": "Part",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -1246,7 +1246,7 @@
       "destination": "DEFER",
       "name": "push",
       "owner": "Part",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "MEASURE",
@@ -1384,7 +1384,7 @@
       "destination": "DEFER",
       "name": "warp",
       "owner": "Part",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "REF",
@@ -2380,7 +2380,7 @@
       "destination": "DEFER",
       "name": "flatten",
       "owner": "Sketch",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -2488,7 +2488,7 @@
       "destination": "DEFER",
       "name": "push",
       "owner": "Sketch",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "MEASURE",
@@ -2572,7 +2572,7 @@
       "destination": "DEFER",
       "name": "trim",
       "owner": "Sketch",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "REF",
@@ -2584,7 +2584,7 @@
       "destination": "DEFER",
       "name": "warp",
       "owner": "Sketch",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "REF",
@@ -3094,7 +3094,7 @@
       "destination": "GEN",
       "name": "Hull",
       "owner": "smlibpy",
-      "reason": "the plan list spells this name 'hull'"
+      "reason": "exported spelling is Hull; there is no top-level hull"
     },
     {
       "destination": "GEN",
@@ -3298,7 +3298,7 @@
       "destination": "DEFER",
       "name": "deform",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "MEASURE",
@@ -3418,7 +3418,7 @@
       "destination": "GEN",
       "name": "fit_curve",
       "owner": "smlibpy",
-      "reason": "curve fit; public in smlibpy 0.6.2 but missing from the plan list"
+      "reason": "curve fit; public top-level callable in smlibpy 0.6.2"
     },
     {
       "destination": "GEN",
@@ -3436,7 +3436,7 @@
       "destination": "DEFER",
       "name": "flatten",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -3592,7 +3592,7 @@
       "destination": "DEFER",
       "name": "make_compatible",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -3640,7 +3640,7 @@
       "destination": "DEFER",
       "name": "nurbs_surface",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -3676,7 +3676,7 @@
       "destination": "DEFER",
       "name": "push",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "SERVICE",
@@ -3772,7 +3772,7 @@
       "destination": "DEFER",
       "name": "surface",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -3886,7 +3886,7 @@
       "destination": "DEFER",
       "name": "trim",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",
@@ -3910,7 +3910,7 @@
       "destination": "DEFER",
       "name": "warp",
       "owner": "smlibpy",
-      "reason": "not in v1: non-scalar, variadic, list or callback signature"
+      "reason": "non-scalar, variadic, list or callback signature"
     },
     {
       "destination": "GEN",

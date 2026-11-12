@@ -3,8 +3,8 @@
 This module is the semantic overlay: ``_ACTIONS`` says which kernel callable
 becomes which document action, which arguments are shape roles, and how the
 call is made.  Everything else (parameter names, defaults, kinds) is read from
-the installed kernel's signatures, so a kernel upgrade changes the catalogue
-without editing the old 30 hand-written specs.
+the installed kernel's signatures, so kernel signature changes flow into the
+catalogue without editing the action table.
 """
 
 from __future__ import annotations
@@ -37,10 +37,7 @@ def I(role: str, kind: str, many: bool = False, optional: bool = False) -> Input
     return InputRole(role, kind, many, optional)
 
 
-# ---------------------------------------------------------------- table
-
 _ACTIONS: tuple[Action, ...] = (
-    # primitives ---------------------------------------------------------
     Action("k_box", "Box", "part", allow=("length", "width", "height")),
     Action("k_cylinder", "Cylinder", "part", allow=("radius", "height", "arc_size")),
     Action("k_cone", "Cone", "part", allow=("bottom_radius", "top_radius", "height", "arc_size")),
@@ -54,7 +51,6 @@ _ACTIONS: tuple[Action, ...] = (
            allow=("radius", "counter_bore_radius", "counter_bore_depth", "depth")),
     Action("k_counter_sink_hole", "CounterSinkHole", "part",
            allow=("radius", "counter_sink_radius", "depth", "angle")),
-    # 2D profiles / curves ----------------------------------------------
     Action("k_rectangle", "Rectangle", "profile", allow=("width", "height", "fillet", "chamfer", "rotation")),
     Action("k_circle", "Circle", "profile", allow=("radius",)),
     Action("k_regular_polygon", "RegularPolygon", "profile",
@@ -79,7 +75,6 @@ _ACTIONS: tuple[Action, ...] = (
     Action("k_radius_arc", "RadiusArc", "curve", allow=("start", "end", "radius", "plane")),
     Action("k_sagitta_arc", "SagittaArc", "curve", allow=("start", "end", "sagitta", "plane")),
     Action("k_polar_line", "PolarLine", "curve", allow=("start", "length", "angle", "plane")),
-    # form ---------------------------------------------------------------
     Action("k_extrude", "extrude", "part", (I("profile", "profile"),),
            allow=("amount", "both", "taper", "corners")),
     Action("k_revolve", "revolve", "part", (I("profile", "profile"),),
@@ -90,7 +85,6 @@ _ACTIONS: tuple[Action, ...] = (
            allow=("orient", "translational", "sharp_corners", "twist")),
     Action("k_swing", "swing", "part", (I("profile", "profile"), I("outline", "profile"))),
     Action("k_thicken", "thicken", "part", (I("surface", "shell"),), allow=("thickness", "both")),
-    # modify (Part methods) ---------------------------------------------
     Action("k_fillet", "Part.fillet", "part", (I("target", "part"), I("edges", "edges")),
            allow=("radius", "continuity", "fullness", "propagate", "corners", "setback"), call="method"),
     Action("k_chamfer", "Part.chamfer", "part", (I("target", "part"), I("edges", "edges")),
@@ -131,7 +125,6 @@ _ACTIONS: tuple[Action, ...] = (
            allow=("factor", "center"), call="method"),
     Action("k_mirror", "Part.mirror", "same", (I("target", "shape"),),
            allow=("plane",), call="method"),
-    # booleans / combine -------------------------------------------------
     Action("k_fuse", "Part.fuse", "part", (I("target", "part"), I("others", "part", many=True)),
            call="method"),
     Action("k_cut", "Part.cut", "part", (I("target", "part"), I("others", "part", many=True)),
@@ -139,7 +132,6 @@ _ACTIONS: tuple[Action, ...] = (
     Action("k_intersect", "Part.intersect", "part", (I("target", "part"), I("others", "part", many=True)),
            call="method"),
     Action("k_merge", "merge", "part", (I("parts", "part", many=True),), call="varargs"),
-    # surfaces / sheet ---------------------------------------------------
     Action("k_section", "Part.section", "profile", (I("target", "part"),),
            allow=("plane",), call="method"),
     Action("k_extend", "extend", "shell", (I("shape", "shape"),), allow=("distance",)),
@@ -170,7 +162,6 @@ _ACTIONS: tuple[Action, ...] = (
            allow=("angle", "radius", "k_factor", "partial"), call="method", domain="sheetmetal"),
     Action("k_unfold", "Part.unfold", "part", (I("target", "part"),),
            allow=("k_factor",), call="method", domain="sheetmetal"),
-    # sketch-specific operations ----------------------------------------
     Action("k_sketch_fillet", "Sketch.fillet", "profile", (I("target", "profile"),),
            allow=("radius",), call="method"),
     Action("k_sketch_chamfer", "Sketch.chamfer", "profile", (I("target", "profile"),),
@@ -183,7 +174,6 @@ _ACTIONS: tuple[Action, ...] = (
            call="method"),
     Action("k_sketch_xor", "Sketch.xor", "profile", (I("target", "profile"), I("others", "profile", many=True)),
            call="method"),
-    # face-anchored modelling -------------------------------------------
     Action("k_face_extrude", "Face.extrude", "part", (I("target", "face"),),
            allow=("amount", "both", "taper", "corners"), call="method"),
     Action("k_face_to_shell", "Face.to_shell", "shell", (I("target", "face"),), call="method"),
@@ -203,8 +193,6 @@ _ACTIONS: tuple[Action, ...] = (
            call="method"),
 )
 
-
-# ---------------------------------------------------------------- generation
 
 _ENUM_PLANE = ("XY", "XZ", "YZ")
 _ENUM_AXIS = ("X", "Y", "Z")

@@ -34,7 +34,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping
 
-if TYPE_CHECKING:  # plan-engineer owns this module; only the shape is needed here
+if TYPE_CHECKING:  # type-only: importing plan_compile would pull in smlibpy
     from cadwork.design.plan_compile import BuildProgram, Step  # noqa: F401
 
 #: The generated script prints this marker immediately before a JSON object.
@@ -131,7 +131,7 @@ _ACTIONS: dict[str, _Action] = {
     ),
 }
 
-#: Bare names accepted in addition to the contract's ``k_<snake>`` actions.
+#: Bare names accepted in addition to the canonical ``k_<snake>`` action names.
 _ALIASES = {"box": "k_box", "cylinder": "k_cylinder"}
 
 _METRICS_HELPER = '''\

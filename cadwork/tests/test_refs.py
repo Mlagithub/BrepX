@@ -1,4 +1,4 @@
-"""Tests for semantic reference resolution on v2 generated actions."""
+"""Tests for semantic reference resolution on generated actions."""
 
 from __future__ import annotations
 
