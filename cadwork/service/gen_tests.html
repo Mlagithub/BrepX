@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEN component tests</title>
+<style>
+  :root { color-scheme: light; --ok:#0a7a3d; --bad:#b42318; --muted:#667085; --line:#e4e7ec; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; color:#101828; background:#f8fafc; }
+  header { position: sticky; top:0; z-index:2; padding:14px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 6px; font-size:18px; }
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  button { font:inherit; padding:7px 14px; border:1px solid #344054; border-radius:6px; background:#101828; color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .muted { color:var(--muted); }
+  .ok { color:var(--ok); font-weight:700; }
+  .bad { color:var(--bad); font-weight:700; }
+  table { width:100%; border-collapse:collapse; background:#fff; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { position:sticky; top:78px; background:#f2f4f7; z-index:1; }
+  tr.fail td { background:#fff5f4; }
+  a { color:#175cd3; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  code { font-size:12px; }
+  #progress { font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GEN component tests</h1>
+  <div class="bar">
+    <button id="run" onclick="runAll()">Run all 152</button>
+    <span id="progress" class="muted">idle</span>
+    <span id="summary" class="muted"></span>
+    <span class="muted">每个用例写入 JSON 与 STEP；浏览器逐个触发真实服务。</span>
+  </div>
+</header>
+<main>
+  <table>
+    <thead><tr><th>#</th><th>GEN</th><th>status</th><th>seconds</th><th>result</th><th>evidence</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+<script>
+let KEYS = [];
+let RUN_ID = "";
+const rows = document.getElementById("rows");
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+}
+
+async function load() {
+  const response = await fetch("/api/gen-tests/cases");
+  const payload = await response.json();
+  KEYS = payload.keys;
+  rows.innerHTML = "";
+  KEYS.forEach((key, index) => {
+    const tr = document.createElement("tr");
+    tr.id = "row-" + index;
+    tr.innerHTML = `<td>${index + 1}</td><td><code>${escapeHtml(key)}</code></td>
+      <td class="status muted">pending</td><td class="seconds muted">-</td>
+      <td class="result muted">-</td><td class="evidence muted">-</td>`;
+    rows.appendChild(tr);
+  });
+  document.getElementById("progress").textContent = `0 / ${KEYS.length}`;
+}
+
+function resultText(data) {
+  if (data.status !== "passed") return `<span class="bad">${escapeHtml(data.error || "failed")}</span>`;
+  const metrics = data.metrics || {};
+  const bits = [];
+  if (metrics.type) bits.push(metrics.type);
+  for (const key of ["volume", "area", "length", "faces", "edges", "solids", "items"]) {
+    if (metrics[key] !== undefined) bits.push(`${key}=${Number(metrics[key]).toFixed ? Number(metrics[key]).toFixed(2) : metrics[key]}`);
+  }
+  if (data.expected_error) bits.push("expected: " + data.expected_error);
+  return bits.join(" · ");
+}
+
+async function runAll() {
+  const button = document.getElementById("run");
+  button.disabled = true;
+  RUN_ID = "browser-" + Date.now().toString(36);
+  let passed = 0;
+  let failed = 0;
+  const started = performance.now();
+  for (let index = 0; index < KEYS.length; index++) {
+    const key = KEYS[index];
+    const tr = document.getElementById("row-" + index);
+    tr.querySelector(".status").innerHTML = '<span class="muted">running...</span>';
+    try {
+      const response = await fetch("/api/gen-tests/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({key, run_id: RUN_ID}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || ("HTTP " + response.status));
+      tr.querySelector(".status").innerHTML = data.status === "passed"
+        ? '<span class="ok">passed</span>' : '<span class="bad">failed</span>';
+      tr.querySelector(".seconds").textContent = data.seconds;
+      tr.querySelector(".result").innerHTML = resultText(data);
+      const links = [];
+      const stem = key.replaceAll(".", "_");
+      links.push(`<a href="/gen-evidence/${RUN_ID}/${stem}.json" target="_blank">json</a>`);
+      if (data.artifact_url) links.push(`<a href="${data.artifact_url}" target="_blank">step</a>`);
+      tr.querySelector(".evidence").innerHTML = links.join(" · ");
+      if (data.status === "passed") passed++; else { failed++; tr.classList.add("fail"); }
+    } catch (error) {
+      tr.querySelector(".status").innerHTML = '<span class="bad">error</span>';
+      tr.querySelector(".result").innerHTML = `<span class="bad">${escapeHtml(error.message)}</span>`;
+      failed++;
+      tr.classList.add("fail");
+    }
+    document.getElementById("progress").textContent = `${index + 1} / ${KEYS.length}`;
+    document.getElementById("summary").innerHTML = `<span class="ok">${passed} passed</span> · <span class="bad">${failed} failed</span>`;
+  }
+  const seconds = ((performance.now() - started) / 1000).toFixed(1);
+  document.getElementById("summary").innerHTML =
+    `<span class="ok">${passed} passed</span> · <span class="bad">${failed} failed</span> · ${seconds}s · run <code>${RUN_ID}</code>`;
+  document.body.dataset.runId = RUN_ID;
+  document.body.dataset.done = "1";
+  button.disabled = false;
+  button.textContent = "Run all 152";
+}
+
+load();
+</script>
+</body>
+</html>

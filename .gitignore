@@ -27,6 +27,7 @@ docs/
 !README.md
 !AGENTS.md
 cadwork-data/
+artifacts/
 
 # Node plugin build
 node_modules/

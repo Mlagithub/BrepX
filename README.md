@@ -80,6 +80,19 @@ dsh --profile cad-agent
 4. `plan_run` 逐个 ready 节点；失败即停，改参数后重跑；
 5. `render` / `state` 复核；`commit` 之外的所有写入都带 `base_version`。
 
+## 组件测试（真实浏览器）
+
+服务启动后打开 `http://127.0.0.1:8765/gen-tests`，页面逐个调用运行中的内核，覆盖
+清单里的全部 152 个 GEN；每个用例写 JSON 与 STEP，页面逐行给出证据链接。
+
+```bash
+python -m cadwork.service --port 8765
+# 浏览器打开 http://127.0.0.1:8765/gen-tests
+```
+
+浏览器实跑证据保存在 [artifacts/gen-tests/browser-mwdawbfs](artifacts/gen-tests/browser-mwdawbfs/)（本地目录，已加入 `.gitignore`，不随仓库提交）：
+152 份 JSON、78 份 STEP、152 张 PNG、4 张页面截图、`manifest.json` 与 `summary.json`。
+
 ## 内核清单
 
 `python scripts/kernel_inventory.py --check` 枚举 smlibpy 0.6.2 的全部公开 callable

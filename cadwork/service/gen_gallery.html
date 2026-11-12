@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEN geometry screenshots</title>
+<style>
+  :root { color-scheme: light; --ok:#0a7a3d; --bad:#b42318; --muted:#667085; --line:#e4e7ec; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 12px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; color:#101828; background:#f8fafc; }
+  header { position:sticky; top:0; z-index:2; background:#fff; border-bottom:1px solid var(--line); padding:10px 16px; }
+  h1 { margin:0 0 4px; font-size:16px; }
+  .muted { color:var(--muted); }
+  .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px; padding:12px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .card img { display:block; width:100%; height:auto; border:1px solid #eef2f6; border-radius:4px; background:#fff; }
+  .card .name { font-weight:700; margin-bottom:6px; overflow-wrap:anywhere; }
+  .ok { color:var(--ok); font-weight:700; }
+  .bad { color:var(--bad); font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GEN geometry screenshots</h1>
+  <div class="muted" id="summary">loading...</div>
+</header>
+<main class="grid" id="grid"></main>
+<script>
+const params = new URLSearchParams(location.search);
+const runId = params.get("run_id") || "browser-mwdawbfs";
+const grid = document.getElementById("grid");
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
+}
+
+async function load() {
+  const response = await fetch(`/api/gen-tests/renders?run_id=${encodeURIComponent(runId)}`);
+  const payload = await response.json();
+  grid.innerHTML = "";
+  for (const item of payload.items) {
+    const card = document.createElement("div");
+    card.className = "card";
+    const badge = item.status === "passed" ? '<span class="ok">PASS</span>' : '<span class="bad">FAIL</span>';
+    card.innerHTML = `<div class="name">${escapeHtml(item.key)} ${badge}</div>
+      <a href="${item.png_url}" target="_blank"><img src="${item.png_url}" alt="${escapeHtml(item.key)}"></a>
+      <div class="muted">view ${escapeHtml(item.view || "-")} · filled ${item.ratio ?? "-"} · ${item.seconds ?? "-"}s</div>`;
+    grid.appendChild(card);
+  }
+  document.getElementById("summary").textContent =
+    `${payload.passed} / ${payload.total} passed · run ${runId} · ${payload.render_seconds}s`;
+  document.body.dataset.done = "1";
+  document.body.dataset.runId = runId;
+}
+
+load();
+</script>
+</body>
+</html>

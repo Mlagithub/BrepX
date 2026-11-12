@@ -31,6 +31,7 @@ from cadwork.samples.registry import catalog as sample_catalog
 SAMPLE_TITLES = {name: spec.title for name, spec in SAMPLES.items()}
 
 from .mcp import build_mcp_server
+from .gen_tests import CASES, GEN_KEYS, run_case
 from .service import CADService, ServiceError
 from .store import Store, StoreError
 
@@ -107,6 +108,11 @@ class ImportRequest(BaseModel):
     format: str = "step"
 
 
+class GenRunRequest(BaseModel):
+    key: str
+    run_id: str | None = None
+
+
 class PickRequest(BaseModel):
     version: int | None = None
     point: list[float]
@@ -144,6 +150,89 @@ def register_routes(app: FastAPI, service: CADService) -> None:
         from cadwork import smlib as S
 
         return {"status": "ok", "version": __version__, "smlibpy": S.VERSION}
+
+    @app.get("/gen-tests", response_class=HTMLResponse)
+    def gen_tests_page() -> HTMLResponse:
+        return HTMLResponse((Path(__file__).with_name("gen_tests.html")).read_text(encoding="utf-8"))
+
+    @app.get("/gen-tests/gallery", response_class=HTMLResponse)
+    def gen_gallery_page() -> HTMLResponse:
+        return HTMLResponse((Path(__file__).with_name("gen_gallery.html")).read_text(encoding="utf-8"))
+
+    @app.get("/api/gen-tests/renders")
+    def gen_renders(run_id: str = "browser-mwdawbfs") -> dict[str, Any]:
+        if not run_id.replace("-", "").replace("_", "").isalnum():
+            return JSONResponse({"error": "invalid run id"}, status_code=400)
+        folder = Path(service.store.root) / "gen-evidence" / run_id
+        entries = []
+        for key in GEN_KEYS:
+            stem = key.replace(".", "_")
+            payload_path = folder / f"{stem}.render.json"
+            png = folder / "render" / f"{stem}.png"
+            payload = {}
+            if payload_path.is_file():
+                try:
+                    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+                except Exception:
+                    payload = {}
+            entries.append({
+                "key": key,
+                "status": payload.get("status", "missing"),
+                "view": payload.get("view"),
+                "ratio": payload.get("ratio"),
+                "seconds": payload.get("seconds"),
+                "png_url": f"/gen-evidence/{run_id}/render/{stem}.png" if png.is_file() else None,
+            })
+        summary = {}
+        summary_path = folder / "renders.json"
+        if summary_path.is_file():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except Exception:
+                summary = {}
+        return {
+            "run_id": run_id,
+            "total": len(entries),
+            "passed": sum(1 for item in entries if item["status"] == "passed"),
+            "render_seconds": summary.get("seconds"),
+            "items": entries,
+        }
+
+    @app.get("/api/gen-tests/cases")
+    def gen_test_cases() -> dict[str, Any]:
+        return {"keys": list(GEN_KEYS), "total": len(GEN_KEYS)}
+
+    @app.post("/api/gen-tests/run")
+    def gen_test_run(body: GenRunRequest) -> dict[str, Any]:
+        if body.key not in CASES:
+            return JSONResponse({"error": "unknown GEN case"}, status_code=404)
+        run_id = body.run_id or "browser"
+        if not run_id.replace("-", "").replace("_", "").isalnum():
+            return JSONResponse({"error": "invalid run id"}, status_code=400)
+        result = run_case(body.key, Path(service.store.root) / "gen-evidence", run_id)
+        artifact = result.get("artifact")
+        if artifact:
+            result["artifact_url"] = f"/gen-evidence/{run_id}/{Path(artifact).name}"
+        return result
+
+    @app.get("/gen-evidence/{run_id}/{filename}")
+    def gen_evidence(run_id: str, filename: str) -> Response:
+        safe_root = Path(service.store.root) / "gen-evidence" / run_id
+        safe_name = Path(filename).name
+        path = safe_root / safe_name
+        if safe_name != filename or not path.is_file():
+            return JSONResponse({"error": "evidence not found"}, status_code=404)
+        media = "application/json" if path.suffix == ".json" else "application/step"
+        return FileResponse(path, media_type=media, filename=safe_name)
+
+    @app.get("/gen-evidence/{run_id}/render/{filename}")
+    def gen_render_evidence(run_id: str, filename: str) -> Response:
+        safe_root = Path(service.store.root) / "gen-evidence" / run_id / "render"
+        safe_name = Path(filename).name
+        path = safe_root / safe_name
+        if safe_name != filename or not path.is_file():
+            return JSONResponse({"error": "render not found"}, status_code=404)
+        return FileResponse(path, media_type="image/png", filename=safe_name)
 
     @app.get("/api/catalog")
     def catalog() -> list[dict[str, Any]]:
