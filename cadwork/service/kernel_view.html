@@ -339,7 +339,7 @@ const applyWire = () => {
       const edges = new THREE.LineSegments(
         new THREE.EdgesGeometry(child.geometry, 16),
         new THREE.LineBasicMaterial({
-          color: palette.edge.clone(), transparent: true, opacity: 0.28, depthWrite: false,
+          color: palette.edge.clone(), transparent: true, opacity: 0.5, depthWrite: false,
         }),
       )
       child.userData.edges = edges
