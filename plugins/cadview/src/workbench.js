@@ -176,7 +176,11 @@ const css = `
     color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-check { font-size: 11px; color: var(--bxw-soft); }
   .bxw-check[data-ok="false"] { color: var(--bxw-bad); }
-  .bxw-dock { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); }
+  .bxw-dock { position: relative; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); }
+  .bxw-history-peek { position: absolute; right: 18px; bottom: calc(100% + 7px); z-index: 18; width: min(420px, 70vw);
+    max-height: 120px; overflow: hidden; padding: 8px 10px; border: 1px solid var(--bxw-line); border-radius: 7px;
+    background: var(--bxw-panel); color: var(--bxw-soft); box-shadow: 0 10px 26px rgb(0 0 0 / 18%); font-size: 11px; line-height: 1.5; }
+  .bxw-history-peek[hidden] { display: none; }
   .bxw-dock-active { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 7px 18px; border-bottom: 1px solid var(--bxw-line);
     background: color-mix(in srgb, var(--bxw-accent) 6%, var(--bxw-panel)); }
   .bxw-dock-active[hidden] { display: none; }
@@ -474,7 +478,8 @@ export function mountWorkbench(host, options) {
   const dockStatus = el('span', { className: 'bxw-dock-status' }, '等待指令')
   const historyToggle = el('button', { type: 'button', className: 'bxw-dock-history-toggle' }, '历史')
   dockBar.append(dockAgent, dockStatus, historyToggle)
-  dock.append(activeCard, historyPanel, dockBar)
+  const historyPeek = el('div', { className: 'bxw-history-peek', hidden: true })
+  dock.append(activeCard, historyPanel, historyPeek, dockBar)
 
   const composer = el('form', { className: 'bxw-composer' })
   const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
@@ -638,6 +643,7 @@ export function mountWorkbench(host, options) {
 
   const openHistory = (open) => {
     state.historyOpen = Boolean(open)
+    if (state.historyOpen) historyPeek.hidden = true
     historyPanel.hidden = !state.historyOpen
     setComposerTarget(state.historyOpen)
     renderDock()
@@ -854,6 +860,29 @@ export function mountWorkbench(host, options) {
   agentButton.addEventListener('click', toggleHistory)
   dockAgent.addEventListener('click', toggleHistory)
   historyToggle.addEventListener('click', toggleHistory)
+  let peekTimer = null
+  const hidePeek = () => {
+    clearTimeout(peekTimer)
+    historyPeek.hidden = true
+  }
+  const showPeek = () => {
+    if (state.historyOpen) return
+    peekTimer = setTimeout(() => {
+      const summary = state.dockQuestion
+        ? state.dockQuestionText
+        : state.modeling
+          ? 'Agent 正在建模，完整过程在历史中。'
+          : state.plan?.plan?.goal
+            ? `当前计划：${state.plan.plan.goal}`
+            : '点击查看完整 Agent 历史'
+      historyPeek.textContent = String(summary || '').slice(0, 180)
+      historyPeek.hidden = false
+    }, 420)
+  }
+  historyToggle.addEventListener('mouseenter', showPeek)
+  historyToggle.addEventListener('mouseleave', hidePeek)
+  historyToggle.addEventListener('focus', showPeek)
+  historyToggle.addEventListener('blur', hidePeek)
   activeAction.addEventListener('click', () => {
     if (state.dockQuestion) openHistory(true)
     else if (state.modeling) openHistory(true)
