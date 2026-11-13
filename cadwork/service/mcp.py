@@ -297,6 +297,11 @@ def build_mcp_server(service: CADService) -> MCPServer:
             return service.plan_edit(document_id, ops, base_revision=base_revision, goal=goal)
         except ServiceError as exc:
             raise _fail(exc) from exc
+        except Exception as exc:
+            raise ToolError(
+                f"PLAN_INVALID: {type(exc).__name__}: {exc} "
+                "(hint: call plan_schema; each op needs op and a valid node shape)"
+            ) from exc
 
     @server.tool()
     def plan_compile(document_id: str) -> dict[str, Any]:

@@ -91,9 +91,11 @@ const style = () => {
       border:1px solid color-mix(in srgb, var(--bx-warn) 55%, transparent);color:var(--bx-fg);font-size:11px}
     .bx-replay.on{display:flex}
 
-    .bx-hub{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:14;
-      display:flex;flex-direction:column;gap:6px;width:min(820px, calc(100% - 18px));pointer-events:none}
-    .bx-hub > *{pointer-events:auto}
+    .bx-hub{position:relative;left:auto;bottom:auto;transform:none;z-index:14;
+      display:flex;flex-direction:column;gap:6px;width:100%;max-height:38vh;overflow:auto;
+      padding:8px 9px;border-top:1px solid var(--bx-line);background:var(--bx-panel);
+      flex:0 0 auto;pointer-events:auto}
+    .bx-hub > *{pointer-events:auto;flex:0 0 auto}
     .bx-row{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:var(--bx-r-md);
       border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 93%, transparent);
       backdrop-filter:blur(9px);flex-wrap:wrap}
@@ -101,7 +103,25 @@ const style = () => {
       background:color-mix(in srgb, var(--bx-bad) 14%, var(--bx-panel));color:var(--bx-fg);font-size:11px}
     .bx-banner.on{display:flex}
     .bx-banner .grow{flex:1;min-width:120px}
-    .bx-stepper{overflow-x:auto;scrollbar-width:thin}
+    .bx-stepper{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin;min-height:34px;align-items:center}
+    .bx-planbar{gap:8px;font-size:11px}
+    .bx-planbar .grow{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bx-planbar .bad{color:var(--bx-bad)}
+    .bx-planbar .ok{color:var(--bx-ok)}
+    .bx-planlist{display:none;flex-direction:column;gap:3px;max-height:240px;overflow:auto;
+      padding:5px 8px;border:1px solid var(--bx-line);border-radius:var(--bx-r-md);
+      background:var(--bx-bg);font:11px/1.45 var(--bx-mono)}
+    .bx-planlist.on{display:flex}
+    .bx-plan-node{display:flex;align-items:flex-start;gap:7px;padding:2px 0;border-bottom:1px solid var(--bx-line)}
+    .bx-plan-node:last-child{border-bottom:0}
+    .bx-plan-node .state{min-width:46px;font-weight:600}
+    .bx-plan-node .state.done{color:var(--bx-ok)}
+    .bx-plan-node .state.failed,.bx-plan-node .state.blocked{color:var(--bx-bad)}
+    .bx-plan-node .state.running{color:var(--bx-accent)}
+    .bx-plan-node .state.pending{color:var(--bx-fg-3)}
+    .bx-plan-node .body{display:flex;flex-direction:column;gap:1px;min-width:0}
+    .bx-plan-node .body b{font-weight:600;color:var(--bx-fg)}
+    .bx-plan-node .body span{color:var(--bx-fg-3);overflow-wrap:anywhere}
     .bx-chip{height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--bx-line);
       background:var(--bx-bg);color:var(--bx-fg-2);font:11px/1 var(--bx-mono);cursor:pointer;
       display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -157,7 +177,7 @@ const style = () => {
     .bx-variant-actions{display:flex;gap:4px;margin-top:auto}
     .bx-root .bx-variant-actions button{height:22px;padding:0 8px;font-size:10px;flex:1}
 
-    .bx-composer{display:flex;flex-direction:column;gap:5px;padding:6px 8px;border-radius:var(--bx-r-md);
+    .bx-composer{position:sticky;bottom:0;z-index:2;display:flex;flex-direction:column;gap:5px;padding:6px 8px;border-radius:var(--bx-r-md);
       border:1px solid var(--bx-line);background:color-mix(in srgb, var(--bx-panel) 95%, transparent);
       backdrop-filter:blur(10px)}
     .bx-pills{display:flex;flex-wrap:wrap;gap:4px}
@@ -238,7 +258,7 @@ export function mountViewport(host, base) {
   const refreshDocsButton = el('button', null, '刷新')
   refreshDocsButton.type = 'button'
   refreshDocsButton.title = '刷新文档列表'
-  head.append(brand, docLabel, checkBadge, metricText, docSelect, newDocButton, refreshDocsButton)
+  head.append(brand, checkBadge, metricText, docSelect, newDocButton, refreshDocsButton)
   root.append(head)
 
   const stage = el('div', 'bx-stage')
@@ -326,6 +346,13 @@ export function mountViewport(host, base) {
   const bannerClose = el('button', null, '×')
   banner.append(bannerText, bannerClose)
   const stepper = el('div', 'bx-row bx-stepper')
+  const planBar = el('div', 'bx-row bx-planbar')
+  const planText = el('span', 'grow', '计划 —')
+  const planToggle = el('button', null, '展开')
+  planToggle.type = 'button'
+  planToggle.disabled = true
+  planBar.append(planText, planToggle)
+  const planList = el('div', 'bx-planlist')
   const mutes = el('div', 'bx-row bx-mutes')
   const card = el('div', 'bx-card')
   const variants = el('div', 'bx-variants')
@@ -347,14 +374,16 @@ export function mountViewport(host, base) {
   const hint = el('span', 'bx-hint', '')
   inputRow.append(prompt, sendButton, stopButton, undoButton)
   composer.append(pills, intentBar, inputRow, hint)
-  hub.append(banner, stepper, mutes, card, variants, composer)
-  stage.append(hub)
+  hub.append(banner, stepper, planBar, planList, mutes, card, variants, composer)
   root.append(stage)
+  root.append(hub)
   host.append(root)
 
   let serviceBase = base
   let currentDoc = null
   let state = null
+  let planView = null
+  let planOpen = false
   let kernelReady = false
   let replayVersion = null
   let ghostOn = false
@@ -493,6 +522,7 @@ export function mountViewport(host, base) {
     }
     const scrollLeft = stepper.scrollLeft
     for (const milestone of milestones) {
+      if (milestone.version === 0) continue
       const chip = el('button', 'bx-chip')
       chip.type = 'button'
       const isLive = milestone.version === liveVersion()
@@ -707,10 +737,41 @@ export function mountViewport(host, base) {
     }
   }
 
+  const renderPlan = () => {
+    const plan = planView?.plan
+    if (!plan || !Array.isArray(plan.nodes) || !plan.nodes.length) {
+      planBar.hidden = true
+      planList.classList.remove('on')
+      return
+    }
+    planBar.hidden = false
+    const nodes = plan.nodes
+    const failed = nodes.filter((node) => ['failed', 'blocked'].includes(node.status)).length
+    const done = nodes.filter((node) => node.status === 'done').length
+    const running = nodes.filter((node) => node.status === 'running').length
+    planText.className = 'grow ' + (failed ? 'bad' : 'ok')
+    planText.textContent = `计划 ${done}/${nodes.length} 完成 · rev ${plan.revision}` +
+      (failed ? ` · ${failed} 失败` : running ? ' · 运行中' : '')
+    planToggle.disabled = false
+    planToggle.textContent = planOpen ? '收起' : '展开'
+    planList.classList.toggle('on', planOpen)
+    planList.textContent = ''
+    for (const node of nodes) {
+      const row = el('div', 'bx-plan-node')
+      row.append(el('span', `state ${node.status}`, node.status))
+      const body = el('div', 'body')
+      body.append(el('b', null, node.id), el('span', null, node.title || node.action || node.kind))
+      if (node.error) body.append(el('span', null, node.error))
+      row.append(body)
+      planList.append(row)
+    }
+  }
+
   const renderAll = () => {
     renderHeader()
     renderReplay()
     renderStepper()
+    renderPlan()
     renderMutes()
     renderCard()
     renderVariants()
@@ -728,6 +789,11 @@ export function mountViewport(host, base) {
   const loadState = async (documentId) => {
     currentDoc = await fetchJSON(`${serviceBase}/api/docs/${documentId}/state`)
     activeIntent = currentDoc.active_intent || null
+    try {
+      planView = await fetchJSON(`${serviceBase}/api/docs/${documentId}/plan`)
+    } catch (error) {
+      planView = null
+    }
     if (replayVersion !== null && !currentDoc.milestones.some((m) => m.version === replayVersion)) {
       replayVersion = null
     }
@@ -997,6 +1063,10 @@ export function mountViewport(host, base) {
       sendButton.disabled = false
     }
   }
+  planToggle.addEventListener('click', () => {
+    planOpen = !planOpen
+    renderPlan()
+  })
   composer.addEventListener('submit', submitIntent)
 
   prompt.addEventListener('keydown', (event) => {
