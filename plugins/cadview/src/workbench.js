@@ -8,7 +8,7 @@ const css = `
     position: absolute;
     inset: 0;
     display: grid;
-    grid-template-rows: 56px minmax(0, 1fr) auto;
+    grid-template-rows: 56px minmax(0, 1fr);
     overflow: hidden;
     color: var(--dsw-alias-label-primary, #e8edf5);
     background: var(--dsw-alias-bg-base, #101318);
@@ -33,7 +33,7 @@ const css = `
     border-radius: 6px; background: transparent; cursor: pointer; white-space: nowrap;
   }
   .bxw-shell button:hover { background: var(--bxw-layer); border-color: color-mix(in srgb, var(--bxw-accent) 55%, var(--bxw-line)); }
-  .bxw-shell button:focus-visible, .bxw-shell select:focus-visible, .bxw-shell textarea:focus-visible {
+  .bxw-shell button:focus-visible, .bxw-shell select:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--bxw-accent) 70%, transparent); outline-offset: 1px;
   }
   .bxw-shell button:disabled { opacity: .5; cursor: default; }
@@ -62,6 +62,9 @@ const css = `
     border-radius: 999px; border: 1px solid var(--bxw-line); color: var(--bxw-soft); font-size: 11px; flex: none; }
   .bxw-badge[data-tone="ok"] { color: var(--bxw-ok); border-color: color-mix(in srgb, var(--bxw-ok) 42%, transparent); }
   .bxw-badge[data-tone="bad"] { color: var(--bxw-bad); border-color: color-mix(in srgb, var(--bxw-bad) 42%, transparent); }
+  .bxw-badge-button { cursor: pointer; }
+  .bxw-badge-button:hover { border-color: color-mix(in srgb, var(--bxw-accent) 55%, var(--bxw-line)); }
+  .bxw-badge-button[aria-pressed="true"] { background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
   .bxw-progress { display: none; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; }
   .bxw-shell[data-running="true"] .bxw-progress { display: block; }
   .bxw-progress::after { content: ""; display: block; width: 42%; height: 100%; background: var(--bxw-accent);
@@ -69,32 +72,36 @@ const css = `
   @keyframes bxw-progress { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
   @media (prefers-reduced-motion: reduce) { .bxw-progress::after { animation: none; width: 100%; opacity: .55; } }
   .bxw-actions { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
-  .bxw-view-trigger, .bxw-agent-trigger { gap: 6px; padding: 0 9px; }
-  .bxw-view-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
-  .bxw-agent-trigger[aria-pressed="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
+  .bxw-view-trigger, .bxw-structure-trigger { gap: 6px; padding: 0 9px; }
+  .bxw-structure-trigger[aria-pressed="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
     background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); color: var(--bxw-primary); }
+  .bxw-view-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
   .bxw-view-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: 196px; padding: 5px;
     border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-panel);
     box-shadow: 0 12px 30px rgba(0,0,0,.18); }
   .bxw-view-menu[hidden] { display: none; }
+  .bxw-menu-scrim { position: fixed; inset: 0; z-index: 19; }
+  .bxw-menu-scrim[hidden] { display: none; }
   .bxw-view-menu button { width: 100%; height: 32px; justify-content: flex-start; gap: 8px; padding: 0 8px;
     border-color: transparent; background: transparent; color: var(--bxw-primary); font-size: 12px; }
   .bxw-view-menu button:hover { background: var(--bxw-layer); }
   .bxw-view-menu button::before { content: ""; width: 14px; color: var(--bxw-accent); font-weight: 700; }
   .bxw-view-menu button[aria-checked="true"]::before { content: "✓"; }
   .bxw-menu-sep { height: 1px; margin: 4px 6px; background: var(--bxw-line); }
-  .bxw-main { position: relative; min-height: 0; display: grid; grid-template-columns: var(--bxw-left-width, 236px) minmax(0, 1fr) var(--bxw-right-width, 292px); }
-  .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
-  .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) var(--bxw-right-width, 292px); }
-  .bxw-shell[data-inspector="off"] .bxw-main { grid-template-columns: var(--bxw-left-width, 236px) minmax(0, 1fr); }
-  .bxw-shell[data-inspector="off"][data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr); }
-  .bxw-resizer { position: absolute; top: 0; bottom: 0; z-index: 8; width: 7px; margin-left: -3px;
+  .bxw-main { position: relative; min-height: 0; overflow: hidden; background: var(--bxw-panel); }
+  .bxw-stage { position: absolute; inset: 0; }
+  .bxw-models { position: absolute; z-index: 10; left: 14px; top: 64px; bottom: calc(var(--bxw-dock-h, 112px) + 26px);
+    width: min(var(--bxw-left-width, 236px), 34vw); min-width: 0; display: flex; flex-direction: column;
+    border: 1px solid var(--bxw-line); border-radius: 9px; background: var(--bxw-panel);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 18%); overflow: hidden; }
+  .bxw-shell[data-models="off"] .bxw-models { display: none; }
+  .bxw-resizer { position: absolute; top: 64px; bottom: calc(var(--bxw-dock-h, 112px) + 26px); z-index: 12; width: 7px; margin-left: -3px;
     cursor: col-resize; background: transparent; touch-action: none; }
   .bxw-resizer:hover, .bxw-resizer[data-drag="true"] { background: color-mix(in srgb, var(--bxw-accent) 35%, transparent); }
-  .bxw-resizer-left { left: var(--bxw-left-width, 236px); }
-  .bxw-resizer-right { right: var(--bxw-right-width, 292px); }
+  .bxw-resizer-left { left: calc(14px + min(var(--bxw-left-width, 236px), 34vw)); }
+  .bxw-resizer-right { top: 14px; bottom: auto; height: var(--bxw-inspector-h, 0px);
+    right: calc(14px + min(var(--bxw-right-width, 292px), 36vw)); }
   .bxw-resizer:focus-visible { outline: 2px solid var(--bxw-accent); outline-offset: -2px; }
-  .bxw-shell[data-models="off"] .bxw-models { display: none; }
   .bxw-models-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--bxw-line); }
   .bxw-models-head strong { font-size: 12px; font-weight: 600; }
   .bxw-structure-meta { margin-left: auto; color: var(--bxw-muted); font: 10px/1 var(--dsw-font-mono, ui-monospace, monospace); }
@@ -125,7 +132,7 @@ const css = `
   .bxw-plan-card-head { display: flex; align-items: center; gap: 7px; }
   .bxw-plan-card-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
   .bxw-plan-card-meta { margin-top: 3px; color: var(--bxw-muted); font: 10px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
-  .bxw-stage { position: relative; min-width: 0; min-height: 0; background: color-mix(in srgb, var(--bxw-panel) 70%, var(--bxw-bg, #101318)); }
+  .bxw-stage { min-width: 0; min-height: 0; background: color-mix(in srgb, var(--bxw-panel) 70%, var(--bxw-bg, #101318)); }
   .bxw-frame { width: 100%; height: 100%; border: 0; display: block; }
   .bxw-tools { position: absolute; top: 12px; left: 12px; display: flex; gap: 4px; padding: 4px;
     border: 1px solid var(--bxw-line); border-radius: 8px; background: color-mix(in srgb, var(--bxw-panel) 92%, transparent);
@@ -134,11 +141,10 @@ const css = `
   .bxw-tools button { height: 26px; padding: 0 8px; border-color: transparent; color: var(--bxw-soft); }
   .bxw-tools button:hover { color: var(--bxw-primary, #e8edf5); background: var(--bxw-layer); }
   .bxw-tools button[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 12%, transparent); }
-  .bxw-caption { position: absolute; left: 16px; bottom: 12px; display: flex; align-items: center; gap: 12px;
-    padding: 6px 9px; border: 1px solid var(--bxw-line); border-radius: 6px;
-    background: color-mix(in srgb, var(--bxw-panel) 88%, transparent); color: var(--bxw-muted);
-    font: 11px/1.3 var(--dsw-font-mono, ui-monospace, monospace); pointer-events: none; }
-  .bxw-caption b { color: var(--bxw-soft); font-weight: 500; }
+  .bxw-caption { display: flex; align-items: center; gap: 0; white-space: nowrap;
+    color: var(--bxw-muted); font: 10px/1.3 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-caption span + span::before { content: "·"; margin: 0 6px; color: var(--bxw-line); }
+  .bxw-dock-bar .bxw-caption { margin-left: auto; }
   .bxw-empty { position: absolute; inset: 0; display: none; place-items: center; padding: 24px; }
   .bxw-empty[data-on="true"] { display: grid; }
   .bxw-empty-card { max-width: 340px; text-align: center; }
@@ -148,7 +154,9 @@ const css = `
     border-top-color: var(--bxw-accent); border-radius: 50%; animation: bxw-spin .7s linear infinite; }
   @keyframes bxw-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .bxw-spinner { animation: none; } }
-  .bxw-inspector { min-width: 0; border-left: 1px solid var(--bxw-line); background: var(--bxw-panel); overflow: auto; }
+  .bxw-inspector { position: absolute; z-index: 10; right: 14px; top: 14px; bottom: auto; max-height: calc(100% - 38px - var(--bxw-dock-h, 112px));
+    width: min(var(--bxw-right-width, 292px), 36vw); min-width: 0; border: 1px solid var(--bxw-line);
+    border-radius: 9px; background: var(--bxw-panel); overflow: auto; box-shadow: 0 12px 32px rgb(0 0 0 / 18%); }
   .bxw-inspector[hidden] { display: none; }
   .bxw-inspector-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
     gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--bxw-line); background: var(--bxw-panel); }
@@ -176,29 +184,36 @@ const css = `
     color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-check { font-size: 11px; color: var(--bxw-soft); }
   .bxw-check[data-ok="false"] { color: var(--bxw-bad); }
-  .bxw-dock { position: relative; display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); }
+  .bxw-dock { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 15;
+    width: min(900px, calc(100% - 28px)); display: flex; flex-direction: column;
+    min-height: 0; border: 1px solid var(--bxw-line); border-radius: 10px; background: var(--bxw-panel);
+    box-shadow: 0 12px 34px rgb(0 0 0 / 14%); }
   .bxw-history-peek { position: absolute; right: 18px; bottom: calc(100% + 7px); z-index: 18; width: min(420px, 70vw);
     max-height: 120px; overflow: hidden; padding: 8px 10px; border: 1px solid var(--bxw-line); border-radius: 7px;
     background: var(--bxw-panel); color: var(--bxw-soft); box-shadow: 0 10px 26px rgb(0 0 0 / 18%); font-size: 11px; line-height: 1.5; }
   .bxw-history-peek[hidden] { display: none; }
   .bxw-dock-active { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 7px 18px; border-bottom: 1px solid var(--bxw-line);
+    border-radius: 10px 10px 0 0;
     background: color-mix(in srgb, var(--bxw-accent) 6%, var(--bxw-panel)); }
   .bxw-dock-active[hidden] { display: none; }
   .bxw-dock-active b { color: var(--bxw-primary); font-size: 12px; font-weight: 550; flex: none; }
   .bxw-dock-active span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-soft); font-size: 11px; }
   .bxw-dock-active button { flex: none; height: 26px; padding: 0 9px; font-size: 11px; }
-  .bxw-dock-history { height: min(320px, 38vh); min-height: 180px; margin: 0 18px 10px; overflow: hidden; display: flex; flex-direction: column;
-    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-layer); }
+  .bxw-dock-history { position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%); z-index: 18;
+    width: min(700px, calc(100vw - 48px)); height: min(360px, 44vh); min-height: 180px; overflow: hidden; display: flex; flex-direction: column;
+    border: 1px solid var(--bxw-line); border-radius: 10px; background: var(--bxw-panel); box-shadow: 0 18px 46px rgb(0 0 0 / 24%); }
   .bxw-dock-history[hidden] { display: none; }
-  .bxw-dock-history .bxw-agent-slot { width: 100%; max-width: 920px; margin: 0 auto; padding: 8px 16px 12px; }
-  .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel); }
+  .bxw-dock-history .bxw-agent-slot { width: 100%; max-width: 660px; margin: 0 auto; padding: 8px 16px 12px; }
+  .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
+    border-radius: 10px 10px 0 0; }
+  .bxw-dock:has(.bxw-dock-active:not([hidden])) .bxw-dock-bar { border-radius: 0; }
   .bxw-dock-agent { height: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); font-size: 11px; }
   .bxw-dock-agent svg { width: 14px; height: 14px; }
   .bxw-dock-agent[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
   .bxw-dock-status { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-muted); font-size: 10px; }
   .bxw-dock-history-toggle { height: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-muted); font-size: 10px; }
   .bxw-dock-history-toggle:hover { color: var(--bxw-primary); background: var(--bxw-layer); }
-  .bxw-composer { border-top: 0; background: var(--bxw-panel); padding: 0 18px 12px; }
+  .bxw-composer { border-top: 0; background: var(--bxw-panel); padding: 0 10px 10px; border-radius: 0 0 10px 10px; }
   .bxw-composer[data-target="agent"] { border-top-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
   .bxw-composer-target { flex: none; height: 30px; display: inline-flex; align-items: center; padding: 0 8px;
     border: 1px solid var(--bxw-line); border-radius: 999px; color: var(--bxw-muted); font-size: 10px; user-select: none; }
@@ -213,20 +228,20 @@ const css = `
     background: color-mix(in srgb, var(--bxw-accent) 16%, transparent); color: var(--bxw-primary, #e8edf5); }
   .bxw-send:hover { background: color-mix(in srgb, var(--bxw-accent) 26%, transparent); }
   .bxw-hint { max-width: none; margin: 6px 0 0; color: var(--bxw-muted); font-size: 10px; }
-  .bxw-toast { position: fixed; right: 20px; bottom: 92px; z-index: 30; max-width: 360px; padding: 9px 12px;
+  .bxw-toast { position: fixed; right: 20px; bottom: calc(var(--bxw-dock-h, 112px) + 24px); z-index: 30; max-width: 360px; padding: 9px 12px;
     border: 1px solid var(--bxw-line); border-radius: 7px; background: var(--bxw-panel); color: var(--bxw-soft);
     box-shadow: 0 10px 28px rgb(0 0 0 / 28%); opacity: 0; transform: translateY(6px); pointer-events: none;
     transition: opacity .16s ease, transform .16s ease; font-size: 12px; }
   .bxw-toast[data-on="true"] { opacity: 1; transform: none; }
   .bxw-toast[data-tone="error"] { border-color: color-mix(in srgb, var(--bxw-bad) 45%, var(--bxw-line)); color: var(--bxw-bad); }
   @media (max-width: 1280px) {
-    .bxw-main { grid-template-columns: 210px minmax(0, 1fr) 292px; }
-  }
-  @media (max-width: 1080px) {
-    .bxw-main { grid-template-columns: minmax(0, 1fr); }
-    .bxw-models, .bxw-inspector, .bxw-resizer { display: none; }
+    .bxw-models { width: min(var(--bxw-left-width, 210px), 38vw); }
+    .bxw-inspector { width: min(var(--bxw-right-width, 292px), 42vw); }
+    .bxw-resizer-left { left: calc(14px + min(var(--bxw-left-width, 210px), 38vw)); }
+    .bxw-resizer-right { right: calc(14px + min(var(--bxw-right-width, 292px), 42vw)); }
   }
   @media (max-width: 720px) {
+    .bxw-models, .bxw-inspector, .bxw-resizer, .bxw-structure-trigger { display: none; }
     .bxw-brand span { display: none; }
     .bxw-context select { max-width: 44vw; }
     .bxw-actions .bxw-optional { display: none; }
@@ -324,14 +339,13 @@ export function mountWorkbench(host, options) {
     inspector: true,
     busy: false,
     selection: null,
-    leftWidth: 236,
-    rightWidth: 292,
+    leftWidth: 260,
+    rightWidth: 320,
     timings: {},
     designStarted: null,
     renderMs: null,
     modeling: false,
     simplified: false,
-    focus: false,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -345,10 +359,17 @@ export function mountWorkbench(host, options) {
   const contextLabel = el('span', { className: 'bxw-context-label' }, '模型')
   const docSelect = el('select', { 'aria-label': '当前模型' })
   const version = el('span', { className: 'bxw-version' }, '')
-  const checkBadge = el('span', { className: 'bxw-badge' }, '检查 —')
+  const checkBadge = el('button', { type: 'button', className: 'bxw-badge bxw-badge-button', 'aria-label': '打开检查器', title: '打开检查器' }, '检查 —')
   const metricBadge = el('span', { className: 'bxw-badge' }, '—')
   context.append(contextLabel, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
+  const structureButton = el('button', {
+    className: 'bxw-structure-trigger',
+    title: '显示或隐藏结构',
+    'aria-label': '显示或隐藏结构',
+    'aria-pressed': 'false',
+    html: ICONS.panel + '<span>结构</span>',
+  })
   const viewButton = el('button', {
     className: 'bxw-view-trigger',
     title: '视图与刷新',
@@ -356,13 +377,6 @@ export function mountWorkbench(host, options) {
     'aria-haspopup': 'menu',
     'aria-expanded': 'false',
     html: ICONS.sliders + '<span>视图</span>' + ICONS.chevron,
-  })
-  const agentButton = el('button', {
-    className: 'bxw-agent-trigger',
-    title: '打开 Agent 线程',
-    'aria-label': '打开 Agent 线程',
-    'aria-pressed': 'false',
-    html: ICONS.chat + '<span>Agent</span>',
   })
   const viewMenu = el('div', {
     className: 'bxw-view-menu',
@@ -373,10 +387,9 @@ export function mountWorkbench(host, options) {
   const menuModels = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '结构面板')
   const menuNav = el('button', { type: 'button', role: 'menuitem' }, '宿主侧栏')
   const menuInspector = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '检查器')
-  const menuFocus = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'false' }, '专注模式')
   const menuRefresh = el('button', { type: 'button', role: 'menuitem' }, '刷新模型状态')
-  viewMenu.append(menuModels, menuNav, menuInspector, menuFocus, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
-  actions.append(viewButton, agentButton, viewMenu)
+  viewMenu.append(menuModels, menuNav, menuInspector, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
+  actions.append(structureButton, viewButton, viewMenu)
   const progressLine = el('div', { className: 'bxw-progress', 'aria-hidden': 'true' })
   header.append(brand, context, actions, progressLine)
 
@@ -403,12 +416,10 @@ export function mountWorkbench(host, options) {
   })
   tools.append(fitButton, wireButton)
   const caption = el('div', { className: 'bxw-caption' })
-  const captionMode = el('span', {}, '实时预览')
   const captionFaces = el('span', {}, '—')
-  const captionVolume = el('span', {}, '—')
   const captionTight = el('span', {}, '—')
   const captionTiming = el('span', {}, '')
-  caption.append(captionMode, captionFaces, captionVolume, captionTight, captionTiming)
+  caption.append(captionFaces, captionTight, captionTiming)
   const empty = el('div', { className: 'bxw-empty' })
   const emptyCard = el('div', { className: 'bxw-empty-card' })
   const emptySpinner = el('div', { className: 'bxw-spinner', hidden: true })
@@ -419,14 +430,15 @@ export function mountWorkbench(host, options) {
   emptyCard.append(emptyButton)
   empty.append(emptyCard)
   empty.dataset.on = 'false'
-  stage.append(frame, tools, caption, empty)
+  stage.append(frame, tools, empty)
 
   const models = el('aside', { className: 'bxw-models', 'aria-label': '当前模型结构' })
   const modelsHead = el('div', { className: 'bxw-models-head' })
   const modelsTitle = el('strong', {}, '结构')
   const structureMeta = el('span', { className: 'bxw-structure-meta' }, 'rev —')
   const modelsNew = el('button', { type: 'button', title: '新建模型', 'aria-label': '新建模型', html: ICONS.plus })
-  modelsHead.append(modelsTitle, structureMeta, modelsNew)
+  const modelsClose = el('button', { type: 'button', title: '关闭结构面板', 'aria-label': '关闭结构面板', html: ICONS.close })
+  modelsHead.append(modelsTitle, structureMeta, modelsClose, modelsNew)
   const structureProgress = el('div', { className: 'bxw-structure-progress', hidden: true })
   const structureList = el('div', { className: 'bxw-structure-list' })
   models.append(modelsHead, structureProgress, structureList)
@@ -479,7 +491,7 @@ export function mountWorkbench(host, options) {
   const dockAgent = el('button', { type: 'button', className: 'bxw-dock-agent', 'aria-label': '展开 Agent 历史', html: ICONS.chat + '<span>Agent</span>' })
   const dockStatus = el('span', { className: 'bxw-dock-status' }, '等待指令')
   const historyToggle = el('button', { type: 'button', className: 'bxw-dock-history-toggle' }, '历史')
-  dockBar.append(dockAgent, dockStatus, historyToggle)
+  dockBar.append(dockAgent, dockStatus, caption, historyToggle)
   const historyPeek = el('div', { className: 'bxw-history-peek', hidden: true })
   dock.append(activeCard, dockBar, historyPanel, historyPeek)
 
@@ -500,12 +512,22 @@ export function mountWorkbench(host, options) {
 
   dock.append(composer)
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
-  shell.append(header, main, dock, toastNode)
+  const menuScrim = el('div', { className: 'bxw-menu-scrim', hidden: true })
+  shell.append(header, main, dock, menuScrim, toastNode)
   main.append(models, stage, inspector)
   const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
   main.append(leftResizer, rightResizer)
   host.append(shell)
+
+  const dockResize = new ResizeObserver(() => {
+    shell.style.setProperty('--bxw-dock-h', `${Math.ceil(dock.getBoundingClientRect().height)}px`)
+  })
+  dockResize.observe(dock)
+  const inspectorResize = new ResizeObserver(() => {
+    shell.style.setProperty('--bxw-inspector-h', `${Math.ceil(inspector.getBoundingClientRect().height)}px`)
+  })
+  inspectorResize.observe(inspector)
 
   let toastTimer = null
   const toast = (text, tone = 'info', seconds = 4) => {
@@ -529,18 +551,10 @@ export function mountWorkbench(host, options) {
       checkBadge.textContent = '加载中…'
       checkBadge.dataset.tone = ''
       metricBadge.textContent = '—'
-    }
-  }
-
-  const setFocus = (on) => {
-    state.focus = Boolean(on)
-    menuFocus.setAttribute('aria-checked', state.focus ? 'true' : 'false')
-    if (state.focus) {
-      setModels(false)
-      setInspector(false)
-    } else {
-      setModels(true)
-      setInspector(true)
+      captionFaces.textContent = '—'
+      captionTight.textContent = '—'
+      captionTiming.textContent = ''
+      caption.title = ''
     }
   }
 
@@ -549,6 +563,7 @@ export function mountWorkbench(host, options) {
     inspector.hidden = !state.inspector
     rightResizer.hidden = !state.inspector
     shell.dataset.inspector = state.inspector ? 'on' : 'off'
+    checkBadge.setAttribute('aria-pressed', state.inspector ? 'true' : 'false')
     menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
   }
 
@@ -561,12 +576,12 @@ export function mountWorkbench(host, options) {
     } catch (error) { /* private mode */ }
   }
   const setLeftWidth = (width) => {
-    state.leftWidth = Math.max(190, Math.min(430, Math.round(width)))
+    state.leftWidth = Math.max(220, Math.min(380, Math.round(width)))
     shell.style.setProperty('--bxw-left-width', `${state.leftWidth}px`)
     saveLayout()
   }
   const setRightWidth = (width) => {
-    state.rightWidth = Math.max(240, Math.min(680, Math.round(width)))
+    state.rightWidth = Math.max(240, Math.min(480, Math.round(width)))
     shell.style.setProperty('--bxw-right-width', `${state.rightWidth}px`)
     saveLayout()
   }
@@ -580,20 +595,27 @@ export function mountWorkbench(host, options) {
     handle.dataset.drag = 'true'
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
+    try { handle.setPointerCapture(event.pointerId) } catch (error) { /* non-pointer input */ }
     const onMove = (moveEvent) => {
       const delta = side === 'left' ? moveEvent.clientX - startX : startX - moveEvent.clientX
       if (side === 'left') setLeftWidth(startWidth + delta)
       else setRightWidth(startWidth + delta)
     }
+    let ended = false
     const onEnd = () => {
+      if (ended) return
+      ended = true
       handle.dataset.drag = 'false'
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      try { handle.releasePointerCapture(event.pointerId) } catch (error) { /* already released */ }
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onEnd)
+      window.removeEventListener('pointercancel', onEnd)
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onEnd)
+    window.addEventListener('pointercancel', onEnd)
   }
 
   const setComposerTarget = (agent) => {
@@ -615,7 +637,6 @@ export function mountWorkbench(host, options) {
           ? '历史已展开'
           : '等待指令'
     dockAgent.setAttribute('aria-pressed', state.historyOpen ? 'true' : 'false')
-    agentButton.setAttribute('aria-pressed', state.historyOpen ? 'true' : 'false')
     historyToggle.textContent = state.historyOpen ? '收起历史' : '历史'
     if (state.historyOpen) {
       activeCard.hidden = true
@@ -667,12 +688,7 @@ export function mountWorkbench(host, options) {
     const changed = next !== state.dockQuestion
     state.dockQuestion = next
     state.dockQuestionText = next ? (text || '') : ''
-    if (next !== state.historyOpen) {
-      if (next) openHistory(true)
-      else renderDock()
-    } else {
-      renderDock()
-    }
+    renderDock()
     return changed
   }
 
@@ -812,7 +828,6 @@ export function mountWorkbench(host, options) {
         return true
       case 'checks': setInspector(true); return true
       case 'agent': openHistory(!state.historyOpen); return true
-      case 'focus': setFocus(!state.focus); return true
       case 'models': setModels(shell.dataset.models === 'off'); return true
       case 'new': createModel(); return true
       case 'refresh': loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')); return true
@@ -821,7 +836,7 @@ export function mountWorkbench(host, options) {
         window.open(`${base}/api/docs/${state.docId}/export/${arg || 'step'}`, '_blank', 'noopener')
         return true
       case 'help':
-        toast('命令：/fit /iso /top /front /right /wire /checks /agent /focus /models /new /refresh /export')
+        toast('命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export')
         return true
       default:
         toast(`未知命令：/${name}`, 'error', 4)
@@ -832,14 +847,17 @@ export function mountWorkbench(host, options) {
   const setModels = (on) => {
     shell.dataset.models = on ? 'on' : 'off'
     leftResizer.hidden = !on
+    structureButton.setAttribute('aria-pressed', on ? 'true' : 'false')
     menuModels.setAttribute('aria-checked', on ? 'true' : 'false')
   }
   const closeViewMenu = () => {
     viewMenu.hidden = true
+    menuScrim.hidden = true
     viewButton.setAttribute('aria-expanded', 'false')
   }
   const openViewMenu = () => {
     viewMenu.hidden = false
+    menuScrim.hidden = false
     viewButton.setAttribute('aria-expanded', 'true')
     menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
     menuModels.setAttribute('aria-checked', shell.dataset.models === 'off' ? 'false' : 'true')
@@ -854,16 +872,17 @@ export function mountWorkbench(host, options) {
   menuModels.addEventListener('click', () => { setModels(shell.dataset.models === 'off'); closeViewMenu() })
   menuNav.addEventListener('click', () => { options.onToggleNavigation?.(); closeViewMenu() })
   menuInspector.addEventListener('click', () => { setInspector(!state.inspector); closeViewMenu() })
-  menuFocus.addEventListener('click', () => { setFocus(!state.focus); closeViewMenu() })
   menuRefresh.addEventListener('click', () => {
     closeViewMenu()
     loadDocument(state.docId, true).catch((error) => toast(error.message, 'error'))
   })
   document.addEventListener('click', closeViewMenu)
+  menuScrim.addEventListener('click', closeViewMenu)
 
   const toggleHistory = () => openHistory(!state.historyOpen)
-  agentButton.addEventListener('click', toggleHistory)
   dockAgent.addEventListener('click', toggleHistory)
+  checkBadge.addEventListener('click', () => setInspector(!state.inspector))
+  modelsClose.addEventListener('click', () => setModels(false))
   historyToggle.addEventListener('click', toggleHistory)
   let peekTimer = null
   const hidePeek = () => {
@@ -894,6 +913,7 @@ export function mountWorkbench(host, options) {
     else setInspector(true)
   })
   modelsNew.addEventListener('click', createModel)
+  structureButton.addEventListener('click', () => setModels(shell.dataset.models === 'off'))
   leftResizer.addEventListener('pointerdown', (event) => startResize(event, 'left'))
   rightResizer.addEventListener('pointerdown', (event) => startResize(event, 'right'))
   const keyboardResize = (event, side) => {
@@ -1018,7 +1038,10 @@ export function mountWorkbench(host, options) {
     if (state.parseMs != null) parts.push(`解析 ${(state.parseMs / 1000).toFixed(1)}s`)
     if (state.edgesMs != null) parts.push(`边 ${(state.edgesMs / 1000).toFixed(1)}s`)
     if (state.renderMs != null) parts.push(`渲染 ${(state.renderMs / 1000).toFixed(1)}s`)
-    captionTiming.textContent = parts.join(' · ')
+    const total = [state.timings?.state, state.parseMs, state.edgesMs, state.renderMs]
+      .reduce((sum, value) => sum + (Number(value) || 0), 0)
+    captionTiming.textContent = total ? `${(total / 1000).toFixed(1)}s` : ''
+    caption.title = parts.join(' · ')
   }
 
   const renderState = () => {
@@ -1041,12 +1064,10 @@ export function mountWorkbench(host, options) {
     metricNodes.area.textContent = fmt(metrics.area, 1)
     metricNodes.watertight.textContent = metrics.watertight ? '是' : '否'
     captionFaces.textContent = `${fmt(metrics.faces)} 面`
-    captionVolume.textContent = `${fmt(metrics.volume, 0)} mm³`
     captionTight.textContent = metrics.watertight ? '水密' : '非水密'
     empty.dataset.on = 'false'
     state.version = doc.version ?? 0
     state.simplified = false
-    captionMode.textContent = '实时预览'
     renderPlan()
     renderChecks()
     renderTiming()
@@ -1255,6 +1276,7 @@ export function mountWorkbench(host, options) {
     } else if (data.type === 'pick' && data.pick) {
       state.selection = data.pick
       renderSelection()
+      setInspector(true)
     } else if (data.type === 'error') {
       toast(`视图错误：${data.text}`, 'error', 6)
     }
@@ -1282,7 +1304,7 @@ export function mountWorkbench(host, options) {
   let questionScanFrame = 0
   const scanDockQuestion = () => {
     const node = agentSlot.querySelector('[data-question-key]')
-    const text = node ? node.innerText.replace(/\s+/g, ' ').trim().slice(0, 180) : ''
+    const text = node ? node.textContent.replace(/\s+/g, ' ').trim().slice(0, 180) : ''
     setDockQuestion(Boolean(node), text)
   }
   const dockObserver = new MutationObserver(() => {
@@ -1293,14 +1315,15 @@ export function mountWorkbench(host, options) {
 
   try {
     const savedLayout = JSON.parse(localStorage.getItem('cadview.layout') || '{}')
-    if (Number.isFinite(savedLayout.left)) state.leftWidth = Math.max(190, Math.min(430, savedLayout.left))
-    if (Number.isFinite(savedLayout.right)) state.rightWidth = Math.max(240, Math.min(680, savedLayout.right))
+    if (Number.isFinite(savedLayout.left)) state.leftWidth = Math.max(220, Math.min(380, savedLayout.left))
+    if (Number.isFinite(savedLayout.right)) state.rightWidth = Math.max(240, Math.min(480, savedLayout.right))
   } catch (error) { /* private mode */ }
   shell.style.setProperty('--bxw-left-width', `${state.leftWidth}px`)
   shell.style.setProperty('--bxw-right-width', `${state.rightWidth}px`)
-  setInspector(true)
-  shell.dataset.models = 'on'
-  menuModels.setAttribute('aria-checked', 'true')
+  setInspector(false)
+  shell.dataset.models = 'off'
+  setModels(false)
+  menuModels.setAttribute('aria-checked', 'false')
   renderSelection()
   openHistory(false)
   loadThread()
@@ -1325,6 +1348,8 @@ export function mountWorkbench(host, options) {
       clearTimeout(toastTimer)
       observer.disconnect()
       dockObserver.disconnect()
+      dockResize.disconnect()
+      inspectorResize.disconnect()
       cancelAnimationFrame(questionScanFrame)
       document.body.classList.remove('bxw-workbench')
       window.removeEventListener('message', onMessage)
