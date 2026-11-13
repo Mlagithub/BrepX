@@ -90,12 +90,12 @@ const css = `
   .bxw-menu-sep { height: 1px; margin: 4px 6px; background: var(--bxw-line); }
   .bxw-main { position: relative; min-height: 0; overflow: hidden; background: var(--bxw-panel); }
   .bxw-stage { position: absolute; inset: 0; }
-  .bxw-models { position: absolute; z-index: 10; left: 14px; top: 64px; bottom: calc(var(--bxw-dock-h, 112px) + 26px);
+  .bxw-models { position: absolute; z-index: 10; left: 14px; top: 14px; bottom: calc(var(--bxw-dock-h, 112px) + 26px);
     width: min(var(--bxw-left-width, 236px), 34vw); min-width: 0; display: flex; flex-direction: column;
     border: 1px solid var(--bxw-line); border-radius: 9px; background: var(--bxw-panel);
     box-shadow: 0 12px 32px rgb(0 0 0 / 18%); overflow: hidden; }
   .bxw-shell[data-models="off"] .bxw-models { display: none; }
-  .bxw-resizer { position: absolute; top: 64px; bottom: calc(var(--bxw-dock-h, 112px) + 26px); z-index: 12; width: 7px; margin-left: -3px;
+  .bxw-resizer { position: absolute; top: 14px; bottom: calc(var(--bxw-dock-h, 112px) + 26px); z-index: 12; width: 7px; margin-left: -3px;
     cursor: col-resize; background: transparent; touch-action: none; }
   .bxw-resizer:hover, .bxw-resizer[data-drag="true"] { background: color-mix(in srgb, var(--bxw-accent) 35%, transparent); }
   .bxw-resizer-left { left: calc(14px + min(var(--bxw-left-width, 236px), 34vw)); }
@@ -134,11 +134,10 @@ const css = `
   .bxw-plan-card-meta { margin-top: 3px; color: var(--bxw-muted); font: 10px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-stage { min-width: 0; min-height: 0; background: color-mix(in srgb, var(--bxw-panel) 70%, var(--bxw-bg, #101318)); }
   .bxw-frame { width: 100%; height: 100%; border: 0; display: block; }
-  .bxw-tools { position: absolute; top: 12px; left: 12px; display: flex; gap: 4px; padding: 4px;
-    border: 1px solid var(--bxw-line); border-radius: 8px; background: color-mix(in srgb, var(--bxw-panel) 92%, transparent);
-    backdrop-filter: blur(8px); }
-  .bxw-tools .bxw-sep { width: 1px; align-self: stretch; background: var(--bxw-line); margin: 2px 2px; }
-  .bxw-tools button { height: 26px; padding: 0 8px; border-color: transparent; color: var(--bxw-soft); }
+  .bxw-tools { display: flex; align-items: center; gap: 2px; flex: none; padding-left: 10px;
+    border-left: 1px solid var(--bxw-line); }
+  .bxw-tools .bxw-sep { width: 1px; height: 16px; background: var(--bxw-line); margin: 0 4px; }
+  .bxw-tools button { height: 26px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); }
   .bxw-tools button:hover { color: var(--bxw-primary, #e8edf5); background: var(--bxw-layer); }
   .bxw-tools button[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 12%, transparent); }
   .bxw-caption { display: flex; align-items: center; gap: 0; white-space: nowrap;
@@ -240,11 +239,18 @@ const css = `
     .bxw-resizer-left { left: calc(14px + min(var(--bxw-left-width, 210px), 38vw)); }
     .bxw-resizer-right { right: calc(14px + min(var(--bxw-right-width, 292px), 42vw)); }
   }
+  @media (max-width: 1180px) {
+    .bxw-context-label, .bxw-version { display: none; }
+    .bxw-context select { max-width: min(300px, 34vw); }
+  }
+  @media (max-width: 960px) {
+    .bxw-metric { display: none; }
+    .bxw-tools button { padding: 0 5px; }
+  }
   @media (max-width: 720px) {
     .bxw-models, .bxw-inspector, .bxw-resizer, .bxw-structure-trigger { display: none; }
     .bxw-brand span { display: none; }
-    .bxw-context select { max-width: 44vw; }
-    .bxw-actions .bxw-optional { display: none; }
+    .bxw-context select { max-width: 32vw; }
   }
   @media (prefers-reduced-motion: reduce) {
     .bxw-toast { transition: none; }
@@ -360,7 +366,7 @@ export function mountWorkbench(host, options) {
   const docSelect = el('select', { 'aria-label': '当前模型' })
   const version = el('span', { className: 'bxw-version' }, '')
   const checkBadge = el('button', { type: 'button', className: 'bxw-badge bxw-badge-button', 'aria-label': '打开检查器', title: '打开检查器' }, '检查 —')
-  const metricBadge = el('span', { className: 'bxw-badge' }, '—')
+  const metricBadge = el('span', { className: 'bxw-badge bxw-metric' }, '—')
   context.append(contextLabel, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
   const structureButton = el('button', {
@@ -415,6 +421,7 @@ export function mountWorkbench(host, options) {
     post('wire', { on: state.wire })
   })
   tools.append(fitButton, wireButton)
+  header.insertBefore(tools, actions)
   const caption = el('div', { className: 'bxw-caption' })
   const captionFaces = el('span', {}, '—')
   const captionTight = el('span', {}, '—')
@@ -430,7 +437,7 @@ export function mountWorkbench(host, options) {
   emptyCard.append(emptyButton)
   empty.append(emptyCard)
   empty.dataset.on = 'false'
-  stage.append(frame, tools, empty)
+  stage.append(frame, empty)
 
   const models = el('aside', { className: 'bxw-models', 'aria-label': '当前模型结构' })
   const modelsHead = el('div', { className: 'bxw-models-head' })
