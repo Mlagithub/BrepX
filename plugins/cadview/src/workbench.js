@@ -62,6 +62,12 @@ const css = `
     border-radius: 999px; border: 1px solid var(--bxw-line); color: var(--bxw-soft); font-size: 11px; flex: none; }
   .bxw-badge[data-tone="ok"] { color: var(--bxw-ok); border-color: color-mix(in srgb, var(--bxw-ok) 42%, transparent); }
   .bxw-badge[data-tone="bad"] { color: var(--bxw-bad); border-color: color-mix(in srgb, var(--bxw-bad) 42%, transparent); }
+  .bxw-progress { display: none; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; }
+  .bxw-shell[data-running="true"] .bxw-progress { display: block; }
+  .bxw-progress::after { content: ""; display: block; width: 42%; height: 100%; background: var(--bxw-accent);
+    animation: bxw-progress 1.2s ease-in-out infinite; }
+  @keyframes bxw-progress { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
+  @media (prefers-reduced-motion: reduce) { .bxw-progress::after { animation: none; width: 100%; opacity: .55; } }
   .bxw-actions { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
   .bxw-view-trigger, .bxw-agent-trigger { gap: 6px; padding: 0 9px; }
   .bxw-view-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
@@ -77,14 +83,32 @@ const css = `
   .bxw-view-menu button::before { content: ""; width: 14px; color: var(--bxw-accent); font-weight: 700; }
   .bxw-view-menu button[aria-checked="true"]::before { content: "✓"; }
   .bxw-menu-sep { height: 1px; margin: 4px 6px; background: var(--bxw-line); }
-  .bxw-main { min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr) 292px; }
+  .bxw-main { position: relative; min-height: 0; display: grid; grid-template-columns: var(--bxw-left-width, 236px) minmax(0, 1fr) var(--bxw-right-width, 292px); }
   .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
-  .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) 292px; }
-  .bxw-shell[data-agent="true"] .bxw-main { grid-template-columns: 236px minmax(0, 1fr) min(480px, 40vw); }
-  .bxw-shell[data-agent="true"][data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) min(480px, 40vw); }
+  .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) var(--bxw-right-width, 292px); }
+  .bxw-resizer { position: absolute; top: 0; bottom: 0; z-index: 8; width: 7px; margin-left: -3px;
+    cursor: col-resize; background: transparent; touch-action: none; }
+  .bxw-resizer:hover, .bxw-resizer[data-drag="true"] { background: color-mix(in srgb, var(--bxw-accent) 35%, transparent); }
+  .bxw-resizer-left { left: var(--bxw-left-width, 236px); }
+  .bxw-resizer-right { right: var(--bxw-right-width, 292px); }
+  .bxw-resizer:focus-visible { outline: 2px solid var(--bxw-accent); outline-offset: -2px; }
   .bxw-shell[data-models="off"] .bxw-models { display: none; }
   .bxw-models-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--bxw-line); }
   .bxw-models-head strong { font-size: 12px; font-weight: 600; }
+  .bxw-structure-meta { margin-left: auto; color: var(--bxw-muted); font: 10px/1 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-structure-list { flex: 1; min-height: 0; overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+  .bxw-structure-progress { margin: 6px 8px 0; padding: 6px 7px; border: 1px solid color-mix(in srgb, var(--bxw-accent) 35%, var(--bxw-line));
+    border-radius: 6px; color: var(--bxw-soft); font-size: 10px; display: flex; flex-direction: column; gap: 3px; }
+  .bxw-structure-progress[hidden] { display: none; }
+  .bxw-structure-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 7px; border-radius: 6px; cursor: default; }
+  .bxw-structure-row:hover { background: var(--bxw-layer); }
+  .bxw-structure-row .bxw-dot { margin-top: 4px; }
+  .bxw-structure-main { min-width: 0; flex: 1; }
+  .bxw-structure-main b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-primary);
+    font-size: 11px; font-weight: 550; }
+  .bxw-structure-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-muted);
+    font: 9px/1.5 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-structure-empty { padding: 10px 8px; color: var(--bxw-muted); font-size: 11px; }
   .bxw-models-search { margin: 9px 10px 6px; height: 28px; padding: 0 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); color: var(--bxw-primary); outline: 0; }
   .bxw-models-search::placeholder { color: var(--bxw-muted); }
   .bxw-model-list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 4px 6px 12px; }
@@ -160,8 +184,12 @@ const css = `
     color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-check { font-size: 11px; color: var(--bxw-soft); }
   .bxw-check[data-ok="false"] { color: var(--bxw-bad); }
-  .bxw-composer { border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); padding: 10px 14px 12px; }
-  .bxw-composer-box { max-width: 980px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px;
+  .bxw-composer { border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); padding: 10px 18px 12px; }
+  .bxw-composer[data-target="agent"] { border-top-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
+  .bxw-composer-target { flex: none; height: 30px; display: inline-flex; align-items: center; padding: 0 8px;
+    border: 1px solid var(--bxw-line); border-radius: 999px; color: var(--bxw-muted); font-size: 10px; user-select: none; }
+  .bxw-composer[data-target="agent"] .bxw-composer-target { color: var(--bxw-accent); border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
+  .bxw-composer-box { max-width: none; margin: 0; display: flex; align-items: flex-end; gap: 8px;
     padding: 7px; border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-layer); }
   .bxw-composer-box:focus-within { border-color: color-mix(in srgb, var(--bxw-accent) 70%, var(--bxw-line)); }
   .bxw-composer textarea { flex: 1; min-height: 34px; max-height: 120px; resize: none; border: 0; outline: 0;
@@ -179,11 +207,10 @@ const css = `
   .bxw-toast[data-tone="error"] { border-color: color-mix(in srgb, var(--bxw-bad) 45%, var(--bxw-line)); color: var(--bxw-bad); }
   @media (max-width: 1280px) {
     .bxw-main { grid-template-columns: 210px minmax(0, 1fr) 292px; }
-    .bxw-shell[data-agent="true"] .bxw-main { grid-template-columns: 210px minmax(0, 1fr) min(420px, 48vw); }
   }
   @media (max-width: 1080px) {
     .bxw-main { grid-template-columns: minmax(0, 1fr); }
-    .bxw-models, .bxw-inspector { display: none; }
+    .bxw-models, .bxw-inspector, .bxw-resizer { display: none; }
   }
   @media (max-width: 720px) {
     .bxw-brand span { display: none; }
@@ -284,6 +311,14 @@ export function mountWorkbench(host, options) {
     busy: false,
     tab: 'inspect',
     selection: null,
+    leftWidth: 236,
+    rightWidth: 292,
+    timings: {},
+    designStarted: null,
+    renderMs: null,
+    modeling: false,
+    simplified: false,
+    focus: false,
   }
 
   const shell = el('div', { className: 'bxw-shell' })
@@ -319,13 +354,15 @@ export function mountWorkbench(host, options) {
     'aria-label': '视图与刷新',
     hidden: true,
   })
-  const menuModels = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '模型导航')
+  const menuModels = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '结构面板')
   const menuNav = el('button', { type: 'button', role: 'menuitem' }, '宿主侧栏')
   const menuInspector = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '检查器')
+  const menuFocus = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'false' }, '专注模式')
   const menuRefresh = el('button', { type: 'button', role: 'menuitem' }, '刷新模型状态')
-  viewMenu.append(menuModels, menuNav, menuInspector, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
+  viewMenu.append(menuModels, menuNav, menuInspector, menuFocus, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
   actions.append(viewButton, agentButton, viewMenu)
-  header.append(brand, context, actions)
+  const progressLine = el('div', { className: 'bxw-progress', 'aria-hidden': 'true' })
+  header.append(brand, context, actions, progressLine)
 
   const main = el('main', { className: 'bxw-main' })
   const stage = el('section', { className: 'bxw-stage' })
@@ -354,7 +391,8 @@ export function mountWorkbench(host, options) {
   const captionFaces = el('span', {}, '—')
   const captionVolume = el('span', {}, '—')
   const captionTight = el('span', {}, '—')
-  caption.append(captionMode, captionFaces, captionVolume, captionTight)
+  const captionTiming = el('span', {}, '')
+  caption.append(captionMode, captionFaces, captionVolume, captionTight, captionTiming)
   const empty = el('div', { className: 'bxw-empty' })
   const emptyCard = el('div', { className: 'bxw-empty-card' })
   const emptySpinner = el('div', { className: 'bxw-spinner', hidden: true })
@@ -367,14 +405,15 @@ export function mountWorkbench(host, options) {
   empty.dataset.on = 'false'
   stage.append(frame, tools, caption, empty)
 
-  const models = el('aside', { className: 'bxw-models', 'aria-label': '模型与项目导航' })
+  const models = el('aside', { className: 'bxw-models', 'aria-label': '当前模型结构' })
   const modelsHead = el('div', { className: 'bxw-models-head' })
-  const modelsTitle = el('strong', {}, '模型')
+  const modelsTitle = el('strong', {}, '结构')
+  const structureMeta = el('span', { className: 'bxw-structure-meta' }, 'rev —')
   const modelsNew = el('button', { type: 'button', title: '新建模型', 'aria-label': '新建模型', html: ICONS.plus })
-  modelsHead.append(modelsTitle, modelsNew)
-  const modelsSearch = el('input', { className: 'bxw-models-search', placeholder: '搜索模型…', 'aria-label': '搜索模型' })
-  const modelList = el('div', { className: 'bxw-model-list' })
-  models.append(modelsHead, modelsSearch, modelList)
+  modelsHead.append(modelsTitle, structureMeta, modelsNew)
+  const structureProgress = el('div', { className: 'bxw-structure-progress', hidden: true })
+  const structureList = el('div', { className: 'bxw-structure-list' })
+  models.append(modelsHead, structureProgress, structureList)
 
   const inspector = el('aside', { className: 'bxw-inspector', 'aria-label': '模型检查器' })
   const inspectorHead = el('div', { className: 'bxw-inspector-head' })
@@ -407,11 +446,6 @@ export function mountWorkbench(host, options) {
   const selectionSummary = el('div', { className: 'bxw-check' }, '在画布上点选面或边')
   selectionSection.append(selectionSummary)
 
-  const planSection = el('section', { className: 'bxw-section' })
-  const planHead = el('h3', {}, '计划卡')
-  const planList = el('div', { className: 'bxw-list' })
-  planSection.append(planHead, planList)
-
   const checkSection = el('section', { className: 'bxw-section' })
   checkSection.append(el('h3', {}, '检查'))
   const checkSummary = el('div', { className: 'bxw-check' }, '—')
@@ -424,7 +458,7 @@ export function mountWorkbench(host, options) {
   agentSection.append(agentSlot)
   options.onAgentHost?.(agentSlot)
 
-  inspectPane.append(metricsSection, selectionSection, planSection, checkSection)
+  inspectPane.append(metricsSection, selectionSection, checkSection)
   agentPane.append(agentSection)
   inspectorBody.append(inspectPane, agentPane)
   inspector.append(inspectorHead, inspectorBody)
@@ -432,19 +466,24 @@ export function mountWorkbench(host, options) {
   const composer = el('form', { className: 'bxw-composer' })
   const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
   const composerBox = el('div', { className: 'bxw-composer-box' })
+  const composerTarget = el('span', { className: 'bxw-composer-target', 'aria-hidden': 'true' }, '命令')
   const input = el('textarea', {
     rows: 1,
     placeholder: '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40',
     'aria-label': '命令或设计意图',
   })
   const send = el('button', { type: 'submit', className: 'bxw-send', 'aria-label': '执行或发送给 Agent', html: ICONS.send + '<span>执行</span>' })
-  composerBox.append(input, send)
+  composerBox.append(composerTarget, input, send)
+  composer.dataset.target = 'inspect'
   const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行')
   composer.append(selectionBar, composerBox, hint)
 
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
   shell.append(header, main, composer, toastNode)
   main.append(models, stage, inspector)
+  const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
+  const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
+  main.append(leftResizer, rightResizer)
   host.append(shell)
 
   let toastTimer = null
@@ -472,20 +511,83 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const setFocus = (on) => {
+    state.focus = Boolean(on)
+    menuFocus.setAttribute('aria-checked', state.focus ? 'true' : 'false')
+    if (state.focus) {
+      setModels(false)
+      setInspector(false)
+    } else {
+      setModels(true)
+      setInspector(true)
+    }
+  }
+
   const setInspector = (on) => {
     state.inspector = Boolean(on)
     inspector.hidden = !state.inspector
+    rightResizer.hidden = !state.inspector
     menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
+  }
+
+  const saveLayout = () => {
+    try {
+      localStorage.setItem('cadview.layout', JSON.stringify({
+        left: state.leftWidth,
+        right: state.rightWidth,
+      }))
+    } catch (error) { /* private mode */ }
+  }
+  const setLeftWidth = (width) => {
+    state.leftWidth = Math.max(190, Math.min(430, Math.round(width)))
+    shell.style.setProperty('--bxw-left-width', `${state.leftWidth}px`)
+    saveLayout()
+  }
+  const setRightWidth = (width) => {
+    state.rightWidth = Math.max(240, Math.min(680, Math.round(width)))
+    shell.style.setProperty('--bxw-right-width', `${state.rightWidth}px`)
+    saveLayout()
+  }
+
+  const startResize = (event, side) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = side === 'left' ? state.leftWidth : state.rightWidth
+    const handle = side === 'left' ? leftResizer : rightResizer
+    handle.dataset.drag = 'true'
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (moveEvent) => {
+      const delta = side === 'left' ? moveEvent.clientX - startX : startX - moveEvent.clientX
+      if (side === 'left') setLeftWidth(startWidth + delta)
+      else setRightWidth(startWidth + delta)
+    }
+    const onEnd = () => {
+      handle.dataset.drag = 'false'
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
   }
 
   const setTab = (tab) => {
     state.tab = tab === 'agent' ? 'agent' : 'inspect'
     shell.dataset.agent = state.tab === 'agent' ? 'true' : 'false'
+    if (state.tab === 'agent' && state.rightWidth < 400) setRightWidth(480)
     inspectTab.setAttribute('aria-selected', state.tab === 'inspect' ? 'true' : 'false')
     agentTab.setAttribute('aria-selected', state.tab === 'agent' ? 'true' : 'false')
     inspectPane.hidden = state.tab !== 'inspect'
     agentPane.hidden = state.tab !== 'agent'
     agentButton.setAttribute('aria-pressed', state.tab === 'agent' ? 'true' : 'false')
+    composer.dataset.target = state.tab === 'agent' ? 'agent' : 'inspect'
+    composerTarget.textContent = state.tab === 'agent' ? 'Agent' : '命令'
+    input.placeholder = state.tab === 'agent'
+      ? '回复 Agent，或输入 /命令…'
+      : '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40'
     setInspector(true)
   }
 
@@ -526,9 +628,69 @@ export function mountWorkbench(host, options) {
           && state.documents.some((doc) => doc.id === documentId)) {
         loadDocument(documentId, true, false).catch(() => {})
       }
+      if (state.modeling && result?.running === false && state.progressStartedAt) {
+        const elapsed = performance.now() - state.progressStartedAt
+        const status = state.plan?.plan?.status
+        if (elapsed > 6000 && (status === 'done' || state.plan?.plan?.revision === state.progressStartRevision)) {
+          stopModelingProgress()
+        }
+      }
     } catch (error) {
       /* history is optional; the model binding remains usable */
     }
+  }
+
+  const stopModelingProgress = () => {
+    if (state.progressTimer) clearInterval(state.progressTimer)
+    state.progressTimer = null
+    state.modeling = false
+    shell.dataset.running = 'false'
+    if (state.checks) {
+      checkBadge.textContent = `检查 ${state.checks.passed}/${state.checks.total}`
+      checkBadge.dataset.tone = state.checks.ok ? 'ok' : 'bad'
+    }
+    if (hint) hint.textContent = '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行'
+  }
+
+  const pollModelingProgress = async () => {
+    if (!state.modeling || !state.docId) return
+    if (performance.now() - state.progressStartedAt > 10 * 60 * 1000) {
+      stopModelingProgress()
+      return
+    }
+    try {
+      const plan = await api(`${base}/api/docs/${state.docId}/plan`)
+      state.plan = plan
+      renderPlan()
+      const revision = plan?.plan?.revision
+      const status = plan?.plan?.status
+      if (revision != null && revision !== state.progressRevision) {
+        state.progressRevision = revision
+        state.progressStable = 0
+      } else if (state.progressRevision != null) {
+        state.progressStable += 1
+      }
+      if (state.progressStartRevision != null && revision != null
+          && revision > state.progressStartRevision && status === 'done' && state.progressStable >= 3) {
+        stopModelingProgress()
+        renderTiming()
+      }
+    } catch (error) {
+      /* keep polling; transient failures should not hide progress */
+    }
+  }
+
+  const startModelingProgress = () => {
+    state.modeling = true
+    checkBadge.textContent = '建模中…'
+    checkBadge.dataset.tone = 'busy'
+    state.progressStartedAt = performance.now()
+    state.progressStartRevision = state.plan?.plan?.revision ?? null
+    state.progressRevision = state.progressStartRevision
+    state.progressStable = 0
+    shell.dataset.running = 'true'
+    if (hint) hint.textContent = 'Agent 正在建模… 计划节点会实时更新；也可继续输入 /命令'
+    if (!state.progressTimer) state.progressTimer = setInterval(pollModelingProgress, 1200)
   }
 
   const createModel = async () => {
@@ -567,6 +729,7 @@ export function mountWorkbench(host, options) {
         return true
       case 'checks': setTab('inspect'); return true
       case 'agent': setTab('agent'); return true
+      case 'focus': setFocus(!state.focus); return true
       case 'models': setModels(shell.dataset.models === 'off'); return true
       case 'new': createModel(); return true
       case 'refresh': loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')); return true
@@ -575,7 +738,7 @@ export function mountWorkbench(host, options) {
         window.open(`${base}/api/docs/${state.docId}/export/${arg || 'step'}`, '_blank', 'noopener')
         return true
       case 'help':
-        toast('命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export')
+        toast('命令：/fit /iso /top /front /right /wire /checks /agent /focus /models /new /refresh /export')
         return true
       default:
         toast(`未知命令：/${name}`, 'error', 4)
@@ -585,6 +748,7 @@ export function mountWorkbench(host, options) {
 
   const setModels = (on) => {
     shell.dataset.models = on ? 'on' : 'off'
+    leftResizer.hidden = !on
     menuModels.setAttribute('aria-checked', on ? 'true' : 'false')
   }
   const closeViewMenu = () => {
@@ -607,6 +771,7 @@ export function mountWorkbench(host, options) {
   menuModels.addEventListener('click', () => { setModels(shell.dataset.models === 'off'); closeViewMenu() })
   menuNav.addEventListener('click', () => { options.onToggleNavigation?.(); closeViewMenu() })
   menuInspector.addEventListener('click', () => { setInspector(!state.inspector); closeViewMenu() })
+  menuFocus.addEventListener('click', () => { setFocus(!state.focus); closeViewMenu() })
   menuRefresh.addEventListener('click', () => {
     closeViewMenu()
     loadDocument(state.docId, true).catch((error) => toast(error.message, 'error'))
@@ -617,6 +782,17 @@ export function mountWorkbench(host, options) {
   agentTab.addEventListener('click', () => setTab('agent'))
   agentButton.addEventListener('click', () => setTab('agent'))
   modelsNew.addEventListener('click', createModel)
+  leftResizer.addEventListener('pointerdown', (event) => startResize(event, 'left'))
+  rightResizer.addEventListener('pointerdown', (event) => startResize(event, 'right'))
+  const keyboardResize = (event, side) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const amount = event.key === 'ArrowRight' ? 16 : -16
+    if (side === 'left') setLeftWidth(state.leftWidth + amount)
+    else setRightWidth(state.rightWidth - amount)
+  }
+  leftResizer.addEventListener('keydown', (event) => keyboardResize(event, 'left'))
+  rightResizer.addEventListener('keydown', (event) => keyboardResize(event, 'right'))
 
   const post = (type, payload) => {
     try {
@@ -626,6 +802,7 @@ export function mountWorkbench(host, options) {
 
   const pushDesign = (fit = false) => {
     if (!state.current || !state.ready) return
+    state.designStarted = performance.now()
     post('theme', readTheme())
     post('design', {
       documentId: state.docId,
@@ -633,75 +810,64 @@ export function mountWorkbench(host, options) {
       requestId: ++state.request,
       prefetch: null,
       fit,
+      simplified: state.simplified,
     })
   }
 
   const renderDocuments = () => {
     docSelect.textContent = ''
-    modelList.textContent = ''
     if (!state.documents.length) {
       docSelect.append(el('option', { value: '' }, '没有模型'))
       docSelect.disabled = true
-      modelList.append(el('div', { className: 'bxw-check' }, '还没有模型'))
       return
     }
     docSelect.disabled = false
-    const query = modelsSearch.value.trim().toLowerCase()
-    const visible = state.documents.filter((doc) =>
-      !query || `${doc.name || ''} ${doc.id}`.toLowerCase().includes(query))
     for (const doc of state.documents) {
       docSelect.append(el('option', { value: doc.id }, `${doc.name || doc.id} · v${doc.version ?? 0}`))
     }
     if (state.docId) docSelect.value = state.docId
-    const ordered = [...visible].sort((left, right) =>
-      Number(right.id === state.docId) - Number(left.id === state.docId))
-    for (const doc of ordered) {
-      const row = el('button', {
-        type: 'button',
-        className: 'bxw-model-row',
-        title: doc.name || doc.id,
-      })
-      row.dataset.active = doc.id === state.docId ? 'true' : 'false'
-      row.append(el('b', {}, doc.name || doc.id), el('span', {}, `v${doc.version ?? 0} · ${doc.id}`))
-      row.addEventListener('click', () => {
-        docSelect.value = doc.id
-        loadDocument(doc.id, true).catch((error) => toast(`加载模型失败：${error.message}`, 'error', 6))
-      })
-      modelList.append(row)
-    }
-    if (!visible.length) {
-      modelList.append(el('div', { className: 'bxw-check' }, '没有匹配的模型'))
-      modelList.scrollTop = 0
-      return
-    }
-    const active = modelList.querySelector('[data-active="true"]')
-    if (active) {
-      modelList.scrollTop = Math.max(0, active.offsetTop - modelList.offsetTop - 8)
-    } else {
-      modelList.scrollTop = 0
-    }
   }
-  modelsSearch.addEventListener('input', renderDocuments)
 
   const renderPlan = () => {
-    planList.textContent = ''
-    const nodes = state.plan?.plan?.nodes || []
-    if (!nodes.length) {
-      planList.append(el('div', { className: 'bxw-check' }, '暂无计划'))
+    structureList.textContent = ''
+    const plan = state.plan?.plan
+    const nodes = plan?.nodes || []
+    const features = state.current?.features || []
+    structureMeta.textContent = plan?.revision != null ? `rev ${plan.revision}` : 'rev —'
+    structureProgress.hidden = !state.modeling
+    structureProgress.textContent = ''
+    if (state.modeling) {
+      const done = nodes.filter((node) => node.status === 'done').length
+      structureProgress.append(el('b', {}, `构建中 ${done}/${nodes.length || '—'}`))
+    }
+    const entries = features.length
+      ? features.slice(-80).map((feature) => ({
+          key: feature.id,
+          title: feature.id,
+          meta: `${feature.type || 'feature'}${feature.actor ? ` · ${feature.actor}` : ''}`,
+          status: nodes.find((node) => node.id === feature.id)?.status || (feature.enabled === false ? 'pending' : 'done'),
+          error: feature.error,
+        }))
+      : nodes.slice(-40).map((node) => ({
+          key: node.id,
+          title: node.title || node.id,
+          meta: `${node.action || node.kind || ''}${node.id ? ` · ${node.id}` : ''}`,
+          status: node.status || 'pending',
+          error: node.error,
+        }))
+    if (!entries.length) {
+      structureList.append(el('div', { className: 'bxw-structure-empty' }, state.current ? '这个模型还没有特征' : '选择一个模型查看结构'))
       return
     }
-    for (const node of nodes.slice(-8).reverse()) {
-      const card = el('div', { className: 'bxw-plan-card' })
-      const head = el('div', { className: 'bxw-plan-card-head' })
+    for (const entry of entries) {
+      const row = el('div', { className: 'bxw-structure-row' })
       const dot = el('span', { className: 'bxw-dot' })
-      dot.dataset.state = node.status || 'pending'
-      head.append(dot, el('b', {}, node.title || node.id))
-      const params = Object.entries(node.params || {}).slice(0, 3)
-        .map(([key, value]) => `${key}=${typeof value === 'number' ? Number(value.toFixed(3)) : value}`)
-        .join(' · ')
-      card.append(head, el('div', { className: 'bxw-plan-card-meta' }, `${node.action || node.kind} · ${node.id}${params ? ` · ${params}` : ''}`))
-      if (node.error) card.append(el('div', { className: 'bxw-check' }, node.error))
-      planList.append(card)
+      dot.dataset.state = entry.status
+      const main = el('div', { className: 'bxw-structure-main' })
+      main.append(el('b', {}, entry.title), el('span', {}, entry.meta))
+      row.append(dot, main)
+      row.title = entry.error || `${entry.title}\n${entry.meta}`
+      structureList.append(row)
     }
   }
 
@@ -730,6 +896,15 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const renderTiming = () => {
+    const parts = []
+    if (state.timings?.state) parts.push(`加载 ${(state.timings.state / 1000).toFixed(1)}s`)
+    if (state.parseMs != null) parts.push(`解析 ${(state.parseMs / 1000).toFixed(1)}s`)
+    if (state.edgesMs != null) parts.push(`边 ${(state.edgesMs / 1000).toFixed(1)}s`)
+    if (state.renderMs != null) parts.push(`渲染 ${(state.renderMs / 1000).toFixed(1)}s`)
+    captionTiming.textContent = parts.join(' · ')
+  }
+
   const renderState = () => {
     if (!state.current) return
     const doc = state.current.document || {}
@@ -752,10 +927,13 @@ export function mountWorkbench(host, options) {
     captionFaces.textContent = `${fmt(metrics.faces)} 面`
     captionVolume.textContent = `${fmt(metrics.volume, 0)} mm³`
     captionTight.textContent = metrics.watertight ? '水密' : '非水密'
-    empty.dataset.on = state.current.vacant ? 'true' : 'false'
+    empty.dataset.on = 'false'
     state.version = doc.version ?? 0
+    state.simplified = Number(metrics.faces || 0) > 100
+    captionMode.textContent = state.simplified ? '简化预览' : '实时预览'
     renderPlan()
     renderChecks()
+    renderTiming()
     pushDesign(false)
   }
 
@@ -787,23 +965,40 @@ export function mountWorkbench(host, options) {
       return
     }
     if (docId === state.docId && state.current && !force) return
+    stopModelingProgress()
     state.docId = docId
     state.current = null
     state.selection = null
     renderSelection()
     setLoading(true)
+    const startedAt = performance.now()
+    const loadTimer = setInterval(() => {
+      if (empty.dataset.on !== 'true') return
+      emptyBody.textContent = `正在读取几何、计划和检查结果… ${((performance.now() - startedAt) / 1000).toFixed(1)}s`
+    }, 250)
+    const timed = async (path) => {
+      const start = performance.now()
+      const value = await api(path)
+      return { value, ms: performance.now() - start }
+    }
     try {
-      const [stateView, plan, checks] = await Promise.all([
-        api(`${base}/api/docs/${docId}/state`),
-        api(`${base}/api/docs/${docId}/plan`).catch(() => null),
-        api(`${base}/api/docs/${docId}/checks`).catch(() => null),
+      const [stateResult, planResult, checksResult] = await Promise.all([
+        timed(`${base}/api/docs/${docId}/state`),
+        timed(`${base}/api/docs/${docId}/plan`).catch(() => ({ value: null, ms: 0 })),
+        timed(`${base}/api/docs/${docId}/checks`).catch(() => ({ value: null, ms: 0 })),
       ])
+      const stateView = stateResult.value
+      const plan = planResult.value
+      const checks = checksResult.value
+      state.timings = { state: stateResult.ms, plan: planResult.ms, checks: checksResult.ms }
+      state.renderMs = null
       state.current = stateView
       state.plan = plan
       state.checks = checks
       state.version = stateView.document.version
       empty.dataset.on = stateView.vacant ? 'true' : 'false'
       emptySpinner.hidden = true
+      clearInterval(loadTimer)
       if (stateView.vacant) {
         emptyTitle.textContent = '空白模型'
         emptyBody.textContent = '在下方描述要创建的零件，或选择另一个已有模型。'
@@ -817,6 +1012,7 @@ export function mountWorkbench(host, options) {
         else if (!readBinding(sessionId)?.manual) writeBinding(sessionId, docId, false)
       }
     } catch (error) {
+      clearInterval(loadTimer)
       state.current = null
       emptySpinner.hidden = true
       emptyTitle.textContent = '加载失败'
@@ -895,14 +1091,9 @@ export function mountWorkbench(host, options) {
       input.value = ''
       resizeInput()
       toast('已提交给 Agent')
-      const target = state.docId
-      setTimeout(() => {
-        if (state.docId !== target) return
-        loadDocument(target, true)
-          .then(() => {})
-          .catch(() => {})
-        loadThread()
-      }, 2500)
+      startModelingProgress()
+      setTab('agent')
+      setTimeout(() => { loadThread() }, 2500)
       setTimeout(() => { loadThread() }, 6000)
     } catch (error) {
       toast(`发送失败：${error.message}`, 'error', 7)
@@ -938,6 +1129,13 @@ export function mountWorkbench(host, options) {
       startWatchdog()
     } else if (data.type === 'shown') {
       state.shown = data.version
+      if (state.designStarted != null) {
+        state.renderMs = performance.now() - state.designStarted
+        state.designStarted = null
+        state.parseMs = data.timings?.parseMs ?? null
+        state.edgesMs = data.timings?.edgesMs ?? null
+        renderTiming()
+      }
     } else if (data.type === 'pick' && data.pick) {
       state.selection = data.pick
       renderSelection()
@@ -965,6 +1163,13 @@ export function mountWorkbench(host, options) {
   const observer = new MutationObserver(onTheme)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
 
+  try {
+    const savedLayout = JSON.parse(localStorage.getItem('cadview.layout') || '{}')
+    if (Number.isFinite(savedLayout.left)) state.leftWidth = Math.max(190, Math.min(430, savedLayout.left))
+    if (Number.isFinite(savedLayout.right)) state.rightWidth = Math.max(240, Math.min(680, savedLayout.right))
+  } catch (error) { /* private mode */ }
+  shell.style.setProperty('--bxw-left-width', `${state.leftWidth}px`)
+  shell.style.setProperty('--bxw-right-width', `${state.rightWidth}px`)
   setInspector(true)
   shell.dataset.models = 'on'
   menuModels.setAttribute('aria-checked', 'true')
@@ -987,6 +1192,7 @@ export function mountWorkbench(host, options) {
       clearInterval(watchdog)
       clearInterval(sessionPoll)
       clearInterval(threadPoll)
+      stopModelingProgress()
       clearTimeout(toastTimer)
       observer.disconnect()
       document.body.classList.remove('bxw-workbench')

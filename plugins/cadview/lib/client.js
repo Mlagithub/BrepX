@@ -99,7 +99,9 @@ window.__ModuleLoader__.load({
       if (!sessionId || !ctx.sessions || typeof ctx.sessions.using !== 'function') return []
       const entries = []
       let documentId
+      let running = false
       await ctx.sessions.using(sessionId, { source: 'mainView' }, async (reference) => {
+        running = Boolean(reference.binding.session.getSnapshot()?.running)
         const window = reference.binding.eventSource.getSnapshot()
         for (const item of window.entries) {
           if (item.type !== 'event') continue
@@ -124,7 +126,7 @@ window.__ModuleLoader__.load({
           })
         }
       })
-      return { entries: entries.slice(-20), documentId }
+      return { entries: entries.slice(-20), documentId, running }
     }
 
     const PanelIcon = ({ size = 16 }) => {

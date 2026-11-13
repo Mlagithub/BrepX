@@ -35,6 +35,7 @@
 <script type="module">
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { init } from '@classcad/smlibpy-three/init'
 
 const host = document.getElementById('host')
@@ -286,6 +287,41 @@ const objectFor = async (documentId, version) => {
   return parseBytes(await fetchBytes(documentId, version))
 }
 
+const showSimplified = async (documentId, version, options = {}) => {
+  const requestId = Number(options.requestId) || 0
+  if (requestId) latestDesignRequest = Math.max(latestDesignRequest, requestId)
+  const requestToken = latestDesignRequest
+  const parseStart = performance.now()
+  try {
+    const response = await fetch(`/api/docs/${documentId}/export/stl?version=${version}`)
+    if (!response.ok) throw new Error(`STL ${response.status}`)
+    const geometry = new STLLoader().parse(await response.arrayBuffer())
+    if (requestToken !== latestDesignRequest) {
+      geometry.dispose()
+      return
+    }
+    const material = new THREE.MeshStandardMaterial({ color: palette.solid.clone(), metalness: 0.1, roughness: 0.62 })
+    const object = new THREE.Mesh(geometry, material)
+    object.userData.simplified = true
+    display = object
+    scene.add(display)
+    previewActive = false
+    currentVersion = version
+    if (!hasFitted || options.fit) { fit(display); hasFitted = true }
+    applySection()
+    say(`v${version} · 简化显示`)
+    post('shown', {
+      version,
+      documentId,
+      faces: 1,
+      simplified: true,
+      timings: { parseMs: performance.now() - parseStart, edgesMs: 0, totalMs: performance.now() - parseStart },
+    })
+  } catch (error) {
+    say(`简化模型加载失败 ${error.message}`)
+  }
+}
+
 const sectionPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
 
 const applySection = () => {
@@ -315,7 +351,7 @@ const applySection = () => {
 }
 
 const applyWire = () => {
-  if (!display) return
+  if (!display || display.userData?.simplified) return
   display.traverse((child) => {
     if (!child.isMesh) return
     if (child.userData.edges) {
@@ -411,7 +447,9 @@ const clearGhost = () => {
 const showGhost = async (documentId, version) => {
   clearGhost()
   try {
+    const parseStart = performance.now()
     const object = await objectFor(documentId, version)
+    const parseMs = performance.now() - parseStart
     object.traverse((child) => {
       if (!child.isMesh) return
       child.material = new THREE.MeshBasicMaterial({
@@ -459,9 +497,17 @@ const showVersion = async (documentId, version, options = {}) => {
   if (!previewActive && currentVersion === version && display && !options.force) return
   previewActive = false
   clearHighlight()
+  if (options.simplified) {
+    disposeObject(display)
+    display = null
+    await showSimplified(documentId, version, options)
+    return
+  }
   const keep = display
   try {
+    const parseStart = performance.now()
     const object = await objectFor(documentId, version)
+    const parseMs = performance.now() - parseStart
     if (requestToken !== latestDesignRequest) {
       disposeObject(object)
       return
@@ -471,12 +517,14 @@ const showVersion = async (documentId, version, options = {}) => {
     disposeObject(keep)
     currentVersion = version
     if (!hasFitted || options.fit) { fit(display); hasFitted = true }
+    const edgesStart = performance.now()
     applyWire()
     applySection()
+    const edgesMs = performance.now() - edgesStart
     if (options.highlight?.length) highlightFaces(options.highlight)
     const meshes = countFaces(display)
     say(`v${version} · ${meshes} 个面组`)
-    post('shown', { version, documentId, faces: meshes })
+    post('shown', { version, documentId, faces: meshes, timings: { parseMs, edgesMs, totalMs: performance.now() - parseStart } })
   } catch (error) {
     display = keep
     say(`模型加载失败 ${error.message}`)
@@ -575,7 +623,7 @@ addEventListener('message', (event) => {
   const data = event.data
   if (!data || data.from !== 'brepx-workbench') return
   if (data.type === 'design') {
-    showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight })
+    showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight, simplified: data.simplified })
     if (data.prefetch) prefetch(data.documentId, data.prefetch)
   } else if (data.type === 'preview') {
     showPreview(data.url, data.label)
