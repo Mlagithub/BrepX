@@ -187,9 +187,11 @@ const css = `
   .bxw-dock-active b { color: var(--bxw-primary); font-size: 12px; font-weight: 550; flex: none; }
   .bxw-dock-active span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-soft); font-size: 11px; }
   .bxw-dock-active button { flex: none; height: 26px; padding: 0 9px; font-size: 11px; }
-  .bxw-dock-history { height: min(320px, 38vh); min-height: 180px; overflow: hidden; display: flex; flex-direction: column; border-bottom: 1px solid var(--bxw-line); }
+  .bxw-dock-history { height: min(320px, 38vh); min-height: 180px; margin: 0 18px 10px; overflow: hidden; display: flex; flex-direction: column;
+    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-layer); }
   .bxw-dock-history[hidden] { display: none; }
-  .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; }
+  .bxw-dock-history .bxw-agent-slot { width: 100%; max-width: 920px; margin: 0 auto; padding: 8px 16px 12px; }
+  .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel); }
   .bxw-dock-agent { height: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); font-size: 11px; }
   .bxw-dock-agent svg { width: 14px; height: 14px; }
   .bxw-dock-agent[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
@@ -479,7 +481,7 @@ export function mountWorkbench(host, options) {
   const historyToggle = el('button', { type: 'button', className: 'bxw-dock-history-toggle' }, '历史')
   dockBar.append(dockAgent, dockStatus, historyToggle)
   const historyPeek = el('div', { className: 'bxw-history-peek', hidden: true })
-  dock.append(activeCard, historyPanel, historyPeek, dockBar)
+  dock.append(activeCard, dockBar, historyPanel, historyPeek)
 
   const composer = el('form', { className: 'bxw-composer' })
   const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
@@ -617,28 +619,33 @@ export function mountWorkbench(host, options) {
     historyToggle.textContent = state.historyOpen ? '收起历史' : '历史'
     if (state.historyOpen) {
       activeCard.hidden = true
+      dockStatus.hidden = false
       return
     }
+    let active = false
     if (question) {
       activeTitle.textContent = 'Agent 待确认'
       activeBody.textContent = state.dockQuestionText || '需要你回答一个问题才能继续。'
       activeAction.textContent = '查看并回答'
-      activeCard.hidden = false
+      active = true
     } else if (modeling) {
       const nodes = state.plan?.plan?.nodes || []
       const done = nodes.filter((node) => node.status === 'done').length
-      activeTitle.textContent = 'Agent 正在建模'
-      activeBody.textContent = nodes.length ? `${done}/${nodes.length} 个计划节点完成` : '正在生成计划…'
+      const finished = nodes.length > 0 && done === nodes.length
+      activeTitle.textContent = finished ? '计划已完成' : 'Agent 正在建模'
+      activeBody.textContent = nodes.length
+        ? `${done}/${nodes.length} 个计划节点完成${finished ? '，等待 Agent 收尾' : ''}`
+        : '正在生成计划…'
       activeAction.textContent = '查看进度'
-      activeCard.hidden = false
+      active = true
     } else if (state.checks && !state.checks.ok) {
       activeTitle.textContent = '检查未通过'
       activeBody.textContent = `${state.checks.passed}/${state.checks.total} 通过`
       activeAction.textContent = '查看检查'
-      activeCard.hidden = false
-    } else {
-      activeCard.hidden = true
+      active = true
     }
+    activeCard.hidden = !active
+    dockStatus.hidden = active
   }
 
   const openHistory = (open) => {
@@ -727,7 +734,6 @@ export function mountWorkbench(host, options) {
       checkBadge.textContent = `检查 ${state.checks.passed}/${state.checks.total}`
       checkBadge.dataset.tone = state.checks.ok ? 'ok' : 'bad'
     }
-    if (hint) hint.textContent = '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行'
   }
 
   const pollModelingProgress = async () => {
@@ -767,7 +773,6 @@ export function mountWorkbench(host, options) {
     state.progressRevision = state.progressStartRevision
     state.progressStable = 0
     shell.dataset.running = 'true'
-    if (hint) hint.textContent = 'Agent 正在建模… 计划节点会实时更新；也可继续输入 /命令'
     if (!state.progressTimer) state.progressTimer = setInterval(pollModelingProgress, 1200)
   }
 
