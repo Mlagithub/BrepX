@@ -622,7 +622,24 @@ renderer.domElement.addEventListener('pointerup', (event) => {
 addEventListener('message', (event) => {
   const data = event.data
   if (!data || data.from !== 'brepx-workbench') return
-  if (data.type === 'design') {
+  if (data.type === 'clear') {
+    currentDoc = null
+    currentVersion = 0
+    previewActive = false
+    clearHighlight()
+    disposeObject(display)
+    display = null
+    clearGhost()
+    vacantGroup.visible = true
+    empty.classList.add('on')
+    hasFitted = false
+    controls.target.set(0, 0, 0)
+    camera.position.set(110, -110, 82)
+    camera.updateProjectionMatrix()
+    controls.update()
+    say('空白文档')
+    post('cleared', {})
+  } else if (data.type === 'design') {
     showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight, simplified: data.simplified })
     if (data.prefetch) prefetch(data.documentId, data.prefetch)
   } else if (data.type === 'preview') {

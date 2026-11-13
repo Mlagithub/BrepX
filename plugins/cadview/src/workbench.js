@@ -86,6 +86,8 @@ const css = `
   .bxw-main { position: relative; min-height: 0; display: grid; grid-template-columns: var(--bxw-left-width, 236px) minmax(0, 1fr) var(--bxw-right-width, 292px); }
   .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
   .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) var(--bxw-right-width, 292px); }
+  .bxw-shell[data-inspector="off"] .bxw-main { grid-template-columns: var(--bxw-left-width, 236px) minmax(0, 1fr); }
+  .bxw-shell[data-inspector="off"][data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr); }
   .bxw-resizer { position: absolute; top: 0; bottom: 0; z-index: 8; width: 7px; margin-left: -3px;
     cursor: col-resize; background: transparent; touch-action: none; }
   .bxw-resizer:hover, .bxw-resizer[data-drag="true"] { background: color-mix(in srgb, var(--bxw-accent) 35%, transparent); }
@@ -520,6 +522,7 @@ export function mountWorkbench(host, options) {
     state.inspector = Boolean(on)
     inspector.hidden = !state.inspector
     rightResizer.hidden = !state.inspector
+    shell.dataset.inspector = state.inspector ? 'on' : 'off'
     menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
   }
 
@@ -795,6 +798,10 @@ export function mountWorkbench(host, options) {
 
   const pushDesign = (fit = false) => {
     if (!state.current || !state.ready) return
+    if (state.current.vacant) {
+      post('clear', {})
+      return
+    }
     state.designStarted = performance.now()
     post('theme', readTheme())
     post('design', {
@@ -922,8 +929,8 @@ export function mountWorkbench(host, options) {
     captionTight.textContent = metrics.watertight ? '水密' : '非水密'
     empty.dataset.on = 'false'
     state.version = doc.version ?? 0
-    state.simplified = Number(metrics.faces || 0) > 100
-    captionMode.textContent = state.simplified ? '简化预览' : '实时预览'
+    state.simplified = false
+    captionMode.textContent = '实时预览'
     renderPlan()
     renderChecks()
     renderTiming()
