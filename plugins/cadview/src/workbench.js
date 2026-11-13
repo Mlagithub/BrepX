@@ -62,7 +62,21 @@ const css = `
     border-radius: 999px; border: 1px solid var(--bxw-line); color: var(--bxw-soft); font-size: 11px; flex: none; }
   .bxw-badge[data-tone="ok"] { color: var(--bxw-ok); border-color: color-mix(in srgb, var(--bxw-ok) 42%, transparent); }
   .bxw-badge[data-tone="bad"] { color: var(--bxw-bad); border-color: color-mix(in srgb, var(--bxw-bad) 42%, transparent); }
-  .bxw-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .bxw-actions { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
+  .bxw-view-trigger, .bxw-agent-trigger { gap: 6px; padding: 0 9px; }
+  .bxw-view-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
+  .bxw-agent-trigger[aria-pressed="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
+    background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); color: var(--bxw-primary); }
+  .bxw-view-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: 196px; padding: 5px;
+    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-panel);
+    box-shadow: 0 12px 30px rgba(0,0,0,.18); }
+  .bxw-view-menu[hidden] { display: none; }
+  .bxw-view-menu button { width: 100%; height: 32px; justify-content: flex-start; gap: 8px; padding: 0 8px;
+    border-color: transparent; background: transparent; color: var(--bxw-primary); font-size: 12px; }
+  .bxw-view-menu button:hover { background: var(--bxw-layer); }
+  .bxw-view-menu button::before { content: ""; width: 14px; color: var(--bxw-accent); font-weight: 700; }
+  .bxw-view-menu button[aria-checked="true"]::before { content: "✓"; }
+  .bxw-menu-sep { height: 1px; margin: 4px 6px; background: var(--bxw-line); }
   .bxw-main { min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr) 292px; }
   .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
   .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) 292px; }
@@ -185,7 +199,9 @@ const svg = (path, size = 16) => `<svg class="bxw-icon" width="${size}" height="
 const ICONS = {
   cube: svg('<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>'),
   chat: svg('<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z"/>'),
+  chevron: svg('<path d="m7 10 5 5 5-5"/>'),
   panel: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>'),
+  sliders: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
   fit: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
   wire: svg('<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>'),
   refresh: svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
@@ -282,12 +298,33 @@ export function mountWorkbench(host, options) {
   const metricBadge = el('span', { className: 'bxw-badge' }, '—')
   context.append(contextLabel, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
-  const navButton = el('button', { title: '显示或隐藏宿主导航', 'aria-label': '显示或隐藏宿主导航', className: 'bxw-optional', html: ICONS.panel })
-  const modelsButton = el('button', { title: '显示或隐藏模型导航', 'aria-label': '显示或隐藏模型导航', html: ICONS.panel })
-  const refreshButton = el('button', { title: '刷新模型状态', 'aria-label': '刷新模型状态', html: ICONS.refresh })
-  const inspectorButton = el('button', { title: '显示或隐藏检查器', 'aria-label': '显示或隐藏检查器', html: ICONS.panel })
-  const agentButton = el('button', { title: '打开 Agent 线程', 'aria-label': '打开 Agent 线程', html: ICONS.chat + '<span>Agent</span>' })
-  actions.append(navButton, modelsButton, refreshButton, inspectorButton, agentButton)
+  const viewButton = el('button', {
+    className: 'bxw-view-trigger',
+    title: '视图与刷新',
+    'aria-label': '视图与刷新',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    html: ICONS.sliders + '<span>视图</span>' + ICONS.chevron,
+  })
+  const agentButton = el('button', {
+    className: 'bxw-agent-trigger',
+    title: '打开 Agent 线程',
+    'aria-label': '打开 Agent 线程',
+    'aria-pressed': 'false',
+    html: ICONS.chat + '<span>Agent</span>',
+  })
+  const viewMenu = el('div', {
+    className: 'bxw-view-menu',
+    role: 'menu',
+    'aria-label': '视图与刷新',
+    hidden: true,
+  })
+  const menuModels = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '模型导航')
+  const menuNav = el('button', { type: 'button', role: 'menuitem' }, '宿主侧栏')
+  const menuInspector = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '检查器')
+  const menuRefresh = el('button', { type: 'button', role: 'menuitem' }, '刷新模型状态')
+  viewMenu.append(menuModels, menuNav, menuInspector, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
+  actions.append(viewButton, agentButton, viewMenu)
   header.append(brand, context, actions)
 
   const main = el('main', { className: 'bxw-main' })
@@ -438,7 +475,7 @@ export function mountWorkbench(host, options) {
   const setInspector = (on) => {
     state.inspector = Boolean(on)
     inspector.hidden = !state.inspector
-    inspectorButton.setAttribute('aria-pressed', state.inspector ? 'true' : 'false')
+    menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
   }
 
   const setTab = (tab) => {
@@ -448,6 +485,7 @@ export function mountWorkbench(host, options) {
     agentTab.setAttribute('aria-selected', state.tab === 'agent' ? 'true' : 'false')
     inspectPane.hidden = state.tab !== 'inspect'
     agentPane.hidden = state.tab !== 'agent'
+    agentButton.setAttribute('aria-pressed', state.tab === 'agent' ? 'true' : 'false')
     setInspector(true)
   }
 
@@ -529,7 +567,7 @@ export function mountWorkbench(host, options) {
         return true
       case 'checks': setTab('inspect'); return true
       case 'agent': setTab('agent'); return true
-      case 'models': shell.dataset.models = shell.dataset.models === 'off' ? 'on' : 'off'; return true
+      case 'models': setModels(shell.dataset.models === 'off'); return true
       case 'new': createModel(); return true
       case 'refresh': loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')); return true
       case 'export':
@@ -545,17 +583,40 @@ export function mountWorkbench(host, options) {
     }
   }
 
-  inspectorButton.addEventListener('click', () => setInspector(!state.inspector))
+  const setModels = (on) => {
+    shell.dataset.models = on ? 'on' : 'off'
+    menuModels.setAttribute('aria-checked', on ? 'true' : 'false')
+  }
+  const closeViewMenu = () => {
+    viewMenu.hidden = true
+    viewButton.setAttribute('aria-expanded', 'false')
+  }
+  const openViewMenu = () => {
+    viewMenu.hidden = false
+    viewButton.setAttribute('aria-expanded', 'true')
+    menuInspector.setAttribute('aria-checked', state.inspector ? 'true' : 'false')
+    menuModels.setAttribute('aria-checked', shell.dataset.models === 'off' ? 'false' : 'true')
+  }
+
+  viewButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (viewMenu.hidden) openViewMenu()
+    else closeViewMenu()
+  })
+  viewMenu.addEventListener('click', (event) => event.stopPropagation())
+  menuModels.addEventListener('click', () => { setModels(shell.dataset.models === 'off'); closeViewMenu() })
+  menuNav.addEventListener('click', () => { options.onToggleNavigation?.(); closeViewMenu() })
+  menuInspector.addEventListener('click', () => { setInspector(!state.inspector); closeViewMenu() })
+  menuRefresh.addEventListener('click', () => {
+    closeViewMenu()
+    loadDocument(state.docId, true).catch((error) => toast(error.message, 'error'))
+  })
+  document.addEventListener('click', closeViewMenu)
+
   inspectTab.addEventListener('click', () => setTab('inspect'))
   agentTab.addEventListener('click', () => setTab('agent'))
   agentButton.addEventListener('click', () => setTab('agent'))
-  modelsButton.addEventListener('click', () => {
-    shell.dataset.models = shell.dataset.models === 'off' ? 'on' : 'off'
-    modelsButton.setAttribute('aria-pressed', shell.dataset.models === 'off' ? 'false' : 'true')
-  })
   modelsNew.addEventListener('click', createModel)
-  navButton.addEventListener('click', () => options.onToggleNavigation?.())
-  refreshButton.addEventListener('click', () => loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')))
 
   const post = (type, payload) => {
     try {
@@ -861,7 +922,9 @@ export function mountWorkbench(host, options) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       input.focus()
+      return
     }
+    if (event.key === 'Escape') closeViewMenu()
   }
   document.addEventListener('keydown', onGlobalKey)
 
@@ -904,7 +967,7 @@ export function mountWorkbench(host, options) {
 
   setInspector(true)
   shell.dataset.models = 'on'
-  modelsButton.setAttribute('aria-pressed', 'true')
+  menuModels.setAttribute('aria-checked', 'true')
   renderSelection()
   loadThread()
   options.onFocus?.()
@@ -929,6 +992,7 @@ export function mountWorkbench(host, options) {
       document.body.classList.remove('bxw-workbench')
       window.removeEventListener('message', onMessage)
       document.removeEventListener('keydown', onGlobalKey)
+      document.removeEventListener('click', closeViewMenu)
       shell.remove()
     },
     setSession(sessionId) {
