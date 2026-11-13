@@ -109,14 +109,7 @@ const css = `
   .bxw-structure-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-muted);
     font: 9px/1.5 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-structure-empty { padding: 10px 8px; color: var(--bxw-muted); font-size: 11px; }
-  .bxw-models-search { margin: 9px 10px 6px; height: 28px; padding: 0 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); color: var(--bxw-primary); outline: 0; }
-  .bxw-models-search::placeholder { color: var(--bxw-muted); }
   .bxw-model-list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 4px 6px 12px; }
-  .bxw-shell .bxw-model-row { height: auto; min-height: 42px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
-  .bxw-model-row:hover { background: var(--bxw-layer); }
-  .bxw-model-row[data-active="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 40%, var(--bxw-line)); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
-  .bxw-model-row b { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-primary); font-size: 12px; font-weight: 550; }
-  .bxw-model-row span { color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-inspector-tabs { display: flex; gap: 2px; }
   .bxw-inspector-tabs button { height: 26px; padding: 0 8px; border-color: transparent; color: var(--bxw-muted); font-size: 11px; }
   .bxw-inspector-tabs button[aria-selected="true"] { color: var(--bxw-primary); background: var(--bxw-layer); border-color: var(--bxw-line); }
