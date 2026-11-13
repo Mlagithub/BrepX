@@ -93,6 +93,38 @@ window.__ModuleLoader__.load({
       }
     }
 
+    const readThread = async (ctx, sessionId) => {
+      if (!sessionId || !ctx.sessions || typeof ctx.sessions.using !== 'function') return []
+      const entries = []
+      let documentId
+      await ctx.sessions.using(sessionId, { source: 'mainView' }, async (reference) => {
+        const window = reference.binding.eventSource.getSnapshot()
+        for (const item of window.entries) {
+          if (item.type !== 'event') continue
+          const event = item.event
+          if (event.type !== 'user/message' && event.type !== 'assistant/message') continue
+          const message = event.type === 'assistant/message'
+            ? event.data?.message
+            : event.data
+          if (event.type === 'user/message' && message?.source?.kind !== 'user') continue
+          const content = message && Array.isArray(message.content) ? message.content : []
+          const text = content
+            .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+            .map((block) => block.text)
+            .join('\n')
+            .trim()
+          if (!text) continue
+          const documentMatches = text.match(/d_[0-9a-f]{10}/g)
+          if (documentMatches?.length) documentId = documentMatches[documentMatches.length - 1]
+          entries.push({
+            role: event.type === 'user/message' ? 'user' : 'agent',
+            text,
+          })
+        }
+      })
+      return { entries: entries.slice(-20), documentId }
+    }
+
     const PanelIcon = ({ size = 16 }) => {
       const React = require('react')
       return React.createElement('svg', {
@@ -134,6 +166,7 @@ window.__ModuleLoader__.load({
                 base: serviceBase(),
                 sessionId,
                 getSessionId: () => currentSessionId(ctx),
+                getThread: (sid) => readThread(ctx, sid),
                 onFocus: () => focusWorkspace(ctx),
                 onToggleNavigation: () => ctx.layout.toggleSidebar(),
                 sendPrompt: (sid, text) => sendPrompt(ctx, sid, text),

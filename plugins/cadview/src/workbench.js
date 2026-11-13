@@ -314,10 +314,11 @@ export function mountWorkbench(host, options) {
   })
   tools.append(fitButton, wireButton)
   const caption = el('div', { className: 'bxw-caption' })
+  const captionMode = el('span', {}, '实时预览')
   const captionFaces = el('span', {}, '—')
   const captionVolume = el('span', {}, '—')
   const captionTight = el('span', {}, '—')
-  caption.append(captionFaces, captionVolume, captionTight)
+  caption.append(captionMode, captionFaces, captionVolume, captionTight)
   const empty = el('div', { className: 'bxw-empty' })
   const emptyCard = el('div', { className: 'bxw-empty-card' })
   const emptySpinner = el('div', { className: 'bxw-spinner', hidden: true })
@@ -519,6 +520,28 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const loadThread = async () => {
+    if (!options.getThread) return
+    const sessionId = state.sessionId || options.getSessionId?.()
+    if (!sessionId) return
+    try {
+      const result = await options.getThread(sessionId)
+      const entries = Array.isArray(result) ? result : result?.entries
+      if (entries?.length) {
+        state.agentLog = entries.map((entry) => ({ role: entry.role, text: entry.text, at: Date.now() }))
+        saveAgentLog()
+        renderAgent()
+      }
+      const documentId = Array.isArray(result) ? null : result?.documentId
+      if (documentId && !readBinding(sessionId)?.manual && documentId !== state.docId
+          && state.documents.some((doc) => doc.id === documentId)) {
+        loadDocument(documentId, true, false).catch(() => {})
+      }
+    } catch (error) {
+      /* the local activity log remains usable when history is unavailable */
+    }
+  }
+
   const createModel = async () => {
     if (!state.documents) state.documents = []
     try {
@@ -530,7 +553,7 @@ export function mountWorkbench(host, options) {
       })
       state.documents.unshift(doc)
       renderDocuments()
-      await loadDocument(doc.id, true)
+      await loadDocument(doc.id, true, true)
       toast('已创建空白模型')
     } catch (error) {
       toast(`新建模型失败：${error.message}`, 'error', 6)
@@ -619,7 +642,9 @@ export function mountWorkbench(host, options) {
       docSelect.append(el('option', { value: doc.id }, `${doc.name || doc.id} · v${doc.version ?? 0}`))
     }
     if (state.docId) docSelect.value = state.docId
-    for (const doc of visible) {
+    const ordered = [...visible].sort((left, right) =>
+      Number(right.id === state.docId) - Number(left.id === state.docId))
+    for (const doc of ordered) {
       const row = el('button', {
         type: 'button',
         className: 'bxw-model-row',
@@ -633,8 +658,17 @@ export function mountWorkbench(host, options) {
       })
       modelList.append(row)
     }
-    if (!visible.length) modelList.append(el('div', { className: 'bxw-check' }, '没有匹配的模型'))
-    modelList.scrollTop = 0
+    if (!visible.length) {
+      modelList.append(el('div', { className: 'bxw-check' }, '没有匹配的模型'))
+      modelList.scrollTop = 0
+      return
+    }
+    const active = modelList.querySelector('[data-active="true"]')
+    if (active) {
+      modelList.scrollTop = Math.max(0, active.offsetTop - modelList.offsetTop - 8)
+    } else {
+      modelList.scrollTop = 0
+    }
   }
   modelsSearch.addEventListener('input', renderDocuments)
 
@@ -723,7 +757,26 @@ export function mountWorkbench(host, options) {
     pushDesign(false)
   }
 
-  const loadDocument = async (docId, force = false) => {
+  const readBinding = (sessionId) => {
+    if (!sessionId) return null
+    try {
+      const raw = localStorage.getItem(`cadview.document.${sessionId}`)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && parsed.id) {
+        return { id: parsed.id, manual: Boolean(parsed.manual) }
+      }
+      return { id: raw, manual: false }
+    } catch (error) {
+      return null
+    }
+  }
+  const writeBinding = (sessionId, docId, manual) => {
+    if (!sessionId || !docId) return
+    try { localStorage.setItem(`cadview.document.${sessionId}`, JSON.stringify({ id: docId, manual: Boolean(manual) })) } catch (error) { /* private mode */ }
+  }
+
+  const loadDocument = async (docId, force = false, manual = false) => {
     if (!docId) {
       state.current = null
       state.plan = null
@@ -760,7 +813,8 @@ export function mountWorkbench(host, options) {
       const sessionId = state.sessionId || options.getSessionId?.()
       if (sessionId) {
         state.sessionId = sessionId
-        try { localStorage.setItem(`cadview.document.${sessionId}`, docId) } catch (error) { /* private mode */ }
+        if (manual) writeBinding(sessionId, docId, true)
+        else if (!readBinding(sessionId)?.manual) writeBinding(sessionId, docId, false)
       }
     } catch (error) {
       state.current = null
@@ -774,20 +828,37 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const resolveDocument = async (sessionId) => {
+    const stored = readBinding(sessionId)
+    const valid = (id) => id && state.documents.some((doc) => doc.id === id)
+    if (stored?.manual && valid(stored.id)) return { id: stored.id, manual: true }
+    if (valid(stored?.id)) return { id: stored.id, manual: Boolean(stored.manual) }
+    return null
+  }
+
+  const withTimeout = (promise, ms) => Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ])
+
   const chooseDocument = async () => {
     state.documents = await api(`${base}/api/docs`)
-    const stored = state.sessionId ? localStorage.getItem(`cadview.document.${state.sessionId}`) : null
-    const preferred = [options.documentId, stored, state.docId, ...state.documents.map((doc) => doc.id)]
+    renderDocuments()
+    const stored = readBinding(state.sessionId)
+    const bound = stored?.manual
+      ? stored
+      : await withTimeout(resolveDocument(state.sessionId), 1400).catch(() => null)
+    const preferred = [bound?.id, stored?.id, options.documentId, state.docId, ...state.documents.map((doc) => doc.id)]
       .find((id) => id && state.documents.some((doc) => doc.id === id))
     state.docId = preferred || state.documents[0]?.id || null
     renderDocuments()
-    if (state.docId) await loadDocument(state.docId, true)
+    if (state.docId) await loadDocument(state.docId, true, Boolean(bound?.id === state.docId && bound?.manual))
     else empty.dataset.on = 'true'
   }
 
   docSelect.addEventListener('change', () => {
     if (!docSelect.value) return
-    loadDocument(docSelect.value, true).catch(() => {})
+    loadDocument(docSelect.value, true, true).catch(() => {})
   })
   emptyButton.addEventListener('click', createModel)
 
@@ -834,7 +905,9 @@ export function mountWorkbench(host, options) {
         loadDocument(target, true)
           .then(() => { state.agentStatus = '计划已同步'; renderAgent() })
           .catch(() => {})
+        loadThread()
       }, 2500)
+      setTimeout(() => { loadThread() }, 6000)
     } catch (error) {
       state.agentStatus = '发送失败'
       renderAgent()
@@ -902,8 +975,11 @@ export function mountWorkbench(host, options) {
   loadAgentLog()
   renderSelection()
   renderAgent()
+  loadThread()
   options.onFocus?.()
   chooseDocument().catch((error) => toast(`无法加载模型库：${error.message}`, 'error', 8))
+
+  const threadPoll = setInterval(() => { loadThread() }, 3000)
 
   const sessionPoll = setInterval(() => {
     const next = options.getSessionId?.()
@@ -916,6 +992,7 @@ export function mountWorkbench(host, options) {
     dispose() {
       clearInterval(watchdog)
       clearInterval(sessionPoll)
+      clearInterval(threadPoll)
       clearTimeout(toastTimer)
       observer.disconnect()
       document.body.classList.remove('bxw-workbench')
@@ -928,12 +1005,13 @@ export function mountWorkbench(host, options) {
       state.sessionId = sessionId
       loadAgentLog()
       renderAgent()
-      const stored = localStorage.getItem(`cadview.document.${sessionId}`)
-      if (stored) {
-        loadDocument(stored, true).catch(() => {})
-      } else if (state.docId) {
-        try { localStorage.setItem(`cadview.document.${sessionId}`, state.docId) } catch (error) { /* private mode */ }
-      }
+      loadThread()
+      withTimeout(resolveDocument(sessionId), 1200)
+        .catch(() => null)
+        .then((bound) => {
+          if (bound) loadDocument(bound.id, true, bound.manual).catch(() => {})
+        })
+        .catch(() => {})
     },
   }
 }
