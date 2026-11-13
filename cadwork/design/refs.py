@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from cadwork import smlib as S
+
 from .document import Filter, Ref
 
 _SELECTS = {
@@ -103,19 +105,24 @@ def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> An
 
     if name in {"closed", "open", "length_between", "radius_between"}:
         if name == "closed":
-            return items.filter(lambda entry: bool(getattr(entry, "is_closed", False)))
-        if name == "open":
-            return items.filter(lambda entry: not bool(getattr(entry, "is_closed", True)))
-        if len(item.args) != 2:
-            raise RefError("REF_INVALID_ARG", f"{name} needs a [low, high] pair")
-        low, high = (float(item.args[0]), float(item.args[1]))
-        if name == "length_between":
-            return items.filter(
-                lambda entry: low <= float(getattr(entry, "length", 0.0)) <= high)
-        def has_radius(entry: Any) -> bool:
-            radius = getattr(entry, "radius", None)
-            return radius is not None and low <= float(radius) <= high
-        return items.filter(has_radius)
+            selected = [entry for entry in items if bool(getattr(entry, "is_closed", False))]
+        elif name == "open":
+            selected = [entry for entry in items
+                        if not bool(getattr(entry, "is_closed", True))]
+        else:
+            if len(item.args) != 2:
+                raise RefError("REF_INVALID_ARG", f"{name} needs a [low, high] pair")
+            low, high = (float(item.args[0]), float(item.args[1]))
+            if name == "length_between":
+                selected = [entry for entry in items
+                            if low <= float(getattr(entry, "length", 0.0)) <= high]
+            else:
+                selected = []
+                for entry in items:
+                    radius = getattr(entry, "radius", None)
+                    if radius is not None and low <= float(radius) <= high:
+                        selected.append(entry)
+        return S.ShapeList(selected)
 
     if name not in _METHODS:
         raise RefError("REF_UNSUPPORTED", f"filter method {name!r} is not allowed")
