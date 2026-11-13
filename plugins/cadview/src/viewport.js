@@ -122,6 +122,26 @@ const style = () => {
     .bx-plan-node .body{display:flex;flex-direction:column;gap:1px;min-width:0}
     .bx-plan-node .body b{font-weight:600;color:var(--bx-fg)}
     .bx-plan-node .body span{color:var(--bx-fg-3);overflow-wrap:anywhere}
+    .bx-plan-node .actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+    .bx-plan-node .actions button{height:20px;padding:0 6px;font-size:10px}
+    .bx-checks{display:none;flex-direction:column;gap:4px;max-height:240px;overflow:auto;
+      padding:6px 8px;border:1px solid var(--bx-line);border-radius:var(--bx-r-md);
+      background:var(--bx-bg);font:11px/1.45 var(--bx-mono)}
+    .bx-checks.on{display:flex}
+    .bx-progress{display:none;align-items:center;gap:8px;padding:5px 8px;border:1px solid var(--bx-line);
+      border-radius:var(--bx-r-md);background:var(--bx-bg);font:11px/1.4 var(--bx-mono)}
+    .bx-progress.on{display:flex}
+    .bx-progress .grow{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bx-progress .bar{width:90px;height:4px;border-radius:999px;background:var(--bx-line);overflow:hidden}
+    .bx-progress .bar i{display:block;height:100%;width:30%;background:var(--bx-accent);animation:bx-progress 1s linear infinite}
+    @keyframes bx-progress{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+    .bx-check-group{display:flex;flex-direction:column;gap:2px;padding-bottom:4px;border-bottom:1px solid var(--bx-line)}
+    .bx-check-group:last-child{border-bottom:0}
+    .bx-check-row{display:flex;gap:6px;align-items:flex-start}
+    .bx-check-row .mark{min-width:14px;font-weight:700}
+    .bx-check-row .mark.ok{color:var(--bx-ok)}
+    .bx-check-row .mark.bad{color:var(--bx-bad)}
+    .bx-check-row .detail{color:var(--bx-fg-3);overflow-wrap:anywhere}
     .bx-chip{height:24px;padding:0 8px;border-radius:999px;border:1px solid var(--bx-line);
       background:var(--bx-bg);color:var(--bx-fg-2);font:11px/1 var(--bx-mono);cursor:pointer;
       display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
@@ -247,7 +267,10 @@ export function mountViewport(host, base) {
   const head = el('div', 'bx-top')
   const brand = el('span', 'bx-brand', 'BrepX')
   const docLabel = el('span', 'bx-doc', '连接中…')
-  const checkBadge = el('span', 'bx-badge', 'checks —')
+  const checkBadge = el('button', 'bx-badge', 'checks —')
+  checkBadge.type = 'button'
+  checkBadge.title = '查看 checks 详情'
+  checkBadge.style.cssText = 'height:18px;padding:0 6px;font:10px/16px var(--bx-mono)'
   const metricText = el('span', 'bx-metric', '')
   const docSelect = el('select')
   docSelect.setAttribute('aria-label', '切换文档')
@@ -258,7 +281,13 @@ export function mountViewport(host, base) {
   const refreshDocsButton = el('button', null, '刷新')
   refreshDocsButton.type = 'button'
   refreshDocsButton.title = '刷新文档列表'
-  head.append(brand, checkBadge, metricText, docSelect, newDocButton, refreshDocsButton)
+  const docsButton = el('button', null, '文档')
+  docsButton.type = 'button'
+  docsButton.title = '打开文档管理页'
+  docsButton.addEventListener('click', () => {
+    window.open(`${serviceBase}/documents`, '_blank', 'noopener')
+  })
+  head.append(brand, checkBadge, metricText, docSelect, newDocButton, refreshDocsButton, docsButton)
   root.append(head)
 
   const stage = el('div', 'bx-stage')
@@ -353,6 +382,14 @@ export function mountViewport(host, base) {
   planToggle.disabled = true
   planBar.append(planText, planToggle)
   const planList = el('div', 'bx-planlist')
+  const checkList = el('div', 'bx-checks')
+  const progress = el('div', 'bx-progress')
+  const progressText = el('span', 'grow', '')
+  const progressBar = el('span', 'bar')
+  progressBar.append(el('i'))
+  const cancelJobButton = el('button', null, '取消')
+  cancelJobButton.type = 'button'
+  progress.append(progressText, progressBar, cancelJobButton)
   const mutes = el('div', 'bx-row bx-mutes')
   const card = el('div', 'bx-card')
   const variants = el('div', 'bx-variants')
@@ -374,7 +411,7 @@ export function mountViewport(host, base) {
   const hint = el('span', 'bx-hint', '')
   inputRow.append(prompt, sendButton, stopButton, undoButton)
   composer.append(pills, intentBar, inputRow, hint)
-  hub.append(banner, stepper, planBar, planList, mutes, card, variants, composer)
+  hub.append(banner, stepper, planBar, planList, checkList, progress, mutes, card, variants, composer)
   root.append(stage)
   root.append(hub)
   host.append(root)
@@ -384,6 +421,10 @@ export function mountViewport(host, base) {
   let state = null
   let planView = null
   let planOpen = false
+  let checksView = null
+  let checksOpen = false
+  let activeJob = null
+  let jobTimer = null
   let kernelReady = false
   let replayVersion = null
   let ghostOn = false
@@ -737,6 +778,128 @@ export function mountViewport(host, base) {
     }
   }
 
+  const renderProgress = () => {
+    if (!activeJob) {
+      progress.classList.remove('on')
+      return
+    }
+    progress.classList.add('on')
+    const seconds = ((activeJob.elapsed_ms || 0) / 1000).toFixed(1)
+    progressText.textContent = `构建 ${activeJob.node_id} · ${activeJob.status} · ${seconds}s`
+    const finished = ['done', 'failed', 'cancelled'].includes(activeJob.status)
+    progressBar.style.visibility = finished ? 'hidden' : 'visible'
+    cancelJobButton.disabled = finished
+    cancelJobButton.textContent = activeJob.status === 'cancelling' ? '取消中…' : '取消'
+  }
+
+  const pollJob = async (jobId) => {
+    if (!activeJob || activeJob.job_id !== jobId) return
+    try {
+      activeJob = await fetchJSON(`${serviceBase}/api/jobs/${jobId}`)
+      renderProgress()
+      if (['done', 'failed', 'cancelled'].includes(activeJob.status)) {
+        await loadState(documentId())
+        if (activeJob.status === 'failed') showBanner(`构建失败 · ${activeJob.error || activeJob.node_id}`, 8)
+        else if (activeJob.status === 'cancelled') showBanner(`已取消 ${activeJob.node_id}`, 4)
+        setTimeout(() => { if (activeJob?.job_id === jobId) { activeJob = null; renderProgress() } }, 1200)
+        return
+      }
+    } catch (error) {
+      showBanner(`任务状态失败 · ${error.message}`)
+    }
+    jobTimer = setTimeout(() => pollJob(jobId), 450)
+  }
+
+  const runNodeAsync = async (nodeId) => {
+    if (!currentDoc || activeJob) return
+    try {
+      activeJob = await fetchJSON(`${serviceBase}/api/docs/${documentId()}/plan/run_async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: nodeId, base_version: currentDoc.document.version }),
+      })
+      renderProgress()
+      jobTimer = setTimeout(() => pollJob(activeJob.job_id), 300)
+    } catch (error) {
+      showBanner(`无法开始构建 · ${error.message}`)
+    }
+  }
+
+  const cancelJob = async () => {
+    if (!activeJob) return
+    try {
+      activeJob = await fetchJSON(`${serviceBase}/api/jobs/${activeJob.job_id}/cancel`, { method: 'POST' })
+      renderProgress()
+    } catch (error) {
+      showBanner(`取消失败 · ${error.message}`)
+    }
+  }
+  cancelJobButton.addEventListener('click', cancelJob)
+
+  const removeFailedNode = async (nodeId) => {
+    if (!currentDoc || !planView?.plan) return
+    if (!window.confirm(`从计划中移除失败节点 ${nodeId}？几何保持当前版本。`)) return
+    const nodes = planView.plan.nodes || []
+    const remove = new Set([nodeId])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const node of nodes) {
+        if (!remove.has(node.id) && (node.deps || []).some((dep) => remove.has(dep))) {
+          remove.add(node.id)
+          changed = true
+        }
+      }
+    }
+    try {
+      await fetchJSON(`${serviceBase}/api/docs/${documentId()}/plan/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_revision: planView.plan.revision,
+          ops: [...remove].reverse().map((id) => ({ op: 'remove_node', id })),
+        }),
+      })
+      await loadState(documentId())
+      say(`已移除 ${nodeId}`)
+    } catch (error) {
+      showBanner(`移除失败 · ${error.message}`)
+    }
+  }
+
+  const renderChecks = () => {
+    const checks = checksView
+    if (!checks) {
+      checkBadge.hidden = true
+      checkList.classList.remove('on')
+      return
+    }
+    checkBadge.hidden = false
+    checkBadge.textContent = `checks ${checks.passed}/${checks.total}`
+    checkBadge.className = 'bx-badge ' + (checks.ok ? 'ok' : 'bad')
+    checkList.classList.toggle('on', checksOpen)
+    checkList.textContent = ''
+    if (!checksOpen) return
+    for (const feature of checks.features || []) {
+      const group = el('div', 'bx-check-group')
+      group.append(el('b', null, feature.id))
+      for (const check of feature.checks || []) {
+        const row = el('div', 'bx-check-row')
+        row.append(el('span', `mark ${check.ok ? 'ok' : 'bad'}`, check.ok ? '✓' : '✗'))
+        const detail = el('span', 'detail')
+        detail.append(el('b', null, check.name))
+        detail.append(document.createTextNode(` · ${check.expected || ''}`))
+        if (check.observed && Object.keys(check.observed).length) {
+          detail.append(document.createTextNode(` · ${JSON.stringify(check.observed)}`))
+        }
+        if (check.hint) detail.append(document.createTextNode(` · ${check.hint}`))
+        row.append(detail)
+        group.append(row)
+      }
+      checkList.append(group)
+    }
+  }
+
   const renderPlan = () => {
     const plan = planView?.plan
     if (!plan || !Array.isArray(plan.nodes) || !plan.nodes.length) {
@@ -761,9 +924,41 @@ export function mountViewport(host, base) {
       row.append(el('span', `state ${node.status}`, node.status))
       const body = el('div', 'body')
       body.append(el('b', null, node.id), el('span', null, node.title || node.action || node.kind))
+      const depsDone = (node.deps || []).every((dep) =>
+        nodes.some((item) => item.id === dep && item.status === 'done'))
+      if (['failed', 'blocked'].includes(node.status) || (node.status === 'pending' && depsDone)) {
+        const actions = el('div', 'actions')
+        if (depsDone) {
+          const run = el('button', null, node.status === 'failed' ? '重试' : '运行')
+          run.type = 'button'
+          run.disabled = Boolean(activeJob)
+          run.addEventListener('click', () => runNodeAsync(node.id))
+          actions.append(run)
+        }
+        if (['failed', 'blocked'].includes(node.status)) {
+          const remove = el('button', null, '移除')
+          remove.type = 'button'
+          remove.addEventListener('click', () => removeFailedNode(node.id))
+          actions.append(remove)
+        }
+        if (actions.children.length) body.append(actions)
+      }
+      body.append(el('span', null, `kind ${node.kind} · deps ${(node.deps || []).join(' → ') || '—'}`))
+      if (node.refs && Object.keys(node.refs).length) {
+        body.append(el('span', null, `refs ${JSON.stringify(node.refs)}`))
+      }
+      if (node.expect?.length) {
+        body.append(el('span', null, `expect ${node.expect.map((item) =>
+          `${item.metric} ${item.op} ${JSON.stringify(item.value)}`).join('; ')}`))
+      }
       if (node.error) body.append(el('span', null, node.error))
       row.append(body)
+      row.classList.add(node.status)
       planList.append(row)
+    }
+    if (planOpen) {
+      const bad = Array.from(planList.children).find((item) => item.classList.contains('failed'))
+      if (bad) planList.scrollTop = Math.max(0, bad.offsetTop - planList.offsetTop - 8)
     }
   }
 
@@ -772,6 +967,8 @@ export function mountViewport(host, base) {
     renderReplay()
     renderStepper()
     renderPlan()
+    renderChecks()
+    renderProgress()
     renderMutes()
     renderCard()
     renderVariants()
@@ -793,6 +990,11 @@ export function mountViewport(host, base) {
       planView = await fetchJSON(`${serviceBase}/api/docs/${documentId}/plan`)
     } catch (error) {
       planView = null
+    }
+    try {
+      checksView = await fetchJSON(`${serviceBase}/api/docs/${documentId}/checks`)
+    } catch (error) {
+      checksView = null
     }
     if (replayVersion !== null && !currentDoc.milestones.some((m) => m.version === replayVersion)) {
       replayVersion = null
@@ -859,6 +1061,9 @@ export function mountViewport(host, base) {
     await loadState(id)
     connect(id)
     await refreshDocuments(id)
+    // A different document is a different scene: reload the kernel frame so it
+    // cannot keep reporting the previous document's version as already shown.
+    frame.src = frame.src
   }
   docSelect.addEventListener('change', () => switchDocument(docSelect.value))
   newDocButton.addEventListener('click', async () => {
@@ -1066,6 +1271,10 @@ export function mountViewport(host, base) {
   planToggle.addEventListener('click', () => {
     planOpen = !planOpen
     renderPlan()
+  })
+  checkBadge.addEventListener('click', () => {
+    checksOpen = !checksOpen
+    renderChecks()
   })
   composer.addEventListener('submit', submitIntent)
 
@@ -1285,6 +1494,7 @@ export function mountViewport(host, base) {
     if (streamRetry) clearTimeout(streamRetry)
     if (bannerTimer) clearTimeout(bannerTimer)
     if (watchdog) clearInterval(watchdog)
+    if (jobTimer) clearTimeout(jobTimer)
     document.removeEventListener('keydown', onKey)
     document.removeEventListener('keyup', onKeyUp)
     window.removeEventListener('message', onMessage)

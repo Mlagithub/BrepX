@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrepX documents</title>
+<style>
+  :root { color-scheme: light; --bg:#f5f7fa; --panel:#ffffff; --line:#e4e7ec; --fg:#101828; --muted:#667085; --accent:#175cd3; --danger:#b42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--fg); background:var(--bg); }
+  header { position:sticky; top:0; z-index:2; background:var(--panel); border-bottom:1px solid var(--line); padding:14px 22px; }
+  h1 { margin:0 0 2px; font-size:18px; }
+  .muted { color:var(--muted); }
+  .bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  input, button { font:inherit; height:32px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--fg); padding:0 10px; }
+  input:focus { outline:2px solid color-mix(in srgb, var(--accent) 30%, transparent); border-color:var(--accent); }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--danger); border-color:color-mix(in srgb, var(--danger) 30%, var(--line)); }
+  main { padding:16px 22px 40px; }
+  .table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); background:#f9fafb; }
+  tr:last-child td { border-bottom:0; }
+  .name { font-weight:650; }
+  code { font:12px/1.4 ui-monospace, Consolas, monospace; color:var(--muted); }
+  .actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .actions a, .actions button { height:26px; line-height:24px; padding:0 8px; font-size:12px; text-decoration:none; color:var(--accent); background:transparent; border:1px solid var(--line); border-radius:5px; }
+  .empty { padding:36px; text-align:center; color:var(--muted); background:var(--panel); border:1px dashed var(--line); border-radius:8px; }
+  .err { color:var(--danger); }
+</style>
+</head>
+<body>
+<header>
+  <h1>BrepX documents</h1>
+  <div class="muted">文档是唯一真相源。创建、检查、导出或删除；进入 CAD 标签下拉可切换当前视口文档。</div>
+  <div class="bar">
+    <input id="name" placeholder="新文档名称" value="Workbench" aria-label="新文档名称">
+    <button class="primary" id="create">新建文档</button>
+    <input id="search" placeholder="搜索名称或 id" aria-label="搜索文档">
+    <button id="refresh">刷新</button>
+    <span id="count" class="muted"></span>
+  </div>
+</header>
+<main>
+  <div id="error" class="err"></div>
+  <div id="list"></div>
+</main>
+<script>
+let documents = [];
+const list = document.getElementById('list');
+const error = document.getElementById('error');
+const count = document.getElementById('count');
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+}
+
+async function api(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.status === 204 ? null : response.json();
+}
+
+function render() {
+  const query = document.getElementById('search').value.trim().toLowerCase();
+  const rows = documents.filter(doc =>
+    !query || doc.name.toLowerCase().includes(query) || doc.id.toLowerCase().includes(query));
+  count.textContent = `${rows.length} / ${documents.length}`;
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty">没有文档。新建一个，或从 Agent 对话生成。</div>';
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'table';
+  table.innerHTML = `<thead><tr><th>名称</th><th>id</th><th>版本</th><th>特征</th><th>操作</th></tr></thead>`;
+  const body = document.createElement('tbody');
+  for (const doc of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="name">${escapeHtml(doc.name)}</td>
+      <td><code>${escapeHtml(doc.id)}</code></td>
+      <td>v${doc.version}</td><td>${doc.features}</td>
+      <td><div class="actions">
+        <a href="/api/docs/${doc.id}/state" target="_blank">state</a>
+        <a href="/api/docs/${doc.id}/plan" target="_blank">plan</a>
+        <a href="/api/docs/${doc.id}/checks" target="_blank">checks</a>
+        <a href="/api/docs/${doc.id}/export/step" target="_blank">STEP</a>
+        <button data-copy="${escapeHtml(doc.id)}">复制 id</button>
+        <button class="danger" data-delete="${escapeHtml(doc.id)}" data-name="${escapeHtml(doc.name)}">删除</button>
+      </div></td>`;
+    body.append(tr);
+  }
+  table.append(body);
+  list.innerHTML = '';
+  list.append(table);
+  for (const button of table.querySelectorAll('[data-copy]')) {
+    button.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(button.dataset.copy); button.textContent = '已复制'; }
+      catch (e) { button.textContent = button.dataset.copy; }
+    });
+  }
+  for (const button of table.querySelectorAll('[data-delete]')) {
+    button.addEventListener('click', async () => {
+      if (!window.confirm(`删除文档 “${button.dataset.name}”？此操作不可撤销。`)) return;
+      try {
+        await api(`/api/docs/${button.dataset.delete}`, {method: 'DELETE'});
+        await load();
+      } catch (e) { error.textContent = e.message; }
+    });
+  }
+}
+
+async function load() {
+  error.textContent = '';
+  try {
+    documents = await api('/api/docs');
+    render();
+  } catch (e) {
+    error.textContent = `加载失败：${e.message}`;
+  }
+}
+
+document.getElementById('refresh').addEventListener('click', load);
+document.getElementById('search').addEventListener('input', render);
+document.getElementById('create').addEventListener('click', async () => {
+  const input = document.getElementById('name');
+  const name = input.value.trim() || 'Workbench';
+  try {
+    await api('/api/docs', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})});
+    input.value = 'Workbench';
+    await load();
+  } catch (e) { error.textContent = e.message; }
+});
+load();
+</script>
+</body>
+</html>

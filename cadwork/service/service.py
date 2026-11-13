@@ -625,7 +625,8 @@ class CADService:
         return report.to_json()
 
     def plan_run(self, document_id: str, node_id: str, base_version: int | None = None,
-                 request_id: str | None = None, executor: str | None = None) -> dict[str, Any]:
+                 request_id: str | None = None, executor: str | None = None,
+                 cancel_event: threading.Event | None = None) -> dict[str, Any]:
         request_id = request_id or new_request_id()
         with self._lock:
             document = self.read(document_id)
@@ -651,6 +652,8 @@ class CADService:
             if blocked:
                 raise ServiceError("NODE_NOT_READY", f"node {node_id!r} is blocked",
                                    status=409, detail={"blocked_by": blocked})
+            if cancel_event is not None and cancel_event.is_set():
+                raise ServiceError("CANCELLED", "plan run cancelled before it started", status=409)
             started = time.perf_counter()
             self._emit("plan.run.start", document_id=document_id, plan_id=plan.id,
                        node_id=node_id, request_id=request_id, tool="plan_run")
@@ -673,6 +676,8 @@ class CADService:
                                           observed=observed, error=error)
                         raise ServiceError("EXPECT_FAILED", error, status=422,
                                            detail={"checks": [item.to_json() for item in checks]})
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise ServiceError("CANCELLED", "plan run cancelled before commit", status=409)
                     self._finish_node(plan, node, "done", document.version, observed=observed)
                     return self.plan(document_id)
                 ops = compile_node(plan, node, document)
@@ -717,6 +722,8 @@ class CADService:
                             status=422,
                             hint="use executor=local for actions the script emitter does not cover",
                         ) from exc
+                if cancel_event is not None and cancel_event.is_set():
+                    raise ServiceError("CANCELLED", "plan run cancelled before commit", status=409)
                 payload = self.commit(
                     document_id, document.version, list(ops),
                     title=node.title, actor="agent",
@@ -730,7 +737,14 @@ class CADService:
                            backend=backend_used, duration_ms=int((time.perf_counter() - started) * 1000),
                            detail={"version": version})
                 return self.plan(document_id)
-            except ServiceError:
+            except ServiceError as exc:
+                if exc.code not in {"PLAN_STALE", "STALE_VERSION", "NODE_NOT_READY", "CANCELLED"}:
+                    self._finish_node(plan, node, "failed", document.version,
+                                      error=f"{exc.code}: {exc.message}")
+                    self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
+                               node_id=node_id, request_id=request_id, tool="plan_run",
+                               code=exc.code, hint=exc.hint or "",
+                               duration_ms=int((time.perf_counter() - started) * 1000))
                 raise
             except (PlanError, CompileError, DocumentError) as exc:
                 code = getattr(exc, "code", "PLAN_INVALID")

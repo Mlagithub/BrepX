@@ -32,6 +32,7 @@ SAMPLE_TITLES = {name: spec.title for name, spec in SAMPLES.items()}
 
 from .mcp import build_mcp_server
 from .gen_tests import CASES, GEN_KEYS, run_case
+from .jobs import PlanJobRegistry
 from .service import CADService, ServiceError
 from .store import Store, StoreError
 
@@ -145,6 +146,8 @@ def _sse(event: str, payload: Any) -> str:
 
 
 def register_routes(app: FastAPI, service: CADService) -> None:
+    jobs = PlanJobRegistry(service)
+
     @app.get("/api/health")
     def health() -> dict[str, Any]:
         from cadwork import smlib as S
@@ -154,6 +157,10 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     @app.get("/gen-tests", response_class=HTMLResponse)
     def gen_tests_page() -> HTMLResponse:
         return HTMLResponse((Path(__file__).with_name("gen_tests.html")).read_text(encoding="utf-8"))
+
+    @app.get("/documents", response_class=HTMLResponse)
+    def documents_page() -> HTMLResponse:
+        return HTMLResponse((Path(__file__).with_name("documents.html")).read_text(encoding="utf-8"))
 
     @app.get("/gen-tests/gallery", response_class=HTMLResponse)
     def gen_gallery_page() -> HTMLResponse:
@@ -402,6 +409,26 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def run_plan(document_id: str, body: PlanRunRequest) -> dict[str, Any]:
         return service.plan_run(document_id, body.node_id, base_version=body.base_version,
                                 executor=body.executor)
+
+    @app.post("/api/docs/{document_id}/plan/run_async")
+    def run_plan_async(document_id: str, body: PlanRunRequest) -> dict[str, Any]:
+        job = jobs.start(document_id, body.node_id, base_version=body.base_version,
+                         executor=body.executor)
+        return job.to_json()
+
+    @app.get("/api/jobs/{job_id}")
+    def get_job(job_id: str) -> dict[str, Any]:
+        job = jobs.get(job_id)
+        if job is None:
+            return JSONResponse({"error": "job not found"}, status_code=404)
+        return job.to_json()
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str) -> dict[str, Any]:
+        job = jobs.cancel(job_id)
+        if job is None:
+            return JSONResponse({"error": "job not found"}, status_code=404)
+        return job.to_json()
 
     @app.get("/api/docs/{document_id}/timeline")
     def timeline(document_id: str) -> list[dict[str, Any]]:
