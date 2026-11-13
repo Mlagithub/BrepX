@@ -81,6 +81,18 @@ window.__ModuleLoader__.load({
       })
     }
 
+    const focusWorkspace = (ctx) => {
+      try {
+        const collapse = [...document.querySelectorAll('button')].find((button) => {
+          const label = button.getAttribute('aria-label') || button.getAttribute('title') || ''
+          return label === '收起侧边栏'
+        })
+        if (collapse) ctx.layout.toggleSidebar()
+      } catch (error) {
+        /* navigation is optional; the workbench remains usable without it */
+      }
+    }
+
     const PanelIcon = ({ size = 16 }) => {
       const React = require('react')
       return React.createElement('svg', {
@@ -122,7 +134,7 @@ window.__ModuleLoader__.load({
                 base: serviceBase(),
                 sessionId,
                 getSessionId: () => currentSessionId(ctx),
-                onChat: () => ctx.layout.selectPanel(null),
+                onFocus: () => focusWorkspace(ctx),
                 onToggleNavigation: () => ctx.layout.toggleSidebar(),
                 sendPrompt: (sid, text) => sendPrompt(ctx, sid, text),
               })

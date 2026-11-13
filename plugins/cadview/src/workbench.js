@@ -2,6 +2,8 @@ const STYLE_ID = 'bx-workbench-style'
 const THEME_ID = 'bx-workbench-theme'
 
 const css = `
+  body.bxw-workbench [data-sidebar-collapsed="true"] { grid-template-columns: 0 minmax(0, 1fr) 0 !important; }
+  body.bxw-workbench [data-sidebar-collapsed="true"] > :first-child { display: none !important; }
   .bxw-shell {
     position: absolute;
     inset: 0;
@@ -61,7 +63,37 @@ const css = `
   .bxw-badge[data-tone="ok"] { color: var(--bxw-ok); border-color: color-mix(in srgb, var(--bxw-ok) 42%, transparent); }
   .bxw-badge[data-tone="bad"] { color: var(--bxw-bad); border-color: color-mix(in srgb, var(--bxw-bad) 42%, transparent); }
   .bxw-actions { display: flex; align-items: center; gap: 6px; flex: none; }
-  .bxw-main { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 292px; }
+  .bxw-main { min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr) 292px; }
+  .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
+  .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) 292px; }
+  .bxw-shell[data-models="off"] .bxw-models { display: none; }
+  .bxw-models-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--bxw-line); }
+  .bxw-models-head strong { font-size: 12px; font-weight: 600; }
+  .bxw-models-search { margin: 9px 10px 6px; height: 28px; padding: 0 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); color: var(--bxw-primary); outline: 0; }
+  .bxw-models-search::placeholder { color: var(--bxw-muted); }
+  .bxw-model-list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 4px 6px 12px; }
+  .bxw-shell .bxw-model-row { height: auto; min-height: 42px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+  .bxw-model-row:hover { background: var(--bxw-layer); }
+  .bxw-model-row[data-active="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 40%, var(--bxw-line)); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
+  .bxw-model-row b { display: block; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-primary); font-size: 12px; font-weight: 550; }
+  .bxw-model-row span { color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-inspector-tabs { display: flex; gap: 2px; }
+  .bxw-inspector-tabs button { height: 26px; padding: 0 8px; border-color: transparent; color: var(--bxw-muted); font-size: 11px; }
+  .bxw-inspector-tabs button[aria-selected="true"] { color: var(--bxw-primary); background: var(--bxw-layer); border-color: var(--bxw-line); }
+  .bxw-pane[hidden] { display: none; }
+  .bxw-selection { display: flex; align-items: center; gap: 7px; max-width: 980px; margin: 0 auto 7px; min-height: 24px; color: var(--bxw-soft); font-size: 11px; }
+  .bxw-selection[hidden] { display: none; }
+  .bxw-selection-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--bxw-accent) 40%, var(--bxw-line)); border-radius: 999px; color: var(--bxw-primary); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
+  .bxw-selection-chip button { width: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: var(--bxw-muted); }
+  .bxw-thread { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .bxw-thread-item { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
+  .bxw-thread-item[data-role="user"] { border-color: color-mix(in srgb, var(--bxw-accent) 35%, var(--bxw-line)); }
+  .bxw-thread-item b { display: block; margin-bottom: 3px; color: var(--bxw-muted); font-size: 10px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+  .bxw-thread-item p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+  .bxw-plan-card { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
+  .bxw-plan-card-head { display: flex; align-items: center; gap: 7px; }
+  .bxw-plan-card-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
+  .bxw-plan-card-meta { margin-top: 3px; color: var(--bxw-muted); font: 10px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-stage { position: relative; min-width: 0; min-height: 0; background: color-mix(in srgb, var(--bxw-panel) 70%, var(--bxw-bg, #101318)); }
   .bxw-frame { width: 100%; height: 100%; border: 0; display: block; }
   .bxw-tools { position: absolute; top: 12px; left: 12px; display: flex; gap: 4px; padding: 4px;
@@ -92,6 +124,8 @@ const css = `
   .bxw-inspector-head strong { font-size: 12px; font-weight: 600; letter-spacing: .2px; }
   .bxw-inspector-body { padding: 10px 12px 20px; display: flex; flex-direction: column; gap: 16px; }
   .bxw-section { display: flex; flex-direction: column; gap: 7px; }
+  .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
     letter-spacing: .9px; text-transform: uppercase; }
   .bxw-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -128,9 +162,12 @@ const css = `
     transition: opacity .16s ease, transform .16s ease; font-size: 12px; }
   .bxw-toast[data-on="true"] { opacity: 1; transform: none; }
   .bxw-toast[data-tone="error"] { border-color: color-mix(in srgb, var(--bxw-bad) 45%, var(--bxw-line)); color: var(--bxw-bad); }
+  @media (max-width: 1280px) {
+    .bxw-main { grid-template-columns: 210px minmax(0, 1fr) 292px; }
+  }
   @media (max-width: 1080px) {
     .bxw-main { grid-template-columns: minmax(0, 1fr); }
-    .bxw-inspector { display: none; }
+    .bxw-models, .bxw-inspector { display: none; }
   }
   @media (max-width: 720px) {
     .bxw-brand span { display: none; }
@@ -210,6 +247,7 @@ const readTheme = () => {
 
 export function mountWorkbench(host, options) {
   style()
+  document.body.classList.add('bxw-workbench')
   host.textContent = ''
   const base = options.base
   const state = {
@@ -226,6 +264,11 @@ export function mountWorkbench(host, options) {
     wire: false,
     inspector: true,
     busy: false,
+    tab: 'inspect',
+    selection: null,
+    agentLog: [],
+    agentStatus: '等待指令',
+    lastPlanRevision: null,
   }
 
   const shell = el('div', { className: 'bxw-shell' })
@@ -240,11 +283,12 @@ export function mountWorkbench(host, options) {
   const metricBadge = el('span', { className: 'bxw-badge' }, '—')
   context.append(contextLabel, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
-  const navButton = el('button', { title: '显示或隐藏导航栏', 'aria-label': '显示或隐藏导航栏', className: 'bxw-optional', html: ICONS.panel })
+  const navButton = el('button', { title: '显示或隐藏宿主导航', 'aria-label': '显示或隐藏宿主导航', className: 'bxw-optional', html: ICONS.panel })
+  const modelsButton = el('button', { title: '显示或隐藏模型导航', 'aria-label': '显示或隐藏模型导航', html: ICONS.panel })
   const refreshButton = el('button', { title: '刷新模型状态', 'aria-label': '刷新模型状态', html: ICONS.refresh })
   const inspectorButton = el('button', { title: '显示或隐藏检查器', 'aria-label': '显示或隐藏检查器', html: ICONS.panel })
-  const chatButton = el('button', { title: '回到对话', html: ICONS.chat + '<span>对话</span>' })
-  actions.append(navButton, refreshButton, inspectorButton, chatButton)
+  const agentButton = el('button', { title: '打开 Agent 线程', 'aria-label': '打开 Agent 线程', html: ICONS.chat + '<span>Agent</span>' })
+  actions.append(navButton, modelsButton, refreshButton, inspectorButton, agentButton)
   header.append(brand, context, actions)
 
   const main = el('main', { className: 'bxw-main' })
@@ -286,13 +330,29 @@ export function mountWorkbench(host, options) {
   empty.dataset.on = 'false'
   stage.append(frame, tools, caption, empty)
 
+  const models = el('aside', { className: 'bxw-models', 'aria-label': '模型与项目导航' })
+  const modelsHead = el('div', { className: 'bxw-models-head' })
+  const modelsTitle = el('strong', {}, '模型')
+  const modelsNew = el('button', { type: 'button', title: '新建模型', 'aria-label': '新建模型', html: ICONS.plus })
+  modelsHead.append(modelsTitle, modelsNew)
+  const modelsSearch = el('input', { className: 'bxw-models-search', placeholder: '搜索模型…', 'aria-label': '搜索模型' })
+  const modelList = el('div', { className: 'bxw-model-list' })
+  models.append(modelsHead, modelsSearch, modelList)
+
   const inspector = el('aside', { className: 'bxw-inspector', 'aria-label': '模型检查器' })
   const inspectorHead = el('div', { className: 'bxw-inspector-head' })
-  const inspectorTitle = el('strong', {}, '模型检查器')
-  const inspectorClose = el('button', { type: 'button', title: '收进检查器', html: ICONS.close })
+  const inspectorTabs = el('div', { className: 'bxw-inspector-tabs', role: 'tablist', 'aria-label': '检查器视图' })
+  const inspectTab = el('button', { type: 'button', role: 'tab', 'aria-selected': 'true' }, '检查')
+  const agentTab = el('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, 'Agent')
+  inspectorTabs.append(inspectTab, agentTab)
+  const inspectorClose = el('button', { type: 'button', title: '收起检查器', 'aria-label': '收起检查器', html: ICONS.close })
   inspectorClose.addEventListener('click', () => setInspector(false))
-  inspectorHead.append(inspectorTitle, inspectorClose)
+  inspectorHead.append(inspectorTabs, inspectorClose)
+
   const inspectorBody = el('div', { className: 'bxw-inspector-body' })
+  const inspectPane = el('div', { className: 'bxw-pane', role: 'tabpanel' })
+  const agentPane = el('div', { className: 'bxw-pane', role: 'tabpanel', hidden: true })
+
   const metricsSection = el('section', { className: 'bxw-section' })
   metricsSection.append(el('h3', {}, '几何'))
   const metricsGrid = el('div', { className: 'bxw-metrics' })
@@ -304,29 +364,53 @@ export function mountWorkbench(host, options) {
     metricsGrid.append(card)
   }
   metricsSection.append(metricsGrid)
+
+  const selectionSection = el('section', { className: 'bxw-section' })
+  selectionSection.append(el('h3', {}, '选择'))
+  const selectionSummary = el('div', { className: 'bxw-check' }, '在画布上点选面或边')
+  selectionSection.append(selectionSummary)
+
   const planSection = el('section', { className: 'bxw-section' })
-  const planHead = el('h3', {}, '计划')
-  const planList = el('ul', { className: 'bxw-list' })
+  const planHead = el('h3', {}, '计划卡')
+  const planList = el('div', { className: 'bxw-list' })
   planSection.append(planHead, planList)
+
   const checkSection = el('section', { className: 'bxw-section' })
   checkSection.append(el('h3', {}, '检查'))
   const checkSummary = el('div', { className: 'bxw-check' }, '—')
   const checkList = el('ul', { className: 'bxw-list' })
   checkSection.append(checkSummary, checkList)
-  inspectorBody.append(metricsSection, planSection, checkSection)
+
+  const agentSection = el('section', { className: 'bxw-section' })
+  const agentSectionHead = el('div', { className: 'bxw-section-head' })
+  agentSectionHead.append(el('h3', {}, 'Agent 线程'))
+  const agentStatus = el('span', { className: 'bxw-check' }, '等待指令')
+  agentSectionHead.append(agentStatus)
+  agentSection.append(agentSectionHead)
+  const agentList = el('div', { className: 'bxw-thread' })
+  agentSection.append(agentList)
+
+  inspectPane.append(metricsSection, selectionSection, planSection, checkSection)
+  agentPane.append(agentSection)
+  inspectorBody.append(inspectPane, agentPane)
   inspector.append(inspectorHead, inspectorBody)
 
   const composer = el('form', { className: 'bxw-composer' })
+  const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
   const composerBox = el('div', { className: 'bxw-composer-box' })
-  const input = el('textarea', { rows: 1, placeholder: '描述设计变更，例如：把中心孔改为 Ø40，边缘 C2', 'aria-label': '设计意图' })
-  const send = el('button', { type: 'submit', className: 'bxw-send', 'aria-label': '发送给 Agent', html: ICONS.send + '<span>发送</span>' })
+  const input = el('textarea', {
+    rows: 1,
+    placeholder: '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40',
+    'aria-label': '命令或设计意图',
+  })
+  const send = el('button', { type: 'submit', className: 'bxw-send', 'aria-label': '执行或发送给 Agent', html: ICONS.send + '<span>执行</span>' })
   composerBox.append(input, send)
-  const hint = el('div', { className: 'bxw-hint' }, 'Enter 发送 · Shift+Enter 换行 · 发送后由当前会话的 Agent 处理')
-  composer.append(composerBox, hint)
+  const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行')
+  composer.append(selectionBar, composerBox, hint)
 
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
   shell.append(header, main, composer, toastNode)
-  main.append(stage, inspector)
+  main.append(models, stage, inspector)
   host.append(shell)
 
   let toastTimer = null
@@ -359,9 +443,145 @@ export function mountWorkbench(host, options) {
     inspector.hidden = !state.inspector
     inspectorButton.setAttribute('aria-pressed', state.inspector ? 'true' : 'false')
   }
+
+  const setTab = (tab) => {
+    state.tab = tab === 'agent' ? 'agent' : 'inspect'
+    inspectTab.setAttribute('aria-selected', state.tab === 'inspect' ? 'true' : 'false')
+    agentTab.setAttribute('aria-selected', state.tab === 'agent' ? 'true' : 'false')
+    inspectPane.hidden = state.tab !== 'inspect'
+    agentPane.hidden = state.tab !== 'agent'
+    setInspector(true)
+    if (state.tab === 'agent') renderAgent()
+  }
+
+  const formatSelection = (pick) => {
+    if (!pick?.point) return ''
+    const point = pick.point.map((value) => Number(value).toFixed(2)).join(', ')
+    const area = pick.area != null ? ` · ${Number(pick.area).toFixed(1)} mm²` : ''
+    const face = Number.isInteger(pick.face_index) ? ` · 面 ${pick.face_index}` : ''
+    return `选中 @(${point})${area}${face}`
+  }
+
+  const renderSelection = () => {
+    selectionBar.textContent = ''
+    if (!state.selection) {
+      selectionBar.hidden = true
+      selectionSummary.textContent = '在画布上点选面或边'
+      return
+    }
+    const label = formatSelection(state.selection)
+    selectionBar.hidden = false
+    const chip = el('span', { className: 'bxw-selection-chip' })
+    chip.append(el('span', {}, label))
+    const clear = el('button', { type: 'button', title: '清除选择', 'aria-label': '清除选择', html: ICONS.close })
+    clear.addEventListener('click', () => { state.selection = null; renderSelection() })
+    chip.append(clear)
+    selectionBar.append(el('span', {}, '上下文'), chip)
+    selectionSummary.textContent = label
+  }
+
+  const agentStorageKey = () => `cadview.thread.${state.sessionId || 'local'}`
+  const loadAgentLog = () => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(agentStorageKey()) || '[]')
+      state.agentLog = Array.isArray(raw) ? raw.slice(-40) : []
+    } catch (error) {
+      state.agentLog = []
+    }
+  }
+  const saveAgentLog = () => {
+    try { localStorage.setItem(agentStorageKey(), JSON.stringify(state.agentLog.slice(-40))) } catch (error) { /* private mode */ }
+  }
+  const pushAgent = (role, text) => {
+    const last = state.agentLog[state.agentLog.length - 1]
+    if (last && last.role === role && last.text === text) return
+    state.agentLog.push({ role, text, at: Date.now() })
+    state.agentLog = state.agentLog.slice(-40)
+    saveAgentLog()
+    renderAgent()
+  }
+  const renderAgent = () => {
+    if (!agentList) return
+    if (agentStatus) agentStatus.textContent = state.agentStatus || '等待指令'
+    agentList.textContent = ''
+    if (!state.agentLog.length) {
+      agentList.append(el('div', { className: 'bxw-thread-item' }, '发送意图后，计划卡和执行结果会出现在这里。'))
+      return
+    }
+    const entries = state.agentLog.filter((entry, index, list) =>
+      index === 0 || entry.role !== list[index - 1].role || entry.text !== list[index - 1].text)
+    for (const entry of entries.slice(-20)) {
+      const item = el('div', { className: 'bxw-thread-item' })
+      item.dataset.role = entry.role || 'system'
+      const label = entry.role === 'user' ? '你' : entry.role === 'agent' ? 'Agent' : '工作台'
+      item.append(el('b', {}, label), el('p', {}, entry.text || ''))
+      agentList.append(item)
+    }
+  }
+
+  const createModel = async () => {
+    if (!state.documents) state.documents = []
+    try {
+      const name = `Model ${new Date().toLocaleDateString('zh-CN')}`
+      const doc = await api(`${base}/api/docs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      state.documents.unshift(doc)
+      renderDocuments()
+      await loadDocument(doc.id, true)
+      toast('已创建空白模型')
+    } catch (error) {
+      toast(`新建模型失败：${error.message}`, 'error', 6)
+    }
+  }
+
+  const runCommand = (text) => {
+    if (!text.startsWith('/')) return false
+    const [rawName, ...args] = text.slice(1).trim().split(/\s+/)
+    const name = rawName.toLowerCase()
+    const arg = args.join(' ')
+    switch (name) {
+      case 'fit': post('fit', {}); return true
+      case 'iso': post('view', { name: 'iso' }); return true
+      case 'top': post('view', { name: 'top' }); return true
+      case 'front': post('view', { name: 'front' }); return true
+      case 'right': post('view', { name: 'right' }); return true
+      case 'wire':
+        state.wire = !state.wire
+        wireButton.setAttribute('aria-pressed', state.wire ? 'true' : 'false')
+        post('wire', { on: state.wire })
+        return true
+      case 'checks': setTab('inspect'); return true
+      case 'agent': setTab('agent'); return true
+      case 'models': shell.dataset.models = shell.dataset.models === 'off' ? 'on' : 'off'; return true
+      case 'new': createModel(); return true
+      case 'refresh': loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')); return true
+      case 'export':
+        if (!state.docId) return true
+        window.open(`${base}/api/docs/${state.docId}/export/${arg || 'step'}`, '_blank', 'noopener')
+        return true
+      case 'help':
+        setTab('agent')
+        pushAgent('system', '本地命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export，其他文本交给 Agent。')
+        return true
+      default:
+        toast(`未知命令：/${name}`, 'error', 4)
+        return true
+    }
+  }
+
   inspectorButton.addEventListener('click', () => setInspector(!state.inspector))
+  inspectTab.addEventListener('click', () => setTab('inspect'))
+  agentTab.addEventListener('click', () => setTab('agent'))
+  agentButton.addEventListener('click', () => setTab('agent'))
+  modelsButton.addEventListener('click', () => {
+    shell.dataset.models = shell.dataset.models === 'off' ? 'on' : 'off'
+    modelsButton.setAttribute('aria-pressed', shell.dataset.models === 'off' ? 'false' : 'true')
+  })
+  modelsNew.addEventListener('click', createModel)
   navButton.addEventListener('click', () => options.onToggleNavigation?.())
-  chatButton.addEventListener('click', () => options.onChat?.())
   refreshButton.addEventListener('click', () => loadDocument(state.docId, true).catch((error) => toast(error.message, 'error')))
 
   const post = (type, payload) => {
@@ -384,36 +604,59 @@ export function mountWorkbench(host, options) {
 
   const renderDocuments = () => {
     docSelect.textContent = ''
+    modelList.textContent = ''
     if (!state.documents.length) {
       docSelect.append(el('option', { value: '' }, '没有模型'))
       docSelect.disabled = true
+      modelList.append(el('div', { className: 'bxw-check' }, '还没有模型'))
       return
     }
     docSelect.disabled = false
+    const query = modelsSearch.value.trim().toLowerCase()
+    const visible = state.documents.filter((doc) =>
+      !query || `${doc.name || ''} ${doc.id}`.toLowerCase().includes(query))
     for (const doc of state.documents) {
-      const option = el('option', { value: doc.id }, `${doc.name || doc.id} · v${doc.version ?? 0}`)
-      docSelect.append(option)
+      docSelect.append(el('option', { value: doc.id }, `${doc.name || doc.id} · v${doc.version ?? 0}`))
     }
     if (state.docId) docSelect.value = state.docId
+    for (const doc of visible) {
+      const row = el('button', {
+        type: 'button',
+        className: 'bxw-model-row',
+        title: doc.name || doc.id,
+      })
+      row.dataset.active = doc.id === state.docId ? 'true' : 'false'
+      row.append(el('b', {}, doc.name || doc.id), el('span', {}, `v${doc.version ?? 0} · ${doc.id}`))
+      row.addEventListener('click', () => {
+        docSelect.value = doc.id
+        loadDocument(doc.id, true).catch((error) => toast(`加载模型失败：${error.message}`, 'error', 6))
+      })
+      modelList.append(row)
+    }
+    if (!visible.length) modelList.append(el('div', { className: 'bxw-check' }, '没有匹配的模型'))
+    modelList.scrollTop = 0
   }
+  modelsSearch.addEventListener('input', renderDocuments)
 
   const renderPlan = () => {
     planList.textContent = ''
     const nodes = state.plan?.plan?.nodes || []
     if (!nodes.length) {
-      planList.append(el('li', { className: 'bxw-row' }, '暂无计划'))
+      planList.append(el('div', { className: 'bxw-check' }, '暂无计划'))
       return
     }
-    const recent = nodes.slice(-8).reverse()
-    for (const node of recent) {
-      const row = el('li', { className: 'bxw-row' })
+    for (const node of nodes.slice(-8).reverse()) {
+      const card = el('div', { className: 'bxw-plan-card' })
+      const head = el('div', { className: 'bxw-plan-card-head' })
       const dot = el('span', { className: 'bxw-dot' })
       dot.dataset.state = node.status || 'pending'
-      const text = el('div', { className: 'bxw-row-main' })
-      text.append(el('b', {}, node.title || node.id), el('span', {}, `${node.action || node.kind} · ${node.id}`))
-      row.append(dot, text)
-      row.title = node.error || node.title || node.id
-      planList.append(row)
+      head.append(dot, el('b', {}, node.title || node.id))
+      const params = Object.entries(node.params || {}).slice(0, 3)
+        .map(([key, value]) => `${key}=${typeof value === 'number' ? Number(value.toFixed(3)) : value}`)
+        .join(' · ')
+      card.append(head, el('div', { className: 'bxw-plan-card-meta' }, `${node.action || node.kind} · ${node.id}${params ? ` · ${params}` : ''}`))
+      if (node.error) card.append(el('div', { className: 'bxw-check' }, node.error))
+      planList.append(card)
     }
   }
 
@@ -468,6 +711,15 @@ export function mountWorkbench(host, options) {
     state.version = doc.version ?? 0
     renderPlan()
     renderChecks()
+    const revision = state.plan?.plan?.revision
+    if (revision != null && revision !== state.lastPlanRevision) {
+      state.lastPlanRevision = revision
+      if (state.agentLog.length) {
+        const nodes = state.plan?.plan?.nodes || []
+        const done = nodes.filter((node) => node.status === 'done').length
+        pushAgent('agent', `计划 rev ${revision}：${done}/${nodes.length} 节点完成，检查 ${checks?.passed ?? '—'}/${checks?.total ?? '—'}。`)
+      }
+    }
     pushDesign(false)
   }
 
@@ -480,8 +732,12 @@ export function mountWorkbench(host, options) {
       return
     }
     if (docId === state.docId && state.current && !force) return
+    const changedDocument = state.docId !== docId
     state.docId = docId
     state.current = null
+    state.selection = null
+    if (changedDocument) state.lastPlanRevision = null
+    renderSelection()
     setLoading(true)
     try {
       const [stateView, plan, checks] = await Promise.all([
@@ -533,22 +789,7 @@ export function mountWorkbench(host, options) {
     if (!docSelect.value) return
     loadDocument(docSelect.value, true).catch(() => {})
   })
-  emptyButton.addEventListener('click', async () => {
-    try {
-      const name = `Model ${new Date().toLocaleDateString('zh-CN')}`
-      const doc = await api(`${base}/api/docs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      })
-      state.documents.unshift(doc)
-      renderDocuments()
-      await loadDocument(doc.id, true)
-      toast('已创建空白模型')
-    } catch (error) {
-      toast(`新建模型失败：${error.message}`, 'error', 6)
-    }
-  })
+  emptyButton.addEventListener('click', createModel)
 
   const resizeInput = () => {
     input.style.height = 'auto'
@@ -560,22 +801,43 @@ export function mountWorkbench(host, options) {
     event.preventDefault()
     if (state.busy) return
     const text = input.value.trim()
-    if (!text || !state.docId) return
+    if (!text) return
+    if (runCommand(text)) {
+      input.value = ''
+      resizeInput()
+      return
+    }
+    if (!state.docId) return
+    const selected = state.selection ? `[${formatSelection(state.selection)}] ` : ''
+    const message = selected + text
     state.busy = true
     send.disabled = true
+    state.agentStatus = '已提交，等待计划更新…'
+    renderAgent()
     try {
       await api(`${base}/api/docs/${state.docId}/intents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: message }),
       })
       const sessionId = state.sessionId || options.getSessionId?.()
-      if (!sessionId) throw new Error('没有活动会话；请在左侧选择一个会话')
-      await options.sendPrompt?.(sessionId, text)
+      if (!sessionId) throw new Error('没有活动会话；请先选择一个会话')
+      await options.sendPrompt?.(sessionId, message)
+      pushAgent('user', message)
+      pushAgent('system', '已提交给 Agent，等待计划卡更新。')
       input.value = ''
       resizeInput()
-      toast('已发送给当前会话的 Agent')
+      toast('已提交给 Agent')
+      const target = state.docId
+      setTimeout(() => {
+        if (state.docId !== target) return
+        loadDocument(target, true)
+          .then(() => { state.agentStatus = '计划已同步'; renderAgent() })
+          .catch(() => {})
+      }, 2500)
     } catch (error) {
+      state.agentStatus = '发送失败'
+      renderAgent()
       toast(`发送失败：${error.message}`, 'error', 7)
     } finally {
       state.busy = false
@@ -589,6 +851,13 @@ export function mountWorkbench(host, options) {
       composer.requestSubmit()
     }
   })
+  const onGlobalKey = (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault()
+      input.focus()
+    }
+  }
+  document.addEventListener('keydown', onGlobalKey)
 
   const onMessage = (event) => {
     const data = event.data
@@ -600,6 +869,9 @@ export function mountWorkbench(host, options) {
       startWatchdog()
     } else if (data.type === 'shown') {
       state.shown = data.version
+    } else if (data.type === 'pick' && data.pick) {
+      state.selection = data.pick
+      renderSelection()
     } else if (data.type === 'error') {
       toast(`视图错误：${data.text}`, 'error', 6)
     }
@@ -625,17 +897,18 @@ export function mountWorkbench(host, options) {
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
 
   setInspector(true)
+  shell.dataset.models = 'on'
+  modelsButton.setAttribute('aria-pressed', 'true')
+  loadAgentLog()
+  renderSelection()
+  renderAgent()
+  options.onFocus?.()
   chooseDocument().catch((error) => toast(`无法加载模型库：${error.message}`, 'error', 8))
 
   const sessionPoll = setInterval(() => {
     const next = options.getSessionId?.()
     if (next && next !== state.sessionId) {
-      state.sessionId = next
-      const stored = localStorage.getItem(`cadview.document.${next}`)
-      if (stored) loadDocument(stored, true).catch(() => {})
-      else if (state.docId) {
-        try { localStorage.setItem(`cadview.document.${next}`, state.docId) } catch (error) { /* private mode */ }
-      }
+      setSession(next)
     }
   }, 1000)
 
@@ -645,12 +918,16 @@ export function mountWorkbench(host, options) {
       clearInterval(sessionPoll)
       clearTimeout(toastTimer)
       observer.disconnect()
+      document.body.classList.remove('bxw-workbench')
       window.removeEventListener('message', onMessage)
+      document.removeEventListener('keydown', onGlobalKey)
       shell.remove()
     },
     setSession(sessionId) {
       if (!sessionId || sessionId === state.sessionId) return
       state.sessionId = sessionId
+      loadAgentLog()
+      renderAgent()
       const stored = localStorage.getItem(`cadview.document.${sessionId}`)
       if (stored) {
         loadDocument(stored, true).catch(() => {})
