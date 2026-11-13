@@ -102,25 +102,20 @@ def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> An
             raise RefError("REF_UNSUPPORTED", f"{name}: {exc}") from exc
 
     if name in {"closed", "open", "length_between", "radius_between"}:
-        items = list(items) if not isinstance(items, list) else items
         if name == "closed":
-            return [item for item in items if bool(getattr(item, "is_closed", False))]
+            return items.filter(lambda entry: bool(getattr(entry, "is_closed", False)))
         if name == "open":
-            return [item for item in items if not bool(getattr(item, "is_closed", True))]
+            return items.filter(lambda entry: not bool(getattr(entry, "is_closed", True)))
         if len(item.args) != 2:
             raise RefError("REF_INVALID_ARG", f"{name} needs a [low, high] pair")
         low, high = (float(item.args[0]), float(item.args[1]))
         if name == "length_between":
-            return [entry for entry in items
-                    if low <= float(getattr(entry, "length", 0.0)) <= high]
-        selected = []
-        for entry in items:
+            return items.filter(
+                lambda entry: low <= float(getattr(entry, "length", 0.0)) <= high)
+        def has_radius(entry: Any) -> bool:
             radius = getattr(entry, "radius", None)
-            if radius is None:
-                continue
-            if low <= float(radius) <= high:
-                selected.append(entry)
-        return selected
+            return radius is not None and low <= float(radius) <= high
+        return items.filter(has_radius)
 
     if name not in _METHODS:
         raise RefError("REF_UNSUPPORTED", f"filter method {name!r} is not allowed")
