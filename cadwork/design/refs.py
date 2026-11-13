@@ -21,6 +21,7 @@ _METHODS = {
     "tangent_chain", "g1", "g2", "hit_by",
     "group_by", "max_by", "min_by", "sort_by", "sort_by_distance",
     "edges", "faces", "vertices", "wires",
+    "closed", "open", "length_between", "radius_between",
 }
 _PROPERTIES = {"first", "last", "count"}
 _AXIS_METHODS = {
@@ -99,6 +100,27 @@ def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> An
             raise RefError("REF_INVALID_ARG", f"{name}: {exc}") from exc
         except Exception as exc:
             raise RefError("REF_UNSUPPORTED", f"{name}: {exc}") from exc
+
+    if name in {"closed", "open", "length_between", "radius_between"}:
+        items = list(items) if not isinstance(items, list) else items
+        if name == "closed":
+            return [item for item in items if bool(getattr(item, "is_closed", False))]
+        if name == "open":
+            return [item for item in items if not bool(getattr(item, "is_closed", True))]
+        if len(item.args) != 2:
+            raise RefError("REF_INVALID_ARG", f"{name} needs a [low, high] pair")
+        low, high = (float(item.args[0]), float(item.args[1]))
+        if name == "length_between":
+            return [entry for entry in items
+                    if low <= float(getattr(entry, "length", 0.0)) <= high]
+        selected = []
+        for entry in items:
+            radius = getattr(entry, "radius", None)
+            if radius is None:
+                continue
+            if low <= float(radius) <= high:
+                selected.append(entry)
+        return selected
 
     if name not in _METHODS:
         raise RefError("REF_UNSUPPORTED", f"filter method {name!r} is not allowed")

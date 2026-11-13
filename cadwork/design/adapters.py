@@ -237,6 +237,121 @@ PLACE_ON = FeatureSpec(
 ADAPTERS = (PATTERN, TAG, IMPORT_BASE, PLACE_ON)
 
 
+def _edge_signature(edge: Any) -> tuple[float, float, float, float, str]:
+    center = edge.center()
+    return (float(center[0]), float(center[1]), float(center[2]),
+            float(edge.length), str(getattr(edge, "geom_type", "edge")))
+
+
+def _find_edge(part: Any, signature: tuple[float, float, float, float, str]) -> Any | None:
+    """Find the current edge that corresponds to a pre-blend edge.
+
+    A blend changes the edge list, so an edge object from the input cannot be
+    reused. Match on position, length and geometry type; a blend group is only
+    applied to edges that still exist after earlier blends.
+    """
+    cx, cy, cz, length, geom = signature
+    best = None
+    best_score = float("inf")
+    for edge in part.edges():
+        try:
+            center = edge.center()
+            current_length = float(edge.length)
+            current_geom = str(getattr(edge, "geom_type", "edge"))
+        except Exception:
+            continue
+        distance = ((float(center[0]) - cx) ** 2 + (float(center[1]) - cy) ** 2
+                    + (float(center[2]) - cz) ** 2) ** 0.5
+        length_delta = abs(current_length - length) / max(length, 1.0)
+        score = distance + 20.0 * length_delta + (0.0 if current_geom == geom else 0.5)
+        if score < best_score:
+            best = edge
+            best_score = score
+    return best
+
+
+def _blend_one(part: Any, edge: Any, kind: str, size: float,
+               propagate: bool) -> Any:
+    if kind == "fillet":
+        return part.fillet([edge], size, propagate=propagate)
+    return part.chamfer([edge], size, propagate=propagate)
+
+
+def _build_blend_group(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
+    target = inputs["target"]
+    edges = _items(inputs["edges"])
+    if not edges:
+        raise FeatureError("BLEND_EMPTY", "blend_group needs at least one edge")
+    kind = params["kind"]
+    size = float(params["size"])
+    propagate = bool(params["propagate"])
+    try:
+        if kind == "fillet":
+            result = target.fillet(edges, size, propagate=propagate)
+        else:
+            result = target.chamfer(edges, size, propagate=propagate)
+        return FeatureOutput(result, {"blend": {"kind": kind, "applied": len(edges), "skipped": 0}})
+    except Exception as group_error:
+        if params["on_failure"] == "fail":
+            raise FeatureError(
+                "BLEND_FAILED",
+                f"{kind} failed for the selected edge group: {group_error}",
+                hint="use on_failure=skip to isolate non-blendable edges",
+            ) from group_error
+
+    current = target
+    applied: list[str] = []
+    skipped: list[str] = []
+    signatures = [_edge_signature(edge) for edge in edges]
+    for signature in signatures:
+        current_edge = _find_edge(current, signature)
+        if current_edge is None:
+            skipped.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+            continue
+        try:
+            current = _blend_one(current, current_edge, kind, size, propagate)
+            applied.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+        except Exception:
+            skipped.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+    if not applied:
+        raise FeatureError(
+            "BLEND_FAILED",
+            f"{kind} failed for every selected edge",
+            hint="inspect the edge geometry and reduce the radius/length",
+        )
+    return FeatureOutput(current, {"blend": {
+        "kind": kind, "applied": len(applied), "skipped": len(skipped),
+        "skipped_edges": skipped,
+    }})
+
+
+def _check_blend_group(value: Any, params: dict[str, Any],
+                       inputs: dict[str, Any]) -> list[CheckResult]:
+    return [checks.valid(value), checks.solid(value), checks.watertight(value),
+            checks.volume_gt(value, 0.0)]
+
+
+BLEND_GROUP = FeatureSpec(
+    type="blend_group",
+    summary="Round or bevel a set of edges; a failed group is retried per edge "
+            "with independent topology reselection, so one bad edge cannot "
+            "abort the whole set.",
+    inputs=(InputRole("target", "part"), InputRole("edges", "edges")),
+    params={
+        "kind": Param("enum", "fillet", choices=("fillet", "chamfer")),
+        "size": Param("float", None, required=True, unit="mm",
+                      description="fillet radius or chamfer setback"),
+        "propagate": Param("bool", True),
+        "on_failure": Param("enum", "fail", choices=("fail", "skip")),
+    },
+    build=_build_blend_group,
+    check=_check_blend_group,
+    tier="adapter",
+    origin="adapter:blend_group",
+    return_kind="part",
+)
+
+
 def _build_cavity(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     target = inputs["target"]
     box = target.bbox()
@@ -268,4 +383,128 @@ CAVITY = FeatureSpec(
     return_kind="part",
 )
 
-ADAPTERS = ADAPTERS + (CAVITY,)
+def _build_thread(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
+    target = inputs.get("target")
+    pitch = float(params["pitch"])
+    length = float(params["length"])
+    diameter = float(params["diameter"])
+    depth = params.get("depth")
+    if depth is None:
+        depth = 0.6 * pitch
+    depth = float(depth)
+    center = tuple(float(value) for value in params["center"])
+    # The tooth is drawn in the sweep frame: X is radial, Y is along the axis.
+    # Putting the helix one half tooth below the major radius makes the tool
+    # cut a helical groove; without a target the same body is a reusable tool.
+    tooth = S.Polygon((0.0, -pitch / 3.0), (0.0, pitch / 3.0), (depth, 0.0))
+    helix = S.Helix(pitch=pitch, height=length, radius=diameter / 2.0 - depth / 2.0,
+                    center=center, left_handed=bool(params["left_handed"]))
+    tool = S.sweep(tooth, helix)
+    if target is not None:
+        tool = target.cut(tool)
+    return FeatureOutput(tool, {"thread": {
+        "pitch": pitch, "length": length, "diameter": diameter, "depth": depth,
+        "cut": target is not None,
+    }})
+
+
+def _check_thread(value: Any, params: dict[str, Any],
+                  inputs: dict[str, Any]) -> list[CheckResult]:
+    return [checks.valid(value), checks.watertight(value), checks.volume_gt(value, 0.0)]
+
+
+THREAD = FeatureSpec(
+    type="thread",
+    summary="Cut a helical external thread groove into a target, or produce the "
+            "thread tool when no target is given. The axis is the target's Z axis.",
+    inputs=(InputRole("target", "part", optional=True),),
+    params={
+        "diameter": Param("float", None, required=True, unit="mm"),
+        "pitch": Param("float", None, required=True, unit="mm"),
+        "length": Param("float", None, required=True, unit="mm"),
+        "depth": Param("float", None, unit="mm",
+                       description="radial thread depth; default 0.6 × pitch"),
+        "center": Param("vector", [0.0, 0.0, 0.0], unit="mm"),
+        "left_handed": Param("bool", False),
+    },
+    build=_build_thread,
+    check=_check_thread,
+    tier="adapter",
+    origin="adapter:thread",
+    return_kind="part",
+)
+
+
+def _axis_vector(axis: str) -> tuple[float, float, float]:
+    return {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0),
+            "Z": (0.0, 0.0, 1.0)}[axis]
+
+
+def _build_stepped_bore(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
+    target = inputs["target"]
+    center = tuple(float(value) for value in params["center"])
+    axis = params["axis"]
+    directions = _axis_vector(axis)
+    box = target.bbox()
+    diagonal = sum(float(size) ** 2 for size in box.size) ** 0.5
+    tools = []
+    start = 0.0
+    for index in (1, 2):
+        diameter = params.get(f"diameter_{index}")
+        if diameter is None:
+            continue
+        depth = params.get(f"depth_{index}")
+        through = bool(params.get("through")) and index == 2
+        if through:
+            depth = diagonal + 20.0
+            start = -depth / 2.0
+        elif depth is None:
+            depth = diagonal + 20.0
+        depth = float(depth)
+        center_i = tuple(center[axis_index] + directions[axis_index] * (start + depth / 2.0)
+                         for axis_index in range(3))
+        tool = S.Cylinder(float(diameter) / 2.0, depth)
+        if axis == "X":
+            tool = tool.rotate(S.Y, 90.0)
+        elif axis == "Y":
+            tool = tool.rotate(S.X, 90.0)
+        tool = tool.translate(*center_i)
+        tools.append(tool)
+        start += depth
+    if not tools:
+        raise FeatureError("BORE_EMPTY", "stepped_bore needs diameter_1")
+    result = target.cut(tools)
+    return FeatureOutput(result, {"bore": {
+        "axis": axis, "stages": len(tools), "through": bool(params.get("through")),
+    }})
+
+
+def _check_stepped_bore(value: Any, params: dict[str, Any],
+                        inputs: dict[str, Any]) -> list[CheckResult]:
+    return [checks.valid(value), checks.solid(value), checks.watertight(value),
+            checks.volume_gt(value, 0.0)]
+
+
+STEPPED_BORE = FeatureSpec(
+    type="stepped_bore",
+    summary="Cut one or two coaxial bores along X, Y or Z, with independent "
+            "diameters and depths; the second stage can be through.",
+    inputs=(InputRole("target", "part"),),
+    params={
+        "diameter_1": Param("float", None, required=True, unit="mm"),
+        "depth_1": Param("float", None, unit="mm"),
+        "diameter_2": Param("float", None, unit="mm"),
+        "depth_2": Param("float", None, unit="mm"),
+        "through": Param("bool", False),
+        "center": Param("vector", [0.0, 0.0, 0.0], unit="mm"),
+        "axis": Param("enum", "Z", choices=("X", "Y", "Z")),
+    },
+    build=_build_stepped_bore,
+    check=_check_stepped_bore,
+    tier="adapter",
+    origin="adapter:stepped_bore",
+    return_kind="part",
+)
+
+
+ADAPTERS = ADAPTERS + (CAVITY, BLEND_GROUP, THREAD, STEPPED_BORE)

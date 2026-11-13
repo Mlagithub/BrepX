@@ -20,6 +20,9 @@ validates the plan and lowers it to kernel actions; you never write kernel calls
 | `plan_schema` | exact node / ref / filter / op shapes; call this first if unsure |
 | `plan_add_node` | add exactly one node; use this for every node of a large plan |
 | `plan_edit` | `ops` = add_node / update_node / remove_node / set_goal |
+| `blend_group` | fillet/chamfer a whole edge set; retries per edge when the group fails |
+| `thread` | cut a helical external thread groove into a target, or make the thread tool |
+| `stepped_bore` | cut one or two coaxial bores along X/Y/Z, with a through second stage |
 | `plan_compile` | dry-run the tree: issues, op count, action coverage |
 | `plan_run` | execute one ready node; a feature commits a milestone, a check measures |
 | `probe` | dry-run a selector or resolve a picked face |
