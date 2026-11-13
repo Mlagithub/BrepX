@@ -112,11 +112,8 @@ const css = `
     font: 9px/1.5 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-structure-empty { padding: 10px 8px; color: var(--bxw-muted); font-size: 11px; }
   .bxw-model-list { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 4px 6px 12px; }
-  .bxw-inspector-tabs { display: flex; gap: 2px; }
-  .bxw-inspector-tabs button { height: 26px; padding: 0 8px; border-color: transparent; color: var(--bxw-muted); font-size: 11px; }
-  .bxw-inspector-tabs button[aria-selected="true"] { color: var(--bxw-primary); background: var(--bxw-layer); border-color: var(--bxw-line); }
   .bxw-pane[hidden] { display: none; }
-  .bxw-selection { display: flex; align-items: center; gap: 7px; max-width: 980px; margin: 0 auto 7px; min-height: 24px; color: var(--bxw-soft); font-size: 11px; }
+  .bxw-selection { display: flex; align-items: center; gap: 7px; max-width: none; margin: 0 0 7px; min-height: 24px; color: var(--bxw-soft); font-size: 11px; }
   .bxw-selection[hidden] { display: none; }
   .bxw-selection-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--bxw-accent) 40%, var(--bxw-line)); border-radius: 999px; color: var(--bxw-primary); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
   .bxw-selection-chip button { width: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: var(--bxw-muted); }
@@ -179,7 +176,23 @@ const css = `
     color: var(--bxw-muted); font: 10px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-check { font-size: 11px; color: var(--bxw-soft); }
   .bxw-check[data-ok="false"] { color: var(--bxw-bad); }
-  .bxw-composer { border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); padding: 10px 18px 12px; }
+  .bxw-dock { display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--bxw-line); background: var(--bxw-panel); }
+  .bxw-dock-active { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 7px 18px; border-bottom: 1px solid var(--bxw-line);
+    background: color-mix(in srgb, var(--bxw-accent) 6%, var(--bxw-panel)); }
+  .bxw-dock-active[hidden] { display: none; }
+  .bxw-dock-active b { color: var(--bxw-primary); font-size: 12px; font-weight: 550; flex: none; }
+  .bxw-dock-active span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-soft); font-size: 11px; }
+  .bxw-dock-active button { flex: none; height: 26px; padding: 0 9px; font-size: 11px; }
+  .bxw-dock-history { height: min(320px, 38vh); min-height: 180px; overflow: hidden; display: flex; flex-direction: column; border-bottom: 1px solid var(--bxw-line); }
+  .bxw-dock-history[hidden] { display: none; }
+  .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; }
+  .bxw-dock-agent { height: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); font-size: 11px; }
+  .bxw-dock-agent svg { width: 14px; height: 14px; }
+  .bxw-dock-agent[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
+  .bxw-dock-status { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-muted); font-size: 10px; }
+  .bxw-dock-history-toggle { height: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-muted); font-size: 10px; }
+  .bxw-dock-history-toggle:hover { color: var(--bxw-primary); background: var(--bxw-layer); }
+  .bxw-composer { border-top: 0; background: var(--bxw-panel); padding: 0 18px 12px; }
   .bxw-composer[data-target="agent"] { border-top-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
   .bxw-composer-target { flex: none; height: 30px; display: inline-flex; align-items: center; padding: 0 8px;
     border: 1px solid var(--bxw-line); border-radius: 999px; color: var(--bxw-muted); font-size: 10px; user-select: none; }
@@ -193,7 +206,7 @@ const css = `
   .bxw-send { height: 34px; padding: 0 14px; border-color: color-mix(in srgb, var(--bxw-accent) 60%, transparent);
     background: color-mix(in srgb, var(--bxw-accent) 16%, transparent); color: var(--bxw-primary, #e8edf5); }
   .bxw-send:hover { background: color-mix(in srgb, var(--bxw-accent) 26%, transparent); }
-  .bxw-hint { max-width: 980px; margin: 6px auto 0; color: var(--bxw-muted); font-size: 10px; }
+  .bxw-hint { max-width: none; margin: 6px 0 0; color: var(--bxw-muted); font-size: 10px; }
   .bxw-toast { position: fixed; right: 20px; bottom: 92px; z-index: 30; max-width: 360px; padding: 9px 12px;
     border: 1px solid var(--bxw-line); border-radius: 7px; background: var(--bxw-panel); color: var(--bxw-soft);
     box-shadow: 0 10px 28px rgb(0 0 0 / 28%); opacity: 0; transform: translateY(6px); pointer-events: none;
@@ -304,7 +317,6 @@ export function mountWorkbench(host, options) {
     wire: false,
     inspector: true,
     busy: false,
-    tab: 'inspect',
     selection: null,
     leftWidth: 236,
     rightWidth: 292,
@@ -314,6 +326,9 @@ export function mountWorkbench(host, options) {
     modeling: false,
     simplified: false,
     focus: false,
+    historyOpen: false,
+    dockQuestion: false,
+    dockQuestionText: '',
   }
 
   const shell = el('div', { className: 'bxw-shell' })
@@ -412,18 +427,12 @@ export function mountWorkbench(host, options) {
 
   const inspector = el('aside', { className: 'bxw-inspector', 'aria-label': '模型检查器' })
   const inspectorHead = el('div', { className: 'bxw-inspector-head' })
-  const inspectorTabs = el('div', { className: 'bxw-inspector-tabs', role: 'tablist', 'aria-label': '检查器视图' })
-  const inspectTab = el('button', { type: 'button', role: 'tab', 'aria-selected': 'true' }, '检查')
-  const agentTab = el('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, 'Agent')
-  inspectorTabs.append(inspectTab, agentTab)
+  const inspectorTitle = el('strong', {}, '模型检查器')
   const inspectorClose = el('button', { type: 'button', title: '收起检查器', 'aria-label': '收起检查器', html: ICONS.close })
   inspectorClose.addEventListener('click', () => setInspector(false))
-  inspectorHead.append(inspectorTabs, inspectorClose)
+  inspectorHead.append(inspectorTitle, inspectorClose)
 
   const inspectorBody = el('div', { className: 'bxw-inspector-body' })
-  const inspectPane = el('div', { className: 'bxw-pane', role: 'tabpanel' })
-  const agentPane = el('div', { className: 'bxw-pane', role: 'tabpanel', hidden: true })
-
   const metricsSection = el('section', { className: 'bxw-section' })
   metricsSection.append(el('h3', {}, '几何'))
   const metricsGrid = el('div', { className: 'bxw-metrics' })
@@ -447,16 +456,25 @@ export function mountWorkbench(host, options) {
   const checkList = el('ul', { className: 'bxw-list' })
   checkSection.append(checkSummary, checkList)
 
-  const agentSection = el('section', { className: 'bxw-section bxw-agent-section' })
-  agentSection.append(el('h3', {}, 'Agent 线程'))
-  const agentSlot = el('div', { className: 'bxw-agent-slot' })
-  agentSection.append(agentSlot)
-  options.onAgentHost?.(agentSlot)
-
-  inspectPane.append(metricsSection, selectionSection, checkSection)
-  agentPane.append(agentSection)
-  inspectorBody.append(inspectPane, agentPane)
+  inspectorBody.append(metricsSection, selectionSection, checkSection)
   inspector.append(inspectorHead, inspectorBody)
+
+  const dock = el('section', { className: 'bxw-dock', 'aria-label': '命令与 Agent' })
+  const activeCard = el('div', { className: 'bxw-dock-active', hidden: true })
+  const activeTitle = el('b', {}, '')
+  const activeBody = el('span', {}, '')
+  const activeAction = el('button', { type: 'button' }, '查看')
+  activeCard.append(activeTitle, activeBody, activeAction)
+  const historyPanel = el('div', { className: 'bxw-dock-history', hidden: true })
+  const agentSlot = el('div', { className: 'bxw-agent-slot' })
+  historyPanel.append(agentSlot)
+  options.onAgentHost?.(agentSlot)
+  const dockBar = el('div', { className: 'bxw-dock-bar' })
+  const dockAgent = el('button', { type: 'button', className: 'bxw-dock-agent', 'aria-label': '展开 Agent 历史', html: ICONS.chat + '<span>Agent</span>' })
+  const dockStatus = el('span', { className: 'bxw-dock-status' }, '等待指令')
+  const historyToggle = el('button', { type: 'button', className: 'bxw-dock-history-toggle' }, '历史')
+  dockBar.append(dockAgent, dockStatus, historyToggle)
+  dock.append(activeCard, historyPanel, dockBar)
 
   const composer = el('form', { className: 'bxw-composer' })
   const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
@@ -473,8 +491,9 @@ export function mountWorkbench(host, options) {
   const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行')
   composer.append(selectionBar, composerBox, hint)
 
+  dock.append(composer)
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
-  shell.append(header, main, composer, toastNode)
+  shell.append(header, main, dock, toastNode)
   main.append(models, stage, inspector)
   const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
@@ -570,21 +589,78 @@ export function mountWorkbench(host, options) {
     window.addEventListener('pointerup', onEnd)
   }
 
-  const setTab = (tab) => {
-    state.tab = tab === 'agent' ? 'agent' : 'inspect'
-    shell.dataset.agent = state.tab === 'agent' ? 'true' : 'false'
-    if (state.tab === 'agent' && state.rightWidth < 400) setRightWidth(480)
-    inspectTab.setAttribute('aria-selected', state.tab === 'inspect' ? 'true' : 'false')
-    agentTab.setAttribute('aria-selected', state.tab === 'agent' ? 'true' : 'false')
-    inspectPane.hidden = state.tab !== 'inspect'
-    agentPane.hidden = state.tab !== 'agent'
-    agentButton.setAttribute('aria-pressed', state.tab === 'agent' ? 'true' : 'false')
-    composer.dataset.target = state.tab === 'agent' ? 'agent' : 'inspect'
-    composerTarget.textContent = state.tab === 'agent' ? 'Agent' : '命令'
-    input.placeholder = state.tab === 'agent'
+  const setComposerTarget = (agent) => {
+    composer.dataset.target = agent ? 'agent' : 'inspect'
+    composerTarget.textContent = agent ? 'Agent' : '命令'
+    input.placeholder = agent
       ? '回复 Agent，或输入 /命令…'
       : '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40'
-    setInspector(true)
+  }
+
+  const renderDock = () => {
+    const question = state.dockQuestion
+    const modeling = state.modeling
+    dockStatus.textContent = question
+      ? 'Agent 需要你确认'
+      : modeling
+        ? 'Agent 正在建模…'
+        : state.historyOpen
+          ? '历史已展开'
+          : '等待指令'
+    dockAgent.setAttribute('aria-pressed', state.historyOpen ? 'true' : 'false')
+    agentButton.setAttribute('aria-pressed', state.historyOpen ? 'true' : 'false')
+    historyToggle.textContent = state.historyOpen ? '收起历史' : '历史'
+    if (state.historyOpen) {
+      activeCard.hidden = true
+      return
+    }
+    if (question) {
+      activeTitle.textContent = 'Agent 待确认'
+      activeBody.textContent = state.dockQuestionText || '需要你回答一个问题才能继续。'
+      activeAction.textContent = '查看并回答'
+      activeCard.hidden = false
+    } else if (modeling) {
+      const nodes = state.plan?.plan?.nodes || []
+      const done = nodes.filter((node) => node.status === 'done').length
+      activeTitle.textContent = 'Agent 正在建模'
+      activeBody.textContent = nodes.length ? `${done}/${nodes.length} 个计划节点完成` : '正在生成计划…'
+      activeAction.textContent = '查看进度'
+      activeCard.hidden = false
+    } else if (state.checks && !state.checks.ok) {
+      activeTitle.textContent = '检查未通过'
+      activeBody.textContent = `${state.checks.passed}/${state.checks.total} 通过`
+      activeAction.textContent = '查看检查'
+      activeCard.hidden = false
+    } else {
+      activeCard.hidden = true
+    }
+  }
+
+  const openHistory = (open) => {
+    state.historyOpen = Boolean(open)
+    historyPanel.hidden = !state.historyOpen
+    setComposerTarget(state.historyOpen)
+    renderDock()
+    if (state.historyOpen) {
+      requestAnimationFrame(() => {
+        const question = agentSlot.querySelector('[data-question-key]')
+        question?.scrollIntoView({ block: 'nearest' })
+      })
+    }
+  }
+
+  const setDockQuestion = (active, text) => {
+    const next = Boolean(active)
+    const changed = next !== state.dockQuestion
+    state.dockQuestion = next
+    state.dockQuestionText = next ? (text || '') : ''
+    if (next !== state.historyOpen) {
+      if (next) openHistory(true)
+      else renderDock()
+    } else {
+      renderDock()
+    }
+    return changed
   }
 
   const formatSelection = (pick) => {
@@ -723,8 +799,8 @@ export function mountWorkbench(host, options) {
         wireButton.setAttribute('aria-pressed', state.wire ? 'true' : 'false')
         post('wire', { on: state.wire })
         return true
-      case 'checks': setTab('inspect'); return true
-      case 'agent': setTab('agent'); return true
+      case 'checks': setInspector(true); return true
+      case 'agent': openHistory(!state.historyOpen); return true
       case 'focus': setFocus(!state.focus); return true
       case 'models': setModels(shell.dataset.models === 'off'); return true
       case 'new': createModel(); return true
@@ -774,9 +850,15 @@ export function mountWorkbench(host, options) {
   })
   document.addEventListener('click', closeViewMenu)
 
-  inspectTab.addEventListener('click', () => setTab('inspect'))
-  agentTab.addEventListener('click', () => setTab('agent'))
-  agentButton.addEventListener('click', () => setTab('agent'))
+  const toggleHistory = () => openHistory(!state.historyOpen)
+  agentButton.addEventListener('click', toggleHistory)
+  dockAgent.addEventListener('click', toggleHistory)
+  historyToggle.addEventListener('click', toggleHistory)
+  activeAction.addEventListener('click', () => {
+    if (state.dockQuestion) openHistory(true)
+    else if (state.modeling) openHistory(true)
+    else setInspector(true)
+  })
   modelsNew.addEventListener('click', createModel)
   leftResizer.addEventListener('pointerdown', (event) => startResize(event, 'left'))
   rightResizer.addEventListener('pointerdown', (event) => startResize(event, 'right'))
@@ -1092,7 +1174,7 @@ export function mountWorkbench(host, options) {
       resizeInput()
       toast('已提交给 Agent')
       startModelingProgress()
-      setTab('agent')
+      renderDock()
       setTimeout(() => { loadThread() }, 2500)
       setTimeout(() => { loadThread() }, 6000)
     } catch (error) {
@@ -1163,6 +1245,18 @@ export function mountWorkbench(host, options) {
   const observer = new MutationObserver(onTheme)
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
 
+  let questionScanFrame = 0
+  const scanDockQuestion = () => {
+    const node = agentSlot.querySelector('[data-question-key]')
+    const text = node ? node.innerText.replace(/\s+/g, ' ').trim().slice(0, 180) : ''
+    setDockQuestion(Boolean(node), text)
+  }
+  const dockObserver = new MutationObserver(() => {
+    cancelAnimationFrame(questionScanFrame)
+    questionScanFrame = requestAnimationFrame(scanDockQuestion)
+  })
+  dockObserver.observe(agentSlot, { childList: true, subtree: true })
+
   try {
     const savedLayout = JSON.parse(localStorage.getItem('cadview.layout') || '{}')
     if (Number.isFinite(savedLayout.left)) state.leftWidth = Math.max(190, Math.min(430, savedLayout.left))
@@ -1174,6 +1268,7 @@ export function mountWorkbench(host, options) {
   shell.dataset.models = 'on'
   menuModels.setAttribute('aria-checked', 'true')
   renderSelection()
+  openHistory(false)
   loadThread()
   options.onFocus?.()
   chooseDocument().catch((error) => toast(`无法加载模型库：${error.message}`, 'error', 8))
@@ -1195,6 +1290,8 @@ export function mountWorkbench(host, options) {
       stopModelingProgress()
       clearTimeout(toastTimer)
       observer.disconnect()
+      dockObserver.disconnect()
+      cancelAnimationFrame(questionScanFrame)
       document.body.classList.remove('bxw-workbench')
       window.removeEventListener('message', onMessage)
       document.removeEventListener('keydown', onGlobalKey)
