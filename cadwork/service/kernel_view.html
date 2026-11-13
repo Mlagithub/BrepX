@@ -422,9 +422,14 @@ const showGhost = async (documentId, version) => {
   }
 }
 
+let latestDesignRequest = 0
+
 const showVersion = async (documentId, version, options = {}) => {
   currentDoc = documentId
   if (!kernel) return
+  const requestId = Number(options.requestId) || 0
+  if (requestId) latestDesignRequest = Math.max(latestDesignRequest, requestId)
+  const requestToken = latestDesignRequest
   if (!documentId || !version) {
     previewActive = false
     clearHighlight()
@@ -449,6 +454,10 @@ const showVersion = async (documentId, version, options = {}) => {
   const keep = display
   try {
     const object = await objectFor(documentId, version)
+    if (requestToken !== latestDesignRequest) {
+      disposeObject(object)
+      return
+    }
     display = object
     scene.add(display)
     disposeObject(keep)

@@ -442,6 +442,8 @@ export function mountViewport(host, base) {
   let bannerTimer = null
   let streamRetry = null
   let shownVersion = -1
+  let shownDocumentId = null
+  let designRequest = 0
   let watchdog = null
 
   const documentId = () => currentDoc?.document.id ?? null
@@ -469,6 +471,7 @@ export function mountViewport(host, base) {
   const designPayload = (options = {}) => ({
     documentId: documentId(),
     version: showingVersion(),
+    requestId: ++designRequest,
     highlight: options.highlight,
     prefetch: options.prefetch ?? previousVersion(),
     fit: options.fit,
@@ -511,7 +514,7 @@ export function mountViewport(host, base) {
     watchdog = setInterval(() => {
       if (!kernelReady) return
       if (!documentId()) return
-      if (shownVersion === showingVersion()) return
+      if (shownVersion === showingVersion() && shownDocumentId === documentId()) return
       pushDesign()
     }, 1500)
   }
@@ -519,6 +522,7 @@ export function mountViewport(host, base) {
   frame.addEventListener('load', () => {
     kernelReady = false
     shownVersion = -1
+    shownDocumentId = null
   })
 
   const renderHeader = () => {
@@ -1461,6 +1465,7 @@ export function mountViewport(host, base) {
       startWatchdog()
     } else if (data.type === 'shown') {
       shownVersion = data.version
+      shownDocumentId = data.documentId || null
     } else if (data.type === 'pick' && data.pick) {
       const anchor = await resolvePick(data.pick)
       pendingPicks = [...pendingPicks.slice(-2), anchor]
