@@ -1,4 +1,4 @@
-"""The agent surface: exactly fifteen short tools over the in-memory MCP server."""
+"""The agent surface: short document, plan and geometry tools over the MCP server."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from cadwork.service.service import CADService
 from cadwork.service.store import Store
 
 EXPECTED_TOOLS = sorted([
-    "state", "probe", "resolve", "catalog", "preview", "variants",
-    "commit", "revert", "render", "plan", "plan_edit", "plan_compile",
-    "plan_run", "intents", "import",
+    "documents", "new_document", "state", "probe", "resolve", "catalog",
+    "plan_schema", "preview", "variants", "commit", "revert", "render", "plan",
+    "plan_edit", "plan_compile", "plan_run", "intents", "import",
 ])
 
 PLAN_OPS = [
@@ -62,7 +62,7 @@ class MCPTests(unittest.TestCase):
         async def scenario():
             tools = await self.server.list_tools()
             self.assertEqual(sorted(tool.name for tool in tools), EXPECTED_TOOLS)
-            self.assertEqual(len(tools), 15)
+            self.assertEqual(len(tools), 18)
             for tool in tools:
                 self.assertFalse(tool.name.startswith("cad_"), tool.name)
 
@@ -153,6 +153,27 @@ class MCPTests(unittest.TestCase):
             self.assertEqual(reverted["document"]["features"], [])
 
         self._run(scenario())
+
+    def test_document_tools_and_schema(self) -> None:
+        async def scenario():
+            created = await self._call("new_document", {"name": "fresh"})
+            document_id = created["id"]
+            state = await self._call("state", {"document_id": document_id})
+            self.assertTrue(state["vacant"])
+            listed = await self._call("documents", {})
+            self.assertIn(document_id, {item["id"] for item in listed})
+            schema = await self._call("plan_schema", {})
+            self.assertIn("add_node", schema["ops"])
+            self.assertIn("kind", schema["node"])
+
+        self._run(scenario())
+
+    def test_non_finite_probe_values_are_not_json(self) -> None:
+        from cadwork.service.mcp import _json_safe
+
+        self.assertEqual(_json_safe(float("nan")), None)
+        self.assertEqual(_json_safe(float("inf")), None)
+        self.assertEqual(_json_safe({"x": [1.0, float("-inf")]}), {"x": [1.0, None]})
 
     def test_commit_revert_and_intent_notes(self) -> None:
         async def scenario():

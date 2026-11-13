@@ -1,0 +1,13 @@
+﻿{
+  "name": "dsh-profile-cad-web",
+  "private": true,
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "cadview"
+      ]
+    }
+  }
+}

@@ -80,6 +80,21 @@ dsh --profile cad-agent
 4. `plan_run` 逐个 ready 节点；失败即停，改参数后重跑；
 5. `render` / `state` 复核；`commit` 之外的所有写入都带 `base_version`。
 
+## 工作台（cad-web）
+
+```bash
+python -m cadwork.service --port 8765
+dsh --profile cad-web --port 3081
+# 打开终端打印的 URL；选择工作区后，CAD Agent 默认为建模 agent
+```
+
+- 左侧对话输入自由意图；右侧 `CAD` 标签显示真实 B-Rep、计划里程碑、参数、checks 与导出。
+- 底部“描述要做的改动”可直接发送给当前对话；文档下拉、新建、刷新在视口顶部。
+- Agent 对新建请求调用 `new_document`，对已有工作调用 `documents`/`state`；计划形状不确定时调用 `plan_schema`。
+- 失败恢复：节点失败不写文档；改参数后重跑受影响节点，依赖检查随计划走。
+
+安装 profile、skills 与已构建的 cadview：先在 `plugins/cadview` 执行 `npm run build`，再运行 `python agent/install.py --web --force`。
+
 ## 组件测试（真实浏览器）
 
 服务启动后打开 `http://127.0.0.1:8765/gen-tests`，页面逐个调用运行中的内核，覆盖
@@ -92,19 +107,6 @@ python -m cadwork.service --port 8765
 
 浏览器实跑证据保存在 [artifacts/gen-tests/browser-mwdawbfs](artifacts/gen-tests/browser-mwdawbfs/)（本地目录，已加入 `.gitignore`，不随仓库提交）：
 152 份 JSON、78 份 STEP、152 张 PNG、4 张页面截图、`manifest.json` 与 `summary.json`。
-
-## 主干案例
-
-服务启动后打开 `http://127.0.0.1:8765/case`，一次跑通五轮：
-80×80×20 板 + Ø20 孔 → Ø30 凸台 → 20 mm 圆角失败（版本不变）→ 0.5 mm 修复 → 孔改 Ø12 增量重算。
-
-```bash
-python -m cadwork.service --port 8765
-# 浏览器打开 http://127.0.0.1:8765/case
-```
-
-每轮保留意图、计划节点状态、版本、PNG、STEP 与 JSON；本地证据在
-[artifacts/trunk-case/trunk-8c4aaa93](artifacts/trunk-case/trunk-8c4aaa93/)。
 
 ## 内核清单
 

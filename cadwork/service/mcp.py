@@ -6,6 +6,7 @@ The tool names are short because dsh already namespaces them as ``mcp__cad__*``.
 from __future__ import annotations
 
 import io
+import math
 from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
@@ -19,6 +20,16 @@ def _fail(exc: ServiceError) -> ToolError:
     if exc.hint:
         message = f"{message} (hint: {exc.hint})"
     return ToolError(message)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _compose(views: list[tuple[str, bytes]]) -> bytes:
@@ -52,12 +63,14 @@ def build_mcp_server(service: CADService) -> MCPServer:
     server = MCPServer(
         "cadwork",
         instructions=(
-            "A parametric CAD document. Read with state, measure with probe, and resolve "
-            "spoken references with resolve. For a modelling request, maintain the plan "
-            "(plan, plan_edit, plan_compile) and execute one ready node at a time with "
-            "plan_run; never invent kernel code. Use preview when a direct edit is simpler, "
-            "render for visual checks, and import to freeze a STEP/IGES base body. Every "
-            "write needs the current base_version; a node must pass its own checks."
+            "A parametric CAD document. Start a fresh modeling request with new_document; "
+            "use documents to list existing work, then state with that document id to continue. "
+            "Read with state, measure with probe, and resolve spoken references with resolve. "
+            "For a modelling request, maintain the plan (plan, plan_edit, plan_compile) and "
+            "execute one ready node at a time with plan_run; never invent kernel code. Use "
+            "preview when a direct edit is simpler, render for visual checks, and import to "
+            "freeze a STEP/IGES base body. Every write needs the current base_version; a node "
+            "must pass its own checks."
         ),
     )
 
@@ -68,6 +81,20 @@ def build_mcp_server(service: CADService) -> MCPServer:
         if documents:
             return documents[0]["id"]
         return service.store.create("Workbench").id
+
+    @server.tool()
+    def documents() -> list[dict[str, Any]]:
+        """List CAD documents with id, name, version and feature count."""
+        return service.list_documents()
+
+    @server.tool()
+    def new_document(name: str = "Workbench") -> dict[str, Any]:
+        """Create a blank CAD document and return its id for all following calls."""
+        try:
+            document = service.store.create(name)
+            return service.document_json(document.id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
 
     @server.tool()
     def state(document_id: str | None = None) -> dict[str, Any]:
@@ -88,14 +115,14 @@ def build_mcp_server(service: CADService) -> MCPServer:
     ) -> dict[str, Any]:
         """Measure the real bounding box, dry-run a semantic selector, or resolve a picked point."""
         try:
-            return service.probe(
+            return _json_safe(service.probe(
                 document_id,
                 feature_id=feature_id,
                 ref=ref,
                 picked_point=picked_point,
                 picked_normal=picked_normal,
                 picked_area=picked_area,
-            )
+            ))
         except ServiceError as exc:
             raise _fail(exc) from exc
 
@@ -121,6 +148,53 @@ def build_mcp_server(service: CADService) -> MCPServer:
             entry for entry in entries
             if needle in entry["type"].lower() or needle in entry.get("summary", "").lower()
         ]
+
+    @server.tool()
+    def plan_schema() -> dict[str, Any]:
+        """Return the exact node, ref, filter, expect and plan-edit op shapes."""
+        return {
+            "node": {
+                "id": "plate",
+                "kind": "feature",
+                "title": "80x80x20 plate",
+                "action": "k_box",
+                "params": {"length": 80.0, "width": 80.0, "height": 20.0},
+                "refs": {},
+                "deps": [],
+                "expect": [],
+            },
+            "cut_node": {
+                "id": "hole",
+                "kind": "feature",
+                "title": "cut the bore",
+                "action": "k_cut",
+                "params": {},
+                "refs": {
+                    "target": {"source": "plate", "select": "self"},
+                    "others": [{"source": "tool", "select": "self"}],
+                },
+                "deps": ["plate", "tool"],
+                "expect": [],
+            },
+            "ref": {
+                "source": "hole",
+                "select": "faces",
+                "filters": [{"method": "nearest", "args": [[0.0, 0.0, 10.0]]}],
+            },
+            "expect_item": {"metric": "solids", "op": "eq", "value": 1},
+            "ops": {
+                "add_node": {"op": "add_node", "node": "<node shape above>"},
+                "update_node": {"op": "update_node",
+                                "node": {"id": "plate", "params": {"length": 100.0}}},
+                "remove_node": {"op": "remove_node", "id": "plate"},
+                "set_goal": {"op": "set_goal", "goal": "plate with a bore"},
+            },
+            "notes": [
+                "update_node replaces the whole params object; include every required parameter.",
+                "deps must name earlier nodes; refs.source must name an earlier feature.",
+                "kind is required: goal, feature or check.",
+            ],
+        }
 
     @server.tool()
     def preview(document_id: str, ops: list[dict[str, Any]],
@@ -217,7 +291,8 @@ def build_mcp_server(service: CADService) -> MCPServer:
         base_revision: int | None = None,
         goal: str | None = None,
     ) -> dict[str, Any]:
-        """Add, update or remove plan nodes. Ops: add_node, update_node, remove_node, set_goal."""
+        """Edit the plan. Each op has op=add_node|update_node|remove_node|set_goal.
+        Call plan_schema for the exact shapes; add_node needs a full node with kind."""
         try:
             return service.plan_edit(document_id, ops, base_revision=base_revision, goal=goal)
         except ServiceError as exc:

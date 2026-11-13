@@ -36,11 +36,27 @@ def _copy_tree(source: Path, target: Path, force: bool, copied: list[Path]) -> N
     copied.append(target)
 
 
+def _copy_cadview(source: Path, target: Path, force: bool, copied: list[Path]) -> None:
+    """Copy the built browser half and its manifest, never the plugin's node_modules."""
+    required = source / "lib" / "viewport.mjs"
+    if not required.is_file():
+        raise FileNotFoundError(
+            f"{required} is missing; run `npm run build` in {source} first"
+        )
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("lib",):
+        _copy_tree(source / name, target / name, force, copied)
+    for name in ("package.json", "cordis.patch.yml"):
+        _copy_file(source / name, target / name, force, copied)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install the cadwork dsh profile.")
     parser.add_argument("--home", default=os.environ.get("DSH_HOME"),
                         help="dsh home (default: $DSH_HOME or ~/.dsh)")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--web", action="store_true",
+                        help="also install the cad-web workbench profile (dsh web + cadview)")
     parser.add_argument("--no-smlibpy", action="store_true",
                         help="do not copy the smlibpy skill from the installed wheel")
     args = parser.parse_args(argv)
@@ -69,12 +85,22 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"warning: {vendor} has no SKILL.md; skill references not copied")
 
+    if args.web:
+        web = home / "profiles" / "cad-web"
+        web.mkdir(parents=True, exist_ok=True)
+        for name in ("package.json", "cordis.patch.yml"):
+            _copy_file(HERE / "cad-web" / name, web / name, args.force, copied)
+        _copy_cadview(HERE.parent / "plugins" / "cadview", web / "node_modules" / "cadview",
+                      args.force, copied)
+
     for path in copied:
         print(f"installed: {path}")
     print()
     print("next:")
     print("  1. start the CAD service:  python -m cadwork.service --port 8765")
     print("  2. start the agent:        dsh --profile cad-agent")
+    if args.web:
+        print("  3. start the workbench:    dsh --profile cad-web --port 3081")
     print("  check the profile:         dsh --profile cad-agent --dump-config")
     print("  list installed skills:     ls $DSH_HOME/skills")
     return 0

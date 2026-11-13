@@ -229,7 +229,16 @@ export function mountViewport(host, base) {
   const docLabel = el('span', 'bx-doc', '连接中…')
   const checkBadge = el('span', 'bx-badge', 'checks —')
   const metricText = el('span', 'bx-metric', '')
-  head.append(brand, docLabel, checkBadge, metricText)
+  const docSelect = el('select')
+  docSelect.setAttribute('aria-label', '切换文档')
+  docSelect.style.cssText = 'max-width:190px;font:11px/1.4 var(--bx-mono);background:var(--bx-panel);color:var(--bx-fg);border:1px solid var(--bx-line);border-radius:4px;padding:2px 4px'
+  const newDocButton = el('button', null, '新建')
+  newDocButton.type = 'button'
+  newDocButton.title = '新建文档'
+  const refreshDocsButton = el('button', null, '刷新')
+  refreshDocsButton.type = 'button'
+  refreshDocsButton.title = '刷新文档列表'
+  head.append(brand, docLabel, checkBadge, metricText, docSelect, newDocButton, refreshDocsButton)
   root.append(head)
 
   const stage = el('div', 'bx-stage')
@@ -767,10 +776,51 @@ export function mountViewport(host, base) {
     }
   }
 
+  const refreshDocuments = async (preferred) => {
+    const documents = await fetchJSON(`${serviceBase}/api/docs`)
+    docSelect.textContent = ''
+    for (const doc of documents) {
+      const option = el('option', null, `${doc.name || doc.id} · v${doc.version}`)
+      option.value = doc.id
+      docSelect.append(option)
+    }
+    if (preferred && documents.some((doc) => doc.id === preferred)) docSelect.value = preferred
+    return documents
+  }
+  const switchDocument = async (id) => {
+    if (!id) return
+    try { localStorage.setItem('cadview.document', id) } catch (error) { /* private mode */ }
+    await loadState(id)
+    connect(id)
+    await refreshDocuments(id)
+  }
+  docSelect.addEventListener('change', () => switchDocument(docSelect.value))
+  newDocButton.addEventListener('click', async () => {
+    try {
+      const created = await fetchJSON(`${serviceBase}/api/docs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Workbench' }),
+      })
+      await switchDocument(created.id)
+    } catch (error) {
+      showBanner(`新建失败 · ${error.message}`)
+    }
+  })
+  refreshDocsButton.addEventListener('click', async () => {
+    try {
+      const documents = await refreshDocuments(currentDoc?.document.id)
+      showBanner(`已刷新 ${documents.length} 个文档`, 2)
+    } catch (error) {
+      showBanner(`刷新失败 · ${error.message}`)
+    }
+  })
   const boot = async () => {
     try {
-      const documents = await fetchJSON(`${serviceBase}/api/docs`)
-      let id = documents.length ? documents[0].id : null
+      const documents = await refreshDocuments()
+      let id = null
+      try { id = localStorage.getItem('cadview.document') } catch (error) { /* private mode */ }
+      if (!documents.some((doc) => doc.id === id)) id = documents.length ? documents[0].id : null
       if (!id) {
         const created = await fetchJSON(`${serviceBase}/api/docs`, {
           method: 'POST',
@@ -779,8 +829,10 @@ export function mountViewport(host, base) {
         })
         id = created.id
       }
+      try { localStorage.setItem('cadview.document', id) } catch (error) { /* private mode */ }
       await loadState(id)
       connect(id)
+      await refreshDocuments(id)
       say('就绪 · 底部输入意图，或按住空格对比上一版本')
     } catch (error) {
       docLabel.textContent = 'service unreachable'
@@ -899,6 +951,24 @@ export function mountViewport(host, base) {
     }
   }
 
+  const sendToChat = (message) => {
+    const chat = document.querySelector('[contenteditable="true"][aria-label^="发消息"]')
+    if (!chat) return false
+    try {
+      chat.focus()
+      document.execCommand('selectAll', false, null)
+      document.execCommand('insertText', false, message)
+    } catch (error) {
+      chat.textContent = message
+      chat.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: message }))
+    }
+    setTimeout(() => {
+      const button = Array.from(document.querySelectorAll('button')).find((item) =>
+        ['发送消息', '排队发送'].includes(item.getAttribute('aria-label')))
+      if (button && !button.disabled) button.click()
+    }, 120)
+    return true
+  }
   const submitIntent = async (event) => {
     event.preventDefault()
     const text = prompt.value.trim()
@@ -917,12 +987,10 @@ export function mountViewport(host, base) {
           ...(branchBase !== null ? { base_version: branchBase } : {}),
         }),
       })
-      prompt.value = ''
-      pendingPicks = []
-      renderPills()
-      say(branchBase !== null
-        ? `已基于 v${branchBase} 交给 Agent · 待处理 ${result.pending}`
-        : `已交给 Agent · 待处理 ${result.pending}`)
+      const delivered = sendToChat(message)
+      say(delivered
+        ? (branchBase !== null ? `已基于 v${branchBase} 交给 Agent` : '已交给 Agent')
+        : '已记录意图；请在左侧对话继续')
     } catch (error) {
       showBanner(`提交失败 · ${error.message}`)
     } finally {

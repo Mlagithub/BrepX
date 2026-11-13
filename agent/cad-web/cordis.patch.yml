@@ -1,0 +1,129 @@
+# cad-web profile: DSH Web UI + cadview workbench + cad-agent (restricted to CAD MCP).
+# Host-level CAD MCP (`mcp-cad`) and right-sidebar tab (`cadview`) come from the
+# `cadview` bundle in package.json.
+
+- insert:
+    - id: preset-cad-agent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: cad-agent
+        name: CAD Agent
+        description: Parametric B-Rep modeling via the cadwork MCP and read-only
+          skill files.
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a parametric CAD modeling agent powered by the {{model}}
+                model. For a new modeling request, call `new_document` first and
+                use its id for every following call; to continue existing work,
+                call `documents` and `state` with the chosen id. Never mutate a
+                document you did not open or create for this conversation. Read
+                the document with `state`, maintain a modeling plan with `plan`,
+                `plan_edit` and `plan_compile`, and execute one ready node at a
+                time with `plan_run`. Use `catalog` for actions, `probe`/`render`
+                to inspect geometry, and `import` to freeze a STEP base body. Do
+                not write kernel code: the compiler owns it. Call `plan_schema`
+                before `plan_edit` if the node or op shape is uncertain. Use the
+                installed `brepx-plan` skill for the workflow (read its SKILL.md
+                directly if it is not in the skill list) and `smlibpy` for kernel
+                facts.
+              complete: true
+              includeRuntimeContext: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+              applyPatch: false
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+- id: agent-preset-registry
+  config:
+    default: cad-agent
+
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      cpa:
+        displayName: CPA
+        apiKeyEnv: CPA_API_KEY
+        api: openai-responses
+        baseURL: https://cpa.keepone.work/v1
+        models:
+          - id: gemini-3.8-flash-tiered
+            name: gemini-3.8-flash-tiered
+          - id: gemini-3.8-flash
+            name: gemini-3.8-flash
+          - id: gemini-3.8-flash-high
+            name: gemini-3.8-flash-high
+            contextWindow: 1000000
+            maxTokens: 65536
+            input:
+              - text
+              - image
+          - id: gemini-pro-auto
+            name: gemini-pro-auto
+            contextWindow: 1000000
+            maxTokens: 64000
+            input:
+              - text
+              - image
+          - id: gemini-4-argon-high
+            name: gemini-4-argon-high
+            contextWindow: 1000000
+            maxTokens: 64000
+            input:
+              - text
+              - image
+          - id: gemini-3-flash
+            name: gemini-3-flash
+
+- id: agent-default-model
+  name: "@deepseek-ai/dsh-agent-default-model"
+  config:
+    provider: deepseek-official
+    model: deepseek-flash
+- id: ui-settings-general
+  name: "@deepseek-ai/dsh-client-ui-settings-general"
+  config:
+    welcomeNoticeVersion: 2026-09-28.1
+- id: ui-theme
+  name: "@deepseek-ai/dsh-client-ui-theme"
+  config:
+    preference: light
