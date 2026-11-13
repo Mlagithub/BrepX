@@ -66,6 +66,8 @@ const css = `
   .bxw-main { min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr) 292px; }
   .bxw-models { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--bxw-line); background: var(--bxw-panel); }
   .bxw-shell[data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) 292px; }
+  .bxw-shell[data-agent="true"] .bxw-main { grid-template-columns: 236px minmax(0, 1fr) min(480px, 40vw); }
+  .bxw-shell[data-agent="true"][data-models="off"] .bxw-main { grid-template-columns: minmax(0, 1fr) min(480px, 40vw); }
   .bxw-shell[data-models="off"] .bxw-models { display: none; }
   .bxw-models-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 42px; padding: 0 12px; border-bottom: 1px solid var(--bxw-line); }
   .bxw-models-head strong { font-size: 12px; font-weight: 600; }
@@ -85,11 +87,10 @@ const css = `
   .bxw-selection[hidden] { display: none; }
   .bxw-selection-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--bxw-accent) 40%, var(--bxw-line)); border-radius: 999px; color: var(--bxw-primary); background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
   .bxw-selection-chip button { width: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: var(--bxw-muted); }
-  .bxw-thread { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .bxw-agent-slot { flex: 1; min-height: 0; overflow: auto; }
+  .bxw-agent-slot [data-conversation-region="composer"], .bxw-agent-slot [data-composer-seat],
+  .bxw-agent-slot [data-conversation-scroll] > [data-conversation-region="composer"] { display: none !important; }
   .bxw-thread-item { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
-  .bxw-thread-item[data-role="user"] { border-color: color-mix(in srgb, var(--bxw-accent) 35%, var(--bxw-line)); }
-  .bxw-thread-item b { display: block; margin-bottom: 3px; color: var(--bxw-muted); font-size: 10px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
-  .bxw-thread-item p { margin: 0; white-space: pre-wrap; word-break: break-word; }
   .bxw-plan-card { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
   .bxw-plan-card-head { display: flex; align-items: center; gap: 7px; }
   .bxw-plan-card-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 550; }
@@ -164,6 +165,7 @@ const css = `
   .bxw-toast[data-tone="error"] { border-color: color-mix(in srgb, var(--bxw-bad) 45%, var(--bxw-line)); color: var(--bxw-bad); }
   @media (max-width: 1280px) {
     .bxw-main { grid-template-columns: 210px minmax(0, 1fr) 292px; }
+    .bxw-shell[data-agent="true"] .bxw-main { grid-template-columns: 210px minmax(0, 1fr) min(420px, 48vw); }
   }
   @media (max-width: 1080px) {
     .bxw-main { grid-template-columns: minmax(0, 1fr); }
@@ -266,9 +268,6 @@ export function mountWorkbench(host, options) {
     busy: false,
     tab: 'inspect',
     selection: null,
-    agentLog: [],
-    agentStatus: '等待指令',
-    lastPlanRevision: null,
   }
 
   const shell = el('div', { className: 'bxw-shell' })
@@ -382,14 +381,11 @@ export function mountWorkbench(host, options) {
   const checkList = el('ul', { className: 'bxw-list' })
   checkSection.append(checkSummary, checkList)
 
-  const agentSection = el('section', { className: 'bxw-section' })
-  const agentSectionHead = el('div', { className: 'bxw-section-head' })
-  agentSectionHead.append(el('h3', {}, 'Agent 线程'))
-  const agentStatus = el('span', { className: 'bxw-check' }, '等待指令')
-  agentSectionHead.append(agentStatus)
-  agentSection.append(agentSectionHead)
-  const agentList = el('div', { className: 'bxw-thread' })
-  agentSection.append(agentList)
+  const agentSection = el('section', { className: 'bxw-section bxw-agent-section' })
+  agentSection.append(el('h3', {}, 'Agent 线程'))
+  const agentSlot = el('div', { className: 'bxw-agent-slot' })
+  agentSection.append(agentSlot)
+  options.onAgentHost?.(agentSlot)
 
   inspectPane.append(metricsSection, selectionSection, planSection, checkSection)
   agentPane.append(agentSection)
@@ -447,12 +443,12 @@ export function mountWorkbench(host, options) {
 
   const setTab = (tab) => {
     state.tab = tab === 'agent' ? 'agent' : 'inspect'
+    shell.dataset.agent = state.tab === 'agent' ? 'true' : 'false'
     inspectTab.setAttribute('aria-selected', state.tab === 'inspect' ? 'true' : 'false')
     agentTab.setAttribute('aria-selected', state.tab === 'agent' ? 'true' : 'false')
     inspectPane.hidden = state.tab !== 'inspect'
     agentPane.hidden = state.tab !== 'agent'
     setInspector(true)
-    if (state.tab === 'agent') renderAgent()
   }
 
   const formatSelection = (pick) => {
@@ -481,64 +477,19 @@ export function mountWorkbench(host, options) {
     selectionSummary.textContent = label
   }
 
-  const agentStorageKey = () => `cadview.thread.${state.sessionId || 'local'}`
-  const loadAgentLog = () => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(agentStorageKey()) || '[]')
-      state.agentLog = Array.isArray(raw) ? raw.slice(-40) : []
-    } catch (error) {
-      state.agentLog = []
-    }
-  }
-  const saveAgentLog = () => {
-    try { localStorage.setItem(agentStorageKey(), JSON.stringify(state.agentLog.slice(-40))) } catch (error) { /* private mode */ }
-  }
-  const pushAgent = (role, text) => {
-    const last = state.agentLog[state.agentLog.length - 1]
-    if (last && last.role === role && last.text === text) return
-    state.agentLog.push({ role, text, at: Date.now() })
-    state.agentLog = state.agentLog.slice(-40)
-    saveAgentLog()
-    renderAgent()
-  }
-  const renderAgent = () => {
-    if (!agentList) return
-    if (agentStatus) agentStatus.textContent = state.agentStatus || '等待指令'
-    agentList.textContent = ''
-    if (!state.agentLog.length) {
-      agentList.append(el('div', { className: 'bxw-thread-item' }, '发送意图后，计划卡和执行结果会出现在这里。'))
-      return
-    }
-    const entries = state.agentLog.filter((entry, index, list) =>
-      index === 0 || entry.role !== list[index - 1].role || entry.text !== list[index - 1].text)
-    for (const entry of entries.slice(-20)) {
-      const item = el('div', { className: 'bxw-thread-item' })
-      item.dataset.role = entry.role || 'system'
-      const label = entry.role === 'user' ? '你' : entry.role === 'agent' ? 'Agent' : '工作台'
-      item.append(el('b', {}, label), el('p', {}, entry.text || ''))
-      agentList.append(item)
-    }
-  }
-
   const loadThread = async () => {
     if (!options.getThread) return
     const sessionId = state.sessionId || options.getSessionId?.()
     if (!sessionId) return
     try {
       const result = await options.getThread(sessionId)
-      const entries = Array.isArray(result) ? result : result?.entries
-      if (entries?.length) {
-        state.agentLog = entries.map((entry) => ({ role: entry.role, text: entry.text, at: Date.now() }))
-        saveAgentLog()
-        renderAgent()
-      }
       const documentId = Array.isArray(result) ? null : result?.documentId
       if (documentId && !readBinding(sessionId)?.manual && documentId !== state.docId
           && state.documents.some((doc) => doc.id === documentId)) {
         loadDocument(documentId, true, false).catch(() => {})
       }
     } catch (error) {
-      /* the local activity log remains usable when history is unavailable */
+      /* history is optional; the model binding remains usable */
     }
   }
 
@@ -586,8 +537,7 @@ export function mountWorkbench(host, options) {
         window.open(`${base}/api/docs/${state.docId}/export/${arg || 'step'}`, '_blank', 'noopener')
         return true
       case 'help':
-        setTab('agent')
-        pushAgent('system', '本地命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export，其他文本交给 Agent。')
+        toast('命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export')
         return true
       default:
         toast(`未知命令：/${name}`, 'error', 4)
@@ -745,15 +695,6 @@ export function mountWorkbench(host, options) {
     state.version = doc.version ?? 0
     renderPlan()
     renderChecks()
-    const revision = state.plan?.plan?.revision
-    if (revision != null && revision !== state.lastPlanRevision) {
-      state.lastPlanRevision = revision
-      if (state.agentLog.length) {
-        const nodes = state.plan?.plan?.nodes || []
-        const done = nodes.filter((node) => node.status === 'done').length
-        pushAgent('agent', `计划 rev ${revision}：${done}/${nodes.length} 节点完成，检查 ${checks?.passed ?? '—'}/${checks?.total ?? '—'}。`)
-      }
-    }
     pushDesign(false)
   }
 
@@ -785,11 +726,9 @@ export function mountWorkbench(host, options) {
       return
     }
     if (docId === state.docId && state.current && !force) return
-    const changedDocument = state.docId !== docId
     state.docId = docId
     state.current = null
     state.selection = null
-    if (changedDocument) state.lastPlanRevision = null
     renderSelection()
     setLoading(true)
     try {
@@ -883,8 +822,6 @@ export function mountWorkbench(host, options) {
     const message = selected + text
     state.busy = true
     send.disabled = true
-    state.agentStatus = '已提交，等待计划更新…'
-    renderAgent()
     try {
       await api(`${base}/api/docs/${state.docId}/intents`, {
         method: 'POST',
@@ -894,8 +831,6 @@ export function mountWorkbench(host, options) {
       const sessionId = state.sessionId || options.getSessionId?.()
       if (!sessionId) throw new Error('没有活动会话；请先选择一个会话')
       await options.sendPrompt?.(sessionId, message)
-      pushAgent('user', message)
-      pushAgent('system', '已提交给 Agent，等待计划卡更新。')
       input.value = ''
       resizeInput()
       toast('已提交给 Agent')
@@ -903,14 +838,12 @@ export function mountWorkbench(host, options) {
       setTimeout(() => {
         if (state.docId !== target) return
         loadDocument(target, true)
-          .then(() => { state.agentStatus = '计划已同步'; renderAgent() })
+          .then(() => {})
           .catch(() => {})
         loadThread()
       }, 2500)
       setTimeout(() => { loadThread() }, 6000)
     } catch (error) {
-      state.agentStatus = '发送失败'
-      renderAgent()
       toast(`发送失败：${error.message}`, 'error', 7)
     } finally {
       state.busy = false
@@ -972,9 +905,7 @@ export function mountWorkbench(host, options) {
   setInspector(true)
   shell.dataset.models = 'on'
   modelsButton.setAttribute('aria-pressed', 'true')
-  loadAgentLog()
   renderSelection()
-  renderAgent()
   loadThread()
   options.onFocus?.()
   chooseDocument().catch((error) => toast(`无法加载模型库：${error.message}`, 'error', 8))
@@ -1003,8 +934,6 @@ export function mountWorkbench(host, options) {
     setSession(sessionId) {
       if (!sessionId || sessionId === state.sessionId) return
       state.sessionId = sessionId
-      loadAgentLog()
-      renderAgent()
       loadThread()
       withTimeout(resolveDocument(sessionId), 1200)
         .catch(() => null)

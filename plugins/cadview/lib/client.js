@@ -11,6 +11,8 @@ window.__ModuleLoader__.load({
     const name = 'cadview'
     const inject = ['slots', 'layout', 'sessions']
     const KIND = 'cad-workbench'
+    let ReactDOM = null
+    try { ReactDOM = require('react-dom') } catch (error) { ReactDOM = null }
 
     const serviceBase = () => {
       try {
@@ -146,6 +148,7 @@ window.__ModuleLoader__.load({
       return function CadWorkbenchBody(props) {
         const host = React.useRef(null)
         const controller = React.useRef(null)
+        const [agentHost, setAgentHost] = React.useState(null)
         const sessionId = props.useSessions
           ? props.useSessions((snapshot) => snapshot.currentId)
           : currentSessionId(ctx)
@@ -167,6 +170,7 @@ window.__ModuleLoader__.load({
                 sessionId,
                 getSessionId: () => currentSessionId(ctx),
                 getThread: (sid) => readThread(ctx, sid),
+                onAgentHost: (element) => setAgentHost(element),
                 onFocus: () => focusWorkspace(ctx),
                 onToggleNavigation: () => ctx.layout.toggleSidebar(),
                 sendPrompt: (sid, text) => sendPrompt(ctx, sid, text),
@@ -192,10 +196,32 @@ window.__ModuleLoader__.load({
           if (controller.current && sessionId) controller.current.setSession(sessionId)
         }, [sessionId])
 
-        return React.createElement('div', {
-          ref: host,
-          style: { position: 'relative', height: '100%', minHeight: 0, overflow: 'hidden' },
-        })
+        let agentPortal = null
+        if (agentHost && ReactDOM && typeof props.renderFactorySlot === 'function') {
+          try {
+            const content = props.renderFactorySlot('conversation.content', {
+              variant: 'embedded',
+              phase: 'active',
+              hero: false,
+            })
+            agentPortal = ReactDOM.createPortal(
+              React.createElement('div', { className: 'bxw-dsh-thread' }, content),
+              agentHost,
+            )
+          } catch (error) {
+            agentPortal = ReactDOM.createPortal(
+              React.createElement('div', { className: 'bxw-thread-item' }, `Agent 视图不可用：${error.message}`),
+              agentHost,
+            )
+          }
+        }
+
+        return React.createElement(React.Fragment, null,
+          React.createElement('div', {
+            ref: host,
+            style: { position: 'relative', height: '100%', minHeight: 0, overflow: 'hidden' },
+          }),
+          agentPortal)
       }
     }
 
