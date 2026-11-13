@@ -643,6 +643,21 @@ log('done')
             )
         return FileResponse(viewport_module, media_type="text/javascript")
 
+    workbench_module = (
+        Path(__file__).resolve().parents[2] / "plugins" / "cadview" / "lib" / "workbench.mjs"
+    )
+
+    @app.get("/api/plugin/workbench.mjs", include_in_schema=False)
+    def workbench() -> Response:
+        if not workbench_module.is_file():
+            return JSONResponse(
+                {"error": {"code": "PLUGIN_MISSING",
+                           "message": f"workbench bundle not built at {workbench_module}",
+                           "hint": "npm run build in plugins/cadview"}},
+                status_code=404,
+            )
+        return FileResponse(workbench_module, media_type="text/javascript")
+
     probe_kernel = (
         Path(__file__).resolve().parents[2] / "plugins" / "cadview" / "lib" / "probe-kernel.mjs"
     )

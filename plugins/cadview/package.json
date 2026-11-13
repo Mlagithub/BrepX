@@ -2,7 +2,7 @@
   "name": "cadview",
   "version": "0.0.1",
   "private": true,
-  "description": "CAD viewport and tool cards for the BrepX workbench, mounted in the dsh web client.",
+  "description": "BrepX model workspace for the dsh web client.",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -32,6 +32,8 @@
     "esbuild": "^0.28.2"
   },
   "scripts": {
-    "build": "esbuild src/viewport.js --bundle --format=esm --platform=browser --target=es2022 --log-level=warning --outfile=lib/viewport.mjs"
+    "build": "npm run build:viewport && npm run build:workbench",
+    "build:viewport": "esbuild src/viewport.js --bundle --format=esm --platform=browser --target=es2022 --log-level=warning --outfile=lib/viewport.mjs",
+    "build:workbench": "esbuild src/workbench.js --bundle --format=esm --platform=browser --target=es2022 --log-level=warning --outfile=lib/workbench.mjs"
   }
 }

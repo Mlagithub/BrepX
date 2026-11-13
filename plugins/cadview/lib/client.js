@@ -1,20 +1,16 @@
 /**
- * Browser half of cadview — the small half.
+ * Browser half of cadview: one full-width model workspace.
  *
- * Registers a right-sidebar tab type and its body; the body lazily imports the
- * viewport module (three.js + the SMLib kernel) from the cadwork service.
- *
- * Every step is guarded and reported: a workbench plugin must never take the
- * whole web boot down with it, and a half-finished registration should say so
- * in the page instead of disappearing into the console.
+ * The workspace is a global main panel, so the conversation's composer is not
+ * mounted beside a second composer. The workbench sends its draft through the
+ * session-scoped conversation controller and uses the CAD service for geometry.
  */
 window.__ModuleLoader__.load({
   id: 'cadview',
   factory: (require) => {
     const name = 'cadview'
-    // Cordis throws on reading a service that is not injected.
-    const inject = ['slots', 'sidebarRightTabs', 'sidebarRight']
-    const KIND = 'cadview'
+    const inject = ['slots', 'layout', 'sessions']
+    const KIND = 'cad-workbench'
 
     const serviceBase = () => {
       try {
@@ -48,41 +44,112 @@ window.__ModuleLoader__.load({
       banner(text)
     }
 
-    function makeBody(React) {
-      return function CadViewBody() {
+    const currentSessionId = (ctx) => {
+      try {
+        const selected = ctx.sessions?.list?.getSnapshot?.()?.currentId
+        if (selected) return selected
+      } catch (error) {
+        /* service snapshot is unavailable; fall through to the persisted selection */
+      }
+      try {
+        const stored = JSON.parse(localStorage.getItem('dsh.sessions.current') || '{}')
+        return stored.sessionId || undefined
+      } catch (error) {
+        return undefined
+      }
+    }
+
+    const sendPrompt = async (ctx, sessionId, text) => {
+      if (!sessionId) throw new Error('没有活动会话；请在左侧选择一个会话')
+      const sessions = ctx.sessions
+      if (!sessions || typeof sessions.using !== 'function') {
+        throw new Error('当前客户端没有提供会话接口')
+      }
+      const requestId = globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `cad-${Date.now()}-${Math.random().toString(16).slice(2)}`
+      await sessions.using(sessionId, { source: 'mainView' }, async (reference) => {
+        const result = await reference.binding.session.prompt(
+          [{ type: 'text', text }],
+          'queue',
+          new AbortController().signal,
+          requestId,
+        )
+        if (result && result.ok === false) {
+          throw new Error(result.error?.message || 'Agent 拒绝了这条消息')
+        }
+      })
+    }
+
+    const PanelIcon = ({ size = 16 }) => {
+      const React = require('react')
+      return React.createElement('svg', {
+        width: size,
+        height: size,
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.7,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      },
+      React.createElement('path', { d: 'm12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z' }),
+      React.createElement('path', { d: 'm4 7.5 8 4.5 8-4.5M12 12v9' }))
+    }
+
+    function makeBody(React, ctx) {
+      return function CadWorkbenchBody(props) {
         const host = React.useRef(null)
+        const controller = React.useRef(null)
+        const sessionId = props.useSessions
+          ? props.useSessions((snapshot) => snapshot.currentId)
+          : currentSessionId(ctx)
+
         React.useEffect(() => {
-          const base = serviceBase()
           const element = host.current
           if (!element) return undefined
-          let dispose = null
           let cancelled = false
-          element.textContent = 'loading viewport module…'
-          element.style.padding = '12px'
-          element.style.color = '#7f8ea5'
-          element.style.font = '12px/1.5 system-ui, sans-serif'
-          import(base + '/api/plugin/viewport.mjs')
+          element.textContent = 'loading workbench…'
+          element.style.cssText = 'position:relative;height:100%;min-height:0;overflow:hidden;' +
+            'color:var(--dsw-alias-label-tertiary,#7f8ea5);font:12px/1.5 system-ui,sans-serif'
+
+          import(`${serviceBase()}/api/plugin/workbench.mjs`)
             .then((module) => {
               if (cancelled || !host.current) return
-              element.style.padding = '0'
-              dispose = module.mountViewport(element, base)
+              element.style.cssText = 'position:relative;height:100%;min-height:0;overflow:hidden'
+              controller.current = module.mountWorkbench(element, {
+                base: serviceBase(),
+                sessionId,
+                getSessionId: () => currentSessionId(ctx),
+                onChat: () => ctx.layout.selectPanel(null),
+                onToggleNavigation: () => ctx.layout.toggleSidebar(),
+                sendPrompt: (sid, text) => sendPrompt(ctx, sid, text),
+              })
             })
             .catch((error) => {
               if (host.current) {
-                element.textContent =
-                  `viewport failed: ${error.message}` +
-                  ` — is python -m cadwork.service running on 8765?`
+                host.current.textContent = `workbench failed: ${error.message}`
               }
-              report('viewport import', error)
+              report('workbench import', error)
             })
+
           return () => {
             cancelled = true
-            if (typeof dispose === 'function') dispose()
+            if (controller.current && typeof controller.current.dispose === 'function') {
+              controller.current.dispose()
+            }
+            controller.current = null
           }
         }, [])
+
+        React.useEffect(() => {
+          if (controller.current && sessionId) controller.current.setSession(sessionId)
+        }, [sessionId])
+
         return React.createElement('div', {
           ref: host,
-          style: { height: '100%', minHeight: 0, overflow: 'hidden' },
+          style: { position: 'relative', height: '100%', minHeight: 0, overflow: 'hidden' },
         })
       }
     }
@@ -90,7 +157,6 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       try {
         if (typeof document === 'undefined') return
-        console.info('[cadview] apply', Object.keys(ctx || {}).length, 'services')
 
         let React = null
         try {
@@ -103,52 +169,46 @@ window.__ModuleLoader__.load({
           report('require react', 'host returned no React')
           return
         }
-        const Body = makeBody(React)
+        if (!ctx.slots || typeof ctx.slots.register !== 'function') {
+          report('slots', 'ctx.slots is unavailable')
+          return
+        }
+        if (!ctx.layout || typeof ctx.layout.selectPanel !== 'function') {
+          report('layout', 'ctx.layout is unavailable')
+          return
+        }
 
-        const tabs = ctx && ctx.sidebarRightTabs
-        const slots = ctx && ctx.slots
-        if (!tabs || typeof tabs.register !== 'function') {
-          report('sidebar tab', 'ctx.sidebarRightTabs is unavailable')
-          return
-        }
-        if (!slots || typeof slots.register !== 'function') {
-          report('sidebar tab', 'ctx.slots is unavailable')
-          return
-        }
+        const Workbench = makeBody(React, ctx)
 
         ctx.effect(() => {
-          let disposeType = null
-          let disposeBody = null
+          let disposeMain = null
+          let disposePanel = null
           try {
-            disposeType = tabs.register({
-              id: KIND,
-              kind: KIND,
-              title: () => 'CAD',
-              guide: [{
+            disposeMain = ctx.slots.inject('main', () =>
+              ctx.slots.register({ name: 'main', key: KIND }, Workbench))
+
+            disposePanel = ctx.slots.inject('sidebar.panellist', () =>
+              ctx.slots.register({
+                name: 'sidebar.panellist',
                 id: KIND,
-                title: () => 'CAD',
-                description: () => 'Model with exact B-Rep and pick faces',
-              }],
-            })
-            console.info('[cadview] tab type registered')
-            disposeBody = slots.register({ name: 'sidebar.right.pane.tab', key: KIND }, Body)
-            console.info('[cadview] tab body registered')
+                order: 0,
+                label: () => '模型工作台',
+              }, PanelIcon))
           } catch (error) {
-            report('register tab', error)
+            report('register workbench', error)
           }
           return () => {
-            if (typeof disposeBody === 'function') disposeBody()
-            if (typeof disposeType === 'function') disposeType()
+            if (typeof disposePanel === 'function') disposePanel()
+            if (typeof disposeMain === 'function') disposeMain()
           }
-        }, 'cadview: sidebar tab')
+        }, 'cadview: model workbench')
 
-        if (ctx.sidebarRight && typeof ctx.sidebarRight.openTab === 'function' && !globalThis.__cadviewOpened) {
-          globalThis.__cadviewOpened = true
-          Promise.resolve()
-            .then(() => ctx.sidebarRight.openTab(KIND))
-            .then(() => console.info('[cadview] tab opened'))
-            .catch((error) => console.info('[cadview] openTab skipped:', error.message))
-        }
+        Promise.resolve()
+          .then(() => {
+            ctx.layout.closeRightbar()
+            ctx.layout.selectPanel(KIND)
+          })
+          .catch((error) => report('open workbench', error))
       } catch (error) {
         report('apply', error)
       }

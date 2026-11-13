@@ -1,5 +1,5 @@
 # Mounted when this bundle is listed in a profile:
-#  - cadview: the browser half (right-sidebar CAD tab)
+#  - cadview: the browser half (full-width model workspace)
 #  - mcp-cad: the CAD tools the session's agent may call
 - insert:
     - id: cadview
