@@ -34,6 +34,7 @@ from .mcp import build_mcp_server
 from .gen_tests import CASES, GEN_KEYS, run_case
 from .service import CADService, ServiceError
 from .store import Store, StoreError
+from .trunk_case import run_trunk_case
 
 
 class CreateDocument(BaseModel):
@@ -154,6 +155,32 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     @app.get("/gen-tests", response_class=HTMLResponse)
     def gen_tests_page() -> HTMLResponse:
         return HTMLResponse((Path(__file__).with_name("gen_tests.html")).read_text(encoding="utf-8"))
+
+    @app.get("/case", response_class=HTMLResponse)
+    def trunk_case_page() -> HTMLResponse:
+        return HTMLResponse((Path(__file__).with_name("trunk_case.html")).read_text(encoding="utf-8"))
+
+    @app.post("/api/case/run")
+    def trunk_case_run() -> dict[str, Any]:
+        summary = run_trunk_case(service)
+        run_id = summary["run_id"]
+        for turn in summary["turns"]:
+            if turn.get("png"):
+                turn["png_url"] = f"/case-evidence/{run_id}/{turn['png']}"
+            turn["json_url"] = f"/case-evidence/{run_id}/turn-{turn['turn']}.json"
+        return summary
+
+    @app.get("/case-evidence/{run_id}/{filename}")
+    def trunk_case_evidence(run_id: str, filename: str) -> Response:
+        safe_root = Path(service.store.root) / "trunk-case" / run_id
+        safe_name = Path(filename).name
+        path = safe_root / safe_name
+        if safe_name != filename or not path.is_file():
+            return JSONResponse({"error": "case evidence not found"}, status_code=404)
+        media = "application/json" if path.suffix == ".json" else "application/step"
+        if path.suffix == ".png":
+            media = "image/png"
+        return FileResponse(path, media_type=media, filename=safe_name)
 
     @app.get("/gen-tests/gallery", response_class=HTMLResponse)
     def gen_gallery_page() -> HTMLResponse:
