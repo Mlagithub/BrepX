@@ -7,7 +7,7 @@
   html, body { margin: 0; height: 100%; background: #0b0e13; color: #c9d6ea;
     font: 12px/1.5 system-ui, sans-serif; overflow: hidden }
   #host { position: absolute; inset: 0 }
-  canvas { display: block }
+  canvas { display: block; width: 100%; height: 100% }
   #empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     flex-direction: column; gap: 10px; color: #5b6b80; text-align: center; pointer-events: none }
   #empty.on { display: flex }
@@ -666,6 +666,8 @@ addEventListener('message', (event) => {
     if (data.axis) sectionAxis = data.axis
     if (typeof data.t === 'number') sectionT = Math.min(Math.max(data.t, 0), 1)
     applySection()
+  } else if (data.type === 'resize') {
+    resize()
   } else if (data.type === 'theme') {
     applyPalette(data)
   }
@@ -679,6 +681,8 @@ const resize = () => {
   camera.updateProjectionMatrix()
 }
 addEventListener('resize', resize)
+const resizeObserver = new ResizeObserver(resize)
+resizeObserver.observe(host)
 
 let frameCount = 0
 let lastFrameError = null
