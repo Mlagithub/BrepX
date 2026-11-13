@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import math
+import numbers
 from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
@@ -23,10 +24,20 @@ def _fail(exc: ServiceError) -> ToolError:
 
 
 def _json_safe(value: Any) -> Any:
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real):
+        number = float(value)
+        if not math.isfinite(number):
+            return None
+        # -0.0 and 0.0 are equal in Python but JSON.stringify(0.0) and
+        # JSON.stringify(-0.0) are observably different; the host checks that
+        # the value survives that round trip, so normalize the sign.
+        return 0.0 if number == 0.0 else number
     if isinstance(value, dict):
-        return {key: _json_safe(item) for key, item in value.items()}
+        return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
     return value
@@ -301,6 +312,28 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise ToolError(
                 f"PLAN_INVALID: {type(exc).__name__}: {exc} "
                 "(hint: call plan_schema; each op needs op and a valid node shape)"
+            ) from exc
+
+    @server.tool()
+    def plan_add_node(
+        document_id: str,
+        node: dict[str, Any],
+        base_revision: int | None = None,
+        goal: str | None = None,
+    ) -> dict[str, Any]:
+        """Add exactly one plan node. Use this for large plans so each tool call
+        carries one small JSON object instead of a multi-node ops array."""
+        try:
+            return service.plan_edit(
+                document_id, [{"op": "add_node", "node": node}],
+                base_revision=base_revision, goal=goal,
+            )
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+        except Exception as exc:
+            raise ToolError(
+                f"PLAN_INVALID: {type(exc).__name__}: {exc} "
+                "(hint: call plan_schema; the node needs id, kind and action)"
             ) from exc
 
     @server.tool()

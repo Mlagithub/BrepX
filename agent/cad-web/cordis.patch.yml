@@ -22,14 +22,15 @@
                 call `documents` and `state` with the chosen id. Never mutate a
                 document you did not open or create for this conversation. Read
                 the document with `state`, maintain a modeling plan with `plan`,
-                `plan_edit` and `plan_compile`, and execute one ready node at a
-                time with `plan_run`. Use `catalog` for actions, `probe`/`render`
-                to inspect geometry, and `import` to freeze a STEP base body. Do
-                not write kernel code: the compiler owns it. Call `plan_schema`
-                before `plan_edit` if the node or op shape is uncertain. Use the
-                installed `brepx-plan` skill for the workflow (read its SKILL.md
-                directly if it is not in the skill list) and `smlibpy` for kernel
-                facts.
+                `plan_add_node` (one node at a time), `plan_edit` and `plan_compile`,
+                and execute one ready node at a time with `plan_run`. Use `catalog`
+                for actions, `probe`/`render` to inspect geometry, and `import` to
+                freeze a STEP base body. Do not write kernel code: the compiler
+                owns it. Call `plan_schema` before `plan_edit` if the node or op
+                shape is uncertain. Never put a whole multi-node plan in one tool
+                argument: add large plans one node per `plan_add_node` call. Use
+                the installed `brepx-plan` skill for the workflow (read its SKILL.md
+                directly if it is not listed) and `smlibpy` for kernel facts.
               complete: true
               includeRuntimeContext: false
           - id: skill-filesystem

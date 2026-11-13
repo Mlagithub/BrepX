@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import tempfile
 import unittest
 
@@ -13,8 +14,8 @@ from cadwork.service.store import Store
 
 EXPECTED_TOOLS = sorted([
     "documents", "new_document", "state", "probe", "resolve", "catalog",
-    "plan_schema", "preview", "variants", "commit", "revert", "render", "plan",
-    "plan_edit", "plan_compile", "plan_run", "intents", "import",
+    "plan_schema", "plan_add_node", "preview", "variants", "commit", "revert",
+    "render", "plan", "plan_edit", "plan_compile", "plan_run", "intents", "import",
 ])
 
 PLAN_OPS = [
@@ -62,7 +63,7 @@ class MCPTests(unittest.TestCase):
         async def scenario():
             tools = await self.server.list_tools()
             self.assertEqual(sorted(tool.name for tool in tools), EXPECTED_TOOLS)
-            self.assertEqual(len(tools), 18)
+            self.assertEqual(len(tools), 19)
             for tool in tools:
                 self.assertFalse(tool.name.startswith("cad_"), tool.name)
 
@@ -174,6 +175,9 @@ class MCPTests(unittest.TestCase):
         self.assertEqual(_json_safe(float("nan")), None)
         self.assertEqual(_json_safe(float("inf")), None)
         self.assertEqual(_json_safe({"x": [1.0, float("-inf")]}), {"x": [1.0, None]})
+        negative_zero = _json_safe({"x": -0.0})["x"]
+        self.assertEqual(negative_zero, 0.0)
+        self.assertEqual(math.copysign(1.0, negative_zero), 1.0)
 
     def test_commit_revert_and_intent_notes(self) -> None:
         async def scenario():
