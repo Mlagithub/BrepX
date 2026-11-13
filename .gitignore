@@ -26,6 +26,7 @@ docs/
 *.md
 !README.md
 !AGENTS.md
+!agent/skills/**/SKILL.md
 cadwork-data/
 artifacts/
 
