@@ -156,6 +156,8 @@ let currentDoc = null
 let currentVersion = -1
 let hasFitted = false
 let highlightTimer = null
+let pointerStart = null
+const activePointers = new Set()
 
 const vacantGroup = new THREE.Group()
 let gridHelper = new THREE.GridHelper(160, 16, 0x3b495e, 0x1d2633)
@@ -199,9 +201,11 @@ const fit = (object) => {
   // The hub covers the lower part of the canvas, so frame the part slightly
   // above the geometric centre and leave margin around it.
   const lift = new THREE.Vector3(0, 0, -radius * 0.24)
+  const direction = camera.position.clone().sub(controls.target)
+  if (direction.lengthSq() < 1e-9) direction.set(1, -1, 0.78)
+  direction.normalize()
   controls.target.copy(sphere.center).add(lift)
-  camera.position.copy(controls.target)
-    .addScaledVector(new THREE.Vector3(1, -1, 0.78).normalize(), radius * 3.1)
+  camera.position.copy(controls.target).addScaledVector(direction, radius * 3.1)
   camera.near = Math.max(radius / 3000, 0.01)
   camera.far = Math.max(radius * 300, 200)
   camera.updateProjectionMatrix()
@@ -393,18 +397,19 @@ const clearHighlight = () => {
   }
 }
 
-const highlightFaces = (centers, seconds = 3.2) => {
+const highlightFaces = (centers, seconds = 3.2, tone = 'change') => {
   if (!display || !centers?.length) return
   clearHighlight()
   const anchors = centers.map((item) => new THREE.Vector3(item[0], item[1], item[2]))
   const group = new THREE.Group()
+  const selection = tone === 'selection'
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xffb454,
-    emissive: 0x663800,
+    color: selection ? 0x4f8cff : 0xffb454,
+    emissive: selection ? 0x123a6b : 0x663800,
     roughness: 0.45,
     metalness: 0.05,
     transparent: true,
-    opacity: 0.62,
+    opacity: selection ? 0.46 : 0.62,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
@@ -435,7 +440,7 @@ const highlightFaces = (centers, seconds = 3.2) => {
   }
   highlightGroup = group
   scene.add(highlightGroup)
-  highlightTimer = setTimeout(clearHighlight, seconds * 1000)
+  if (seconds > 0) highlightTimer = setTimeout(clearHighlight, seconds * 1000)
 }
 
 const clearGhost = () => {
@@ -590,10 +595,35 @@ const pickAt = (event) => {
   }
 }
 
+const pickupIsClick = (event, start) => {
+  if (!start || event.pointerId !== start.id || event.button !== 0) return false
+  const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y)
+  return moved <= 4 && performance.now() - start.t <= 600
+}
+
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  activePointers.add(event.pointerId)
+  pointerStart = event.button === 0 && activePointers.size === 1
+    ? { id: event.pointerId, x: event.clientX, y: event.clientY, t: performance.now() }
+    : null
+})
+renderer.domElement.addEventListener('pointercancel', (event) => {
+  activePointers.delete(event.pointerId)
+  pointerStart = null
+})
 renderer.domElement.addEventListener('pointerup', (event) => {
-  if (!display) return
+  const start = pointerStart
+  activePointers.delete(event.pointerId)
+  pointerStart = null
+  // OrbitControls turns left-drag into rotation and right-drag into pan; only a
+  // short left press is a selection, otherwise every orbit would pick a face.
+  if (!display || !pickupIsClick(event, start)) return
   const found = pickAt(event)
-  if (!found) { say('没有命中几何'); return }
+  if (!found) {
+    post('pick', { pick: null })
+    say('未选中几何')
+    return
+  }
   if (measureMode) {
     if (!measureA) {
       measureA = { point: new THREE.Vector3(...found.point), normal: found.normal }
@@ -614,9 +644,32 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     measureA = null
     return
   }
-  post('pick', { pick: found })
+  post('pick', { pick: { ...found, documentId: currentDoc, version: currentVersion } })
   say(`拾取 (${found.point.map((n) => n.toFixed(1)).join(', ')})`
     + (found.area != null ? ` · ${Number(found.area).toFixed(1)} mm²` : ''))
+})
+
+const viewKeys = { 1: 'iso', 2: 'front', 3: 'top', 4: 'right' }
+addEventListener('keydown', (event) => {
+  const tag = event.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  const name = viewKeys[event.key]
+  if (name) {
+    event.preventDefault()
+    setView(name)
+    return
+  }
+  const key = event.key.toLowerCase()
+  if (key === 'f') {
+    event.preventDefault()
+    if (display) fit(display)
+    return
+  }
+  if (event.key === 'Escape') {
+    post('pick', { pick: null })
+    clearHighlight()
+  }
 })
 
 addEventListener('message', (event) => {
@@ -648,7 +701,7 @@ addEventListener('message', (event) => {
     if (data.on === false || !data.version) { clearGhost(); say('残影关闭') }
     else showGhost(data.documentId || currentDoc, data.version)
   } else if (data.type === 'highlight') {
-    if (data.centers?.length) highlightFaces(data.centers, data.seconds)
+    if (data.centers?.length) highlightFaces(data.centers, data.seconds ?? 3.2, data.tone)
     else clearHighlight()
   } else if (data.type === 'view') {
     setView(data.name)

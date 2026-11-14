@@ -699,30 +699,128 @@ export function mountWorkbench(host, options) {
     return changed
   }
 
-  const formatSelection = (pick) => {
+  const SURFACE_LABELS = {
+    planar: '平面', plane: '平面',
+    cylindrical: '圆柱面', cylinder: '圆柱面',
+    conical: '圆锥面', cone: '圆锥面',
+    spherical: '球面', sphere: '球面',
+    toroidal: '环面', torus: '环面',
+    bspline: '曲面', nurbs: '曲面',
+  }
+  const ORIENTATION_LABELS = {
+    'top (+Z)': '顶面 (+Z)',
+    'bottom (-Z)': '底面 (-Z)',
+    'left (-X)': '左侧 (-X)',
+    'right (+X)': '右侧 (+X)',
+    'front (-Y)': '前面 (-Y)',
+    'back (+Y)': '后面 (+Y)',
+    angled: '斜面',
+    face: '面',
+  }
+  let pickSeq = 0
+
+  const selectionText = (pick) => {
+    if (!pick) return ''
+    if (pick.pending) return '正在解析拾取…'
+    const parts = []
+    if (pick.feature_id) parts.push(pick.feature_id)
+    if (pick.surface_type) parts.push(SURFACE_LABELS[pick.surface_type] || pick.surface_type)
+    if (pick.orientation) parts.push(ORIENTATION_LABELS[pick.orientation] || pick.orientation)
+    if (Number.isInteger(pick.face_index)) parts.push(`面 ${pick.face_index}`)
+    if (pick.area != null) parts.push(`${fmt(pick.area, 1)} mm²`)
+    return parts.join(' · ') || '几何面'
+  }
+
+  const selectionPoint = (pick) => {
     if (!pick?.point) return ''
-    const point = pick.point.map((value) => Number(value).toFixed(2)).join(', ')
-    const area = pick.area != null ? ` · ${Number(pick.area).toFixed(1)} mm²` : ''
-    const face = Number.isInteger(pick.face_index) ? ` · 面 ${pick.face_index}` : ''
-    return `选中 @(${point})${area}${face}`
+    return pick.point.map((value) => Number(value).toFixed(2)).join(', ')
+  }
+
+  const formatSelection = (pick) => {
+    if (!pick) return ''
+    const point = selectionPoint(pick)
+    return `选中 ${selectionText(pick)}${point ? ` @(${point})` : ''}`
+  }
+
+  const resolveSelection = async (raw) => {
+    const documentId = raw.documentId || state.docId
+    const version = Number.isFinite(Number(raw.version))
+      ? Number(raw.version)
+      : state.current?.document?.version
+    if (!documentId || version == null) return { ...raw, pending: false, face_index: undefined }
+    try {
+      const semantic = await api(`${base}/api/docs/${documentId}/pick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version,
+          point: raw.point,
+          normal: raw.normal,
+          area: raw.area,
+          face_index: raw.face_index,
+        }),
+      })
+      const dimensions = semantic.dimensions || {}
+      return {
+        ...raw,
+        pending: false,
+        feature_id: semantic.feature_id || '',
+        face_index: semantic.face_index,
+        surface_type: semantic.surface_type || '',
+        orientation: dimensions.orientation || '',
+        area: dimensions.area ?? raw.area,
+        center: dimensions.center || raw.point,
+        normal: dimensions.normal || raw.normal,
+        label: semantic.label || '',
+        suggested_ref: semantic.suggested_ref || null,
+      }
+    } catch (error) {
+      return { ...raw, pending: false, face_index: undefined }
+    }
+  }
+
+  const clearSelection = () => {
+    pickSeq += 1
+    state.selection = null
+    renderSelection()
+    post('highlight', { centers: [] })
+  }
+
+  const applyPick = (raw) => {
+    if (!raw) {
+      clearSelection()
+      return
+    }
+    if (raw.documentId && raw.documentId !== state.docId) return
+    const seq = ++pickSeq
+    state.selection = { ...raw, pending: true, face_index: undefined }
+    renderSelection()
+    setInspector(true)
+    resolveSelection(raw).then((resolved) => {
+      if (seq !== pickSeq) return
+      state.selection = resolved
+      renderSelection()
+      post('highlight', resolved.center ? { centers: [resolved.center], seconds: 0, tone: 'selection' } : { centers: [] })
+    })
   }
 
   const renderSelection = () => {
     selectionBar.textContent = ''
     if (!state.selection) {
       selectionBar.hidden = true
-      selectionSummary.textContent = '在画布上点选面或边'
+      selectionSummary.textContent = '在画布上点选面'
       return
     }
-    const label = formatSelection(state.selection)
+    const label = selectionText(state.selection)
     selectionBar.hidden = false
     const chip = el('span', { className: 'bxw-selection-chip' })
     chip.append(el('span', {}, label))
+    chip.title = formatSelection(state.selection)
     const clear = el('button', { type: 'button', title: '清除选择', 'aria-label': '清除选择', html: ICONS.close })
-    clear.addEventListener('click', () => { state.selection = null; renderSelection() })
+    clear.addEventListener('click', clearSelection)
     chip.append(clear)
     selectionBar.append(el('span', {}, '上下文'), chip)
-    selectionSummary.textContent = label
+    selectionSummary.textContent = formatSelection(state.selection)
   }
 
   const loadThread = async () => {
@@ -1075,6 +1173,7 @@ export function mountWorkbench(host, options) {
     empty.dataset.on = 'false'
     state.version = doc.version ?? 0
     state.simplified = false
+    if (state.selection?.version != null && state.selection.version !== state.version) clearSelection()
     renderPlan()
     renderChecks()
     renderTiming()
@@ -1105,6 +1204,10 @@ export function mountWorkbench(host, options) {
       state.current = null
       state.plan = null
       state.checks = null
+      pickSeq += 1
+      state.selection = null
+      renderSelection()
+      post('highlight', { centers: [] })
       empty.dataset.on = 'true'
       return
     }
@@ -1112,8 +1215,10 @@ export function mountWorkbench(host, options) {
     stopModelingProgress()
     state.docId = docId
     state.current = null
+    pickSeq += 1
     state.selection = null
     renderSelection()
+    post('highlight', { centers: [] })
     setLoading(true)
     const startedAt = performance.now()
     const loadTimer = setInterval(() => {
@@ -1219,6 +1324,10 @@ export function mountWorkbench(host, options) {
       return
     }
     if (!state.docId) return
+    if (state.selection?.pending) {
+      toast('正在解析拾取，稍候再发送', 'info', 2)
+      return
+    }
     const selected = state.selection ? `[${formatSelection(state.selection)}] ` : ''
     const message = selected + text
     state.busy = true
@@ -1280,10 +1389,8 @@ export function mountWorkbench(host, options) {
         state.edgesMs = data.timings?.edgesMs ?? null
         renderTiming()
       }
-    } else if (data.type === 'pick' && data.pick) {
-      state.selection = data.pick
-      renderSelection()
-      setInspector(true)
+    } else if (data.type === 'pick') {
+      applyPick(data.pick || null)
     } else if (data.type === 'error') {
       toast(`视图错误：${data.text}`, 'error', 6)
     }
