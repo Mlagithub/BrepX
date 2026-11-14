@@ -204,6 +204,10 @@ const css = `
     font: 11px/1 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-focus-unit { flex: none; color: var(--bxw-muted); font: 10px/1 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-focus-range { width: 100%; accent-color: var(--bxw-accent); }
+  .bxw-focus-actions { display: flex; justify-content: flex-end; margin-top: -2px; }
+  .bxw-focus-compare { height: 20px; padding: 0 4px; border: 0; background: transparent;
+    color: var(--bxw-accent); font-size: 10px; }
+  .bxw-focus-compare:hover { background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
   .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
@@ -247,6 +251,46 @@ const css = `
   .bxw-dock-history .bxw-agent-slot { width: 100%; max-width: 660px; margin: 0 auto; padding: 8px 16px 12px; }
   .bxw-dock-history:has([data-question-key]) { width: min(900px, calc(100vw - 48px)); height: min(560px, 62vh); }
   .bxw-dock-history:has([data-question-key]) .bxw-agent-slot { max-width: 860px; }
+  .bxw-variants { position: absolute; left: 50%; bottom: calc(var(--bxw-dock-h, 112px) + 14px);
+    transform: translateX(-50%); z-index: 14; width: min(920px, calc(100% - 28px));
+    display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--bxw-line); border-radius: 10px; background: var(--bxw-panel);
+    box-shadow: 0 16px 40px rgb(0 0 0 / 20%); }
+  .bxw-variants[hidden] { display: none; }
+  .bxw-shell[data-history="on"] .bxw-variants { display: none; }
+  .bxw-shell[data-inspector="on"] .bxw-variants {
+    left: calc((100% - min(var(--bxw-right-width, 292px), 36vw)) / 2);
+    width: min(720px, calc(100% - min(var(--bxw-right-width, 292px), 36vw) - 56px)); }
+  .bxw-variants-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--bxw-line); }
+  .bxw-variants-head strong { font-size: 11px; font-weight: 600; }
+  .bxw-variants-head span { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--bxw-muted); font-size: 10px; }
+  .bxw-variants-actions { display: flex; gap: 6px; margin-left: auto; }
+  .bxw-variants-actions button { height: 24px; padding: 0 8px; font-size: 10px; }
+  .bxw-variants-actions button[hidden] { display: none; }
+  .bxw-variants-grid { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; }
+  .bxw-variant { flex: 1 1 0; min-width: 176px; display: flex; flex-direction: column;
+    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-layer);
+    overflow: hidden; cursor: pointer; }
+  .bxw-variant:hover { border-color: color-mix(in srgb, var(--bxw-accent) 38%, var(--bxw-line)); }
+  .bxw-variant[data-active="true"] { border-color: var(--bxw-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--bxw-accent) 45%, transparent); }
+  .bxw-variant[data-failed="true"] { opacity: .62; cursor: default; }
+  .bxw-variant-thumb { width: 100%; height: 98px; object-fit: contain;
+    background: color-mix(in srgb, var(--bxw-canvas, #f2f5f9) 80%, var(--bxw-panel));
+    border-bottom: 1px solid var(--bxw-line); }
+  .bxw-variant-thumb.empty { display: flex; align-items: center; justify-content: center;
+    color: var(--bxw-muted); font-size: 9px; }
+  .bxw-variant-body { display: flex; flex-direction: column; gap: 3px; padding: 7px 8px 4px; }
+  .bxw-variant-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--bxw-primary); font-size: 11px; font-weight: 600; }
+  .bxw-variant-meta { color: var(--bxw-muted); font: 9px/1.35 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-variant-status { color: var(--bxw-muted); font-size: 9px; line-height: 1.35; }
+  .bxw-variant-status[data-ok="false"] { color: var(--bxw-danger, #c94f4f); }
+  .bxw-variant-buttons { display: flex; gap: 5px; padding: 4px 8px 8px; margin-top: auto; }
+  .bxw-variant-buttons button { flex: 1; height: 24px; font-size: 10px; }
+  .bxw-variants-loading { padding: 20px 14px; color: var(--bxw-muted); font-size: 11px; }
   .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
     border-radius: 10px 10px 0 0; }
   .bxw-dock:has(.bxw-dock-active:not([hidden])) .bxw-dock-bar { border-radius: 0; }
@@ -345,11 +389,15 @@ const api = async (url, options) => {
   const response = await fetch(url, options)
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`
+    let hint = ''
     try {
       const payload = await response.json()
       if (payload?.error?.message) message = payload.error.message
+      if (payload?.error?.hint) hint = payload.error.hint
     } catch (error) { /* status is enough */ }
-    throw new Error(message)
+    const failure = new Error(message)
+    failure.hint = hint
+    throw failure
   }
   return response.json()
 }
@@ -407,6 +455,10 @@ export function mountWorkbench(host, options) {
     section: { on: false, axis: 'Z', t: 0.5 },
     measure: false,
     measureResult: null,
+    variantSet: null,
+    variantPreview: null,
+    variantBusy: false,
+    variantApplying: null,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -660,9 +712,26 @@ export function mountWorkbench(host, options) {
   composer.append(selectionBar, composerBox, hint)
 
   dock.append(composer)
+  const variantPanel = el('div', {
+    className: 'bxw-variants', role: 'region', 'aria-label': '方案对比', hidden: true,
+  })
+  const variantHead = el('div', { className: 'bxw-variants-head' })
+  const variantTitle = el('strong', {}, '方案对比')
+  const variantMeta = el('span', {}, '')
+  const variantActions = el('div', { className: 'bxw-variants-actions' })
+  const variantBack = el('button', { type: 'button', title: '退出方案预览' }, '返回当前')
+  const variantClose = el('button', {
+    type: 'button', title: '关闭方案对比', 'aria-label': '关闭方案对比', html: ICONS.close,
+  })
+  variantActions.append(variantBack, variantClose)
+  variantHead.append(variantTitle, variantMeta, variantActions)
+  const variantGrid = el('div', { className: 'bxw-variants-grid' })
+  variantPanel.append(variantHead, variantGrid)
+  variantBack.addEventListener('click', () => exitVariantPreview())
+  variantClose.addEventListener('click', () => closeVariants())
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
   const menuScrim = el('div', { className: 'bxw-menu-scrim', hidden: true })
-  shell.append(header, main, dock, menuScrim, reviewScrim, toastNode)
+  shell.append(header, main, dock, variantPanel, menuScrim, reviewScrim, toastNode)
   main.append(models, stage, inspector)
   const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
@@ -824,6 +893,7 @@ export function mountWorkbench(host, options) {
 
   const openHistory = (open) => {
     state.historyOpen = Boolean(open)
+    shell.dataset.history = state.historyOpen ? 'on' : 'off'
     if (state.historyOpen) historyPeek.hidden = true
     historyPanel.hidden = !state.historyOpen
     setComposerTarget(state.historyOpen)
@@ -1398,12 +1468,16 @@ export function mountWorkbench(host, options) {
   const focusPending = new Map()
 
   const focusLabel = (param) => `${FOCUS_LABELS[param.param] || param.param} · ${param.feature_id}`
+  const focusLimit = (value) => {
+    if (value == null || value === '') return null
+    return Number.isFinite(Number(value)) ? Number(value) : null
+  }
 
   const focusBounds = (param) => {
     const value = Number(param.value) || 0
     const span = Math.max(4, Math.abs(value) * 2)
-    const backendMin = Number.isFinite(Number(param.minimum)) ? Number(param.minimum) : null
-    const backendMax = Number.isFinite(Number(param.maximum)) ? Number(param.maximum) : null
+    const backendMin = focusLimit(param.minimum)
+    const backendMax = focusLimit(param.maximum)
     let min = backendMin != null ? Math.max(backendMin, value - span) : value - span
     let max = backendMax != null ? Math.min(backendMax, value + span) : value + span
     const signed = ['x', 'y', 'z', 'dx', 'dy', 'dz'].includes(param.param)
@@ -1465,7 +1539,7 @@ export function mountWorkbench(host, options) {
         job.entry.number.value = String(job.entry.lastValue)
         job.entry.range.value = String(job.entry.lastValue)
       }
-      toast(`微调失败：${error.message}`, 'error', 6)
+      toast(`微调失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
       await refreshFocusState().catch(() => {})
     } finally {
       for (const job of jobs) job.entry.row.dataset.busy = 'false'
@@ -1525,7 +1599,16 @@ export function mountWorkbench(host, options) {
         range.addEventListener('input', () => apply(range.value))
         number.addEventListener('input', () => apply(number.value))
         number.addEventListener('change', () => apply(number.value))
-        row.append(head, range)
+        const compareAction = el('button', {
+          type: 'button', className: 'bxw-focus-compare', title: '生成不同取值的方案对比',
+        }, '比较方案')
+        compareAction.addEventListener('click', (event) => {
+          event.stopPropagation()
+          createVariants(param)
+        })
+        const actions = el('div', { className: 'bxw-focus-actions' })
+        actions.append(compareAction)
+        row.append(head, range, actions)
         focusList.append(row)
         focusRows.set(`${param.feature_id}.${param.param}`, entry)
       }
@@ -1544,8 +1627,230 @@ export function mountWorkbench(host, options) {
     }
   }
 
-  const renderDocuments = () => {
-    docSelect.textContent = ''
+  let variantRequest = 0
+
+  const variantValues = (param) => {
+    const base = Number(param.value) || 0
+    const integer = param.param === 'count' || param.unit === 'copies' || param.unit === 'deg'
+    const signed = ['x', 'y', 'z', 'dx', 'dy', 'dz'].includes(param.param)
+    const step = integer ? 1 : Math.max(0.1, Math.abs(base) * 0.2)
+    const raw = [base - step, base + step]
+    if (!signed) raw[0] = Math.max(0, raw[0])
+    const backendMin = focusLimit(param.minimum)
+    const backendMax = focusLimit(param.maximum)
+    const values = []
+    const add = (value) => {
+      const rounded = integer ? Math.round(value) : Math.round(value * 10) / 10
+      if (rounded === base || (!signed && rounded < 0) || values.includes(rounded)) return
+      if (backendMin != null && rounded < backendMin) return
+      if (backendMax != null && rounded > backendMax) return
+      values.push(rounded)
+    }
+    raw.forEach(add)
+    let extra = 2
+    while (values.length < 2 && extra < 6) {
+      add(base + step * extra)
+      extra += 1
+    }
+    return values.slice(0, 2)
+  }
+
+  const createVariants = async (param) => {
+    if (!state.docId || state.variantBusy) return
+    const values = variantValues(param)
+    if (!values.length) {
+      toast('没有可比较的取值', 'info', 3)
+      return
+    }
+    const token = ++variantRequest
+    state.variantBusy = true
+    state.variantSet = null
+    state.variantPreview = null
+    renderVariants()
+    try {
+      const response = await api(`${base}/api/docs/${state.docId}/variants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feature: param.feature_id,
+          params: { [param.param]: values },
+          include_base: true,
+          base_version: state.version,
+          thumbs: true,
+        }),
+      })
+      if (token !== variantRequest) return
+      state.variantSet = response
+      state.variantBusy = false
+      renderVariants()
+      if (response.all_failed) toast('所有方案都构建失败', 'error', 5)
+    } catch (error) {
+      if (token !== variantRequest) return
+      state.variantBusy = false
+      state.variantSet = null
+      renderVariants()
+      toast(`生成方案失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    }
+  }
+
+  const previewVariant = (variant) => {
+    if (!variant?.ok || !variant.step || state.variantApplying != null) return
+    post('preview', { url: `${base}${variant.step}`, label: variant.label })
+    state.variantPreview = variant.index
+    renderVariants()
+  }
+
+  const exitVariantPreview = () => {
+    if (state.variantPreview == null) return
+    state.variantPreview = null
+    renderVariants()
+    pushDesign(false)
+  }
+
+  const closeVariants = () => {
+    variantRequest += 1
+    const previewing = state.variantPreview != null
+    state.variantBusy = false
+    state.variantApplying = null
+    state.variantPreview = null
+    state.variantSet = null
+    renderVariants()
+    if (previewing) pushDesign(false)
+  }
+
+  const applyVariant = async (variant) => {
+    if (!state.variantSet || state.variantApplying != null || !variant?.ok) return
+    const docId = state.docId
+    if (Number(state.variantSet.base_version) !== state.version) {
+      toast('模型已更新，请重新生成方案', 'error', 5)
+      return
+    }
+    if ((variant.checks || []).some((check) => !check.ok)) {
+      toast('该方案未通过检查，不能采纳', 'error', 4)
+      return
+    }
+    if (!(variant.ops?.length)) {
+      toast('当前方案没有可采纳的修改', 'info', 3)
+      return
+    }
+    state.variantApplying = variant.index
+    renderVariants()
+    try {
+      await api(`${base}/api/variants/${state.variantSet.set}/${variant.index}/apply`, { method: 'POST' })
+      state.variantApplying = null
+      state.variantPreview = null
+      state.variantSet = null
+      renderVariants()
+      toast(`已采纳方案 ${variant.label}`, 'info', 3)
+      if (state.docId === docId) await loadDocument(docId, true)
+    } catch (error) {
+      state.variantApplying = null
+      renderVariants()
+      toast(`采纳方案失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    }
+  }
+
+  const renderVariants = () => {
+    const set = state.variantSet
+    const visible = state.variantBusy || Boolean(set)
+    variantPanel.hidden = !visible
+    if (!visible) return
+    const stale = set ? Number(set.base_version) !== state.version : false
+    variantBack.hidden = state.variantPreview == null
+    const busy = state.variantBusy
+    const applying = state.variantApplying != null
+    const details = busy
+      ? '正在构建方案…'
+      : `${set.label ? `${set.label} · ` : ''}${set.variants.length} 个`
+        + `${stale ? ' · 已过期' : set.all_failed ? ' · 全部失败' : ''}${applying ? ' · 采纳中…' : ''}`
+    variantMeta.textContent = details
+    variantGrid.textContent = ''
+    if (busy) {
+      variantGrid.append(el('div', { className: 'bxw-variants-loading' }, '正在构建候选方案，缩略图和检查完成后会显示在这里。'))
+      return
+    }
+    for (const variant of set.variants) {
+      const failedChecks = (variant.checks || []).filter((check) => !check.ok).length
+      const adoptable = Boolean(variant.ok && !failedChecks && (variant.ops?.length)
+        && !stale && !applying)
+      const card = el('article', {
+        className: 'bxw-variant',
+        tabindex: variant.ok && !applying ? '0' : '-1',
+      })
+      if (state.variantPreview === variant.index) card.dataset.active = 'true'
+      if (!variant.ok) card.dataset.failed = 'true'
+      card.setAttribute('aria-label', variant.ok ? `预览方案 ${variant.label}` : `方案 ${variant.label} 构建失败`)
+      const thumbUrl = variant.thumb ? `${base}${variant.thumb}` : null
+      let thumb
+      if (thumbUrl) {
+        thumb = el('img', { className: 'bxw-variant-thumb', src: thumbUrl, alt: variant.label })
+        thumb.loading = 'lazy'
+        thumb.addEventListener('error', () => {
+          thumb.replaceWith(el('div', { className: 'bxw-variant-thumb empty' }, '缩略图不可用'))
+        })
+      } else {
+        thumb = el('div', { className: 'bxw-variant-thumb empty' }, variant.ok ? '无缩略图' : '构建失败')
+      }
+      const body = el('div', { className: 'bxw-variant-body' })
+      const label = el('div', { className: 'bxw-variant-label' }, variant.label || `方案 ${variant.index}`)
+      const intro = el('div', { className: 'bxw-variant-meta' }, variant.ok
+        ? `${fmt(variant.faces)} 面 · ${fmt(variant.volume, 1)} mm³`
+        : '—')
+      let statusText = '检查通过'
+      if (!variant.ok) {
+        statusText = variant.error?.hint || variant.error?.message || '构建失败'
+      } else if (failedChecks) {
+        statusText = `检查 ${(variant.checks || []).length - failedChecks}/${(variant.checks || []).length} 通过`
+      } else if ((variant.checks || []).length) {
+        statusText = `检查 ${variant.checks.length}/${variant.checks.length} 通过`
+      }
+      const status = el('div', {
+        className: 'bxw-variant-status',
+        'data-ok': String(Boolean(variant.ok && !failedChecks)),
+      }, statusText)
+      status.title = statusText
+      body.append(label, intro, status)
+      const buttons = el('div', { className: 'bxw-variant-buttons' })
+      if (variant.ok) {
+        const previewButton = el('button', { type: 'button', disabled: applying }, '预览')
+        previewButton.addEventListener('click', (event) => {
+          event.stopPropagation()
+          previewVariant(variant)
+        })
+        buttons.append(previewButton)
+      }
+      if (adoptable) {
+        const applyButton = el('button', { type: 'button', disabled: applying }, '采纳')
+        applyButton.addEventListener('click', (event) => {
+          event.stopPropagation()
+          applyVariant(variant)
+        })
+        buttons.append(applyButton)
+      }
+      card.append(thumb, body)
+      if (buttons.childElementCount) card.append(buttons)
+      if (variant.ok) {
+        card.addEventListener('click', () => previewVariant(variant))
+        card.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          previewVariant(variant)
+        })
+      }
+      variantGrid.append(card)
+    }
+  }
+
+  const resetVariants = () => {
+    variantRequest += 1
+    state.variantSet = null
+    state.variantPreview = null
+    state.variantBusy = false
+    state.variantApplying = null
+    renderVariants()
+  }
+
+  const renderDocuments = () => {    docSelect.textContent = ''
     if (!state.documents.length) {
       docSelect.append(el('option', { value: '' }, '没有模型'))
       docSelect.disabled = true
@@ -1670,11 +1975,13 @@ export function mountWorkbench(host, options) {
     const selected = docSelect.selectedOptions?.[0]
     if (selected) selected.textContent = `${doc.name || state.docId} · v${state.version}`
     if (state.selection?.version != null && state.selection.version !== state.version) clearSelection()
+    if (state.variantPreview != null) state.variantPreview = null
     if (state.ghost) syncGhost()
     renderReview()
     renderPlan()
     renderChecks()
     renderFocus()
+    renderVariants()
     renderTiming()
     pushDesign(false)
   }
@@ -1708,6 +2015,7 @@ export function mountWorkbench(host, options) {
       renderSelection()
       post('highlight', { centers: [] })
       resetReviewTools()
+      resetVariants()
       empty.dataset.on = 'true'
       return
     }
@@ -1720,6 +2028,7 @@ export function mountWorkbench(host, options) {
     renderSelection()
     post('highlight', { centers: [] })
     resetReviewTools()
+    resetVariants()
     setLoading(true)
     const startedAt = performance.now()
     const loadTimer = setInterval(() => {
@@ -1834,6 +2143,7 @@ export function mountWorkbench(host, options) {
     const docName = doc.name ? ` · ${doc.name}` : ''
     const docTag = `[当前文档 ${state.docId}${docName} v${doc.version ?? state.version}] `
     const message = docTag + selected + text
+    if (state.variantPreview != null) exitVariantPreview()
     state.busy = true
     send.disabled = true
     try {
