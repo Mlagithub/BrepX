@@ -291,6 +291,37 @@ const css = `
   .bxw-variant-buttons { display: flex; gap: 5px; padding: 4px 8px 8px; margin-top: auto; }
   .bxw-variant-buttons button { flex: 1; height: 24px; font-size: 10px; }
   .bxw-variants-loading { padding: 20px 14px; color: var(--bxw-muted); font-size: 11px; }
+  .bxw-candidates { position: absolute; left: 50%; bottom: calc(var(--bxw-dock-h, 112px) + 14px);
+    transform: translateX(-50%); z-index: 14; width: min(920px, calc(100% - 28px));
+    display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--bxw-line); border-radius: 10px; background: var(--bxw-panel);
+    box-shadow: 0 16px 40px rgb(0 0 0 / 20%); }
+  .bxw-candidates[hidden] { display: none; }
+  .bxw-shell[data-history="on"] .bxw-candidates { display: none; }
+  .bxw-shell[data-inspector="on"] .bxw-candidates {
+    left: calc((100% - min(var(--bxw-right-width, 292px), 36vw)) / 2);
+    width: min(720px, calc(100% - min(var(--bxw-right-width, 292px), 36vw) - 56px)); }
+  .bxw-candidates-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid var(--bxw-line); }
+  .bxw-candidates-head strong { font-size: 11px; font-weight: 600; }
+  .bxw-candidates-head span { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--bxw-muted); font-size: 10px; }
+  .bxw-candidates-head button { margin-left: auto; height: 24px; padding: 0 8px; font-size: 10px; }
+  .bxw-candidates-note { padding: 8px 12px; color: var(--bxw-soft); font-size: 11px; line-height: 1.5; }
+  .bxw-candidates-grid { display: flex; gap: 8px; padding: 10px 12px; overflow-x: auto; }
+  .bxw-candidates .bxw-candidate { flex: 1 1 0; min-width: 196px; height: auto; display: flex; flex-direction: column;
+    align-items: stretch; justify-content: flex-start; gap: 5px; white-space: normal;
+    padding: 10px; border: 1px solid var(--bxw-line); border-radius: 8px;
+    background: var(--bxw-layer); text-align: left; cursor: pointer; }
+  .bxw-candidate:hover, .bxw-candidate:focus-visible { border-color: var(--bxw-accent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--bxw-accent) 35%, transparent); }
+  .bxw-candidate[data-locate="failed"] { border-color: color-mix(in srgb, var(--bxw-danger, #c94f4f) 35%, var(--bxw-line)); }
+  .bxw-candidate-id { color: var(--bxw-primary); font: 11px/1.3 var(--dsw-font-mono, ui-monospace, monospace); font-weight: 650; }
+  .bxw-candidate-what { color: var(--bxw-soft); font-size: 11px; line-height: 1.4; }
+  .bxw-candidate-type { color: var(--bxw-muted); font-size: 9px; }
+  .bxw-candidate-reasons { color: var(--bxw-muted); font-size: 10px; line-height: 1.45; }
+  .bxw-candidate-status { color: var(--bxw-muted); font-size: 9px; line-height: 1.35; }
+  .bxw-candidate-status[data-failed="true"] { color: var(--bxw-danger, #c94f4f); }
   .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
     border-radius: 10px 10px 0 0; }
   .bxw-dock:has(.bxw-dock-active:not([hidden])) .bxw-dock-bar { border-radius: 0; }
@@ -459,6 +490,9 @@ export function mountWorkbench(host, options) {
     variantPreview: null,
     variantBusy: false,
     variantApplying: null,
+    candidates: null,
+    candidateBusy: false,
+    reference: null,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -708,7 +742,7 @@ export function mountWorkbench(host, options) {
   const send = el('button', { type: 'submit', className: 'bxw-send', 'aria-label': '执行或发送给 Agent', html: ICONS.send + '<span>执行</span>' })
   composerBox.append(composerTarget, input, send)
   composer.dataset.target = 'inspect'
-  const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /agent /new   ·   Enter 执行 · Shift+Enter 换行')
+  const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /find /agent /new   ·   Enter 执行 · Shift+Enter 换行')
   composer.append(selectionBar, composerBox, hint)
 
   dock.append(composer)
@@ -729,9 +763,23 @@ export function mountWorkbench(host, options) {
   variantPanel.append(variantHead, variantGrid)
   variantBack.addEventListener('click', () => exitVariantPreview())
   variantClose.addEventListener('click', () => closeVariants())
+  const candidatePanel = el('div', {
+    className: 'bxw-candidates', role: 'dialog', 'aria-label': '消歧候选', hidden: true,
+  })
+  const candidateHead = el('div', { className: 'bxw-candidates-head' })
+  const candidateTitle = el('strong', {}, '消歧候选')
+  const candidateMeta = el('span', {}, '')
+  const candidateClose = el('button', {
+    type: 'button', title: '关闭消歧候选', 'aria-label': '关闭消歧候选', html: ICONS.close,
+  })
+  candidateClose.addEventListener('click', () => closeCandidates())
+  candidateHead.append(candidateTitle, candidateMeta, candidateClose)
+  const candidateNote = el('div', { className: 'bxw-candidates-note', hidden: true })
+  const candidateGrid = el('div', { className: 'bxw-candidates-grid' })
+  candidatePanel.append(candidateHead, candidateNote, candidateGrid)
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
   const menuScrim = el('div', { className: 'bxw-menu-scrim', hidden: true })
-  shell.append(header, main, dock, variantPanel, menuScrim, reviewScrim, toastNode)
+  shell.append(header, main, dock, variantPanel, candidatePanel, menuScrim, reviewScrim, toastNode)
   main.append(models, stage, inspector)
   const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
@@ -998,6 +1046,7 @@ export function mountWorkbench(host, options) {
   const clearSelection = () => {
     pickSeq += 1
     state.selection = null
+    state.reference = null
     renderSelection()
     post('highlight', { centers: [] })
   }
@@ -1008,6 +1057,7 @@ export function mountWorkbench(host, options) {
       return
     }
     if (raw.documentId && raw.documentId !== state.docId) return
+    state.reference = null
     const seq = ++pickSeq
     state.selection = { ...raw, pending: true, face_index: undefined }
     renderSelection()
@@ -1022,13 +1072,25 @@ export function mountWorkbench(host, options) {
 
   const renderSelection = () => {
     selectionBar.textContent = ''
-    if (!state.selection) {
+    if (!state.selection && !state.reference) {
       selectionBar.hidden = true
-      selectionSummary.textContent = '在画布上点选面'
+      selectionSummary.textContent = '在画布上点选面或边'
+      return
+    }
+    selectionBar.hidden = false
+    if (state.reference) {
+      const reference = state.reference
+      const chip = el('span', { className: 'bxw-selection-chip' })
+      chip.append(el('span', {}, `${reference.what} · ${reference.id}`))
+      chip.title = [reference.id, reference.type, ...(reference.reasons || [])].join('\n')
+      const clear = el('button', { type: 'button', title: '清除特征引用', 'aria-label': '清除特征引用', html: ICONS.close })
+      clear.addEventListener('click', clearSelection)
+      chip.append(clear)
+      selectionBar.append(el('span', {}, '特征'), chip)
+      selectionSummary.textContent = `特征 ${reference.id} · ${reference.what}`
       return
     }
     const label = selectionText(state.selection)
-    selectionBar.hidden = false
     const chip = el('span', { className: 'bxw-selection-chip' })
     chip.append(el('span', {}, label))
     chip.title = formatSelection(state.selection)
@@ -1156,8 +1218,15 @@ export function mountWorkbench(host, options) {
         if (!state.docId) return true
         window.open(`${base}/api/docs/${state.docId}/export/${arg || 'step'}`, '_blank', 'noopener')
         return true
+      case 'find':
+        if (!arg) {
+          toast('用法：/find 左边的沉头孔', 'info', 4)
+          return true
+        }
+        resolveCandidates(arg)
+        return true
       case 'help':
-        toast('命令：/fit /iso /top /front /right /wire /checks /agent /models /new /refresh /export')
+        toast('命令：/fit /iso /top /front /right /wire /find /checks /agent /models /new /refresh /export')
         return true
       default:
         toast(`未知命令：/${name}`, 'error', 4)
@@ -1657,6 +1726,7 @@ export function mountWorkbench(host, options) {
 
   const createVariants = async (param) => {
     if (!state.docId || state.variantBusy) return
+    closeCandidates()
     const values = variantValues(param)
     if (!values.length) {
       toast('没有可比较的取值', 'info', 3)
@@ -1850,6 +1920,171 @@ export function mountWorkbench(host, options) {
     renderVariants()
   }
 
+  const CANDIDATE_TYPES = {
+    hole: '孔', solid_box: '板', solid_cylinder: '圆柱', chamfer: '倒角',
+    fillet: '圆角', shell: '抽壳', extrude: '拉伸', revolve_profile: '旋转',
+    hub_revolve: '轮毂', sweep: '扫掠', pattern: '阵列', blend_group: '圆角组',
+    k_cylinder: '圆柱', k_box: '方块', k_chamfer: '倒角', k_fillet: '圆角',
+    k_extrude: '拉伸', k_revolve: '旋转', k_rotate: '旋转', k_shell: '抽壳',
+    k_cut: '切除', k_fuse: '合并', k_translate: '平移', k_move_faces: '面调整',
+  }
+  const candidateCenters = new Map()
+  let candidateRequest = 0
+  let candidateHover = 0
+
+  const featureCenters = async (featureId) => {
+    const key = `${state.docId}:${state.version}:${featureId}`
+    if (candidateCenters.has(key)) return candidateCenters.get(key)
+    try {
+      const scene = await api(`${base}/api/docs/${state.docId}/scene?feature=${encodeURIComponent(featureId)}`)
+      const centers = (scene.faces || []).map((face) => face.center).filter(Array.isArray)
+      candidateCenters.set(key, centers)
+      return centers
+    } catch (error) {
+      candidateCenters.set(key, [])
+      return []
+    }
+  }
+
+  const resolveCandidates = async (phrase) => {
+    if (!state.docId || !phrase) return
+    closeVariants()
+    closeCandidates()
+    const token = ++candidateRequest
+    state.candidateBusy = true
+    state.candidates = { phrase, matches: [], question: '', confident: false }
+    renderCandidates()
+    try {
+      const result = await api(`${base}/api/docs/${state.docId}/resolve?q=${encodeURIComponent(phrase)}`)
+      if (token !== candidateRequest) return
+      state.candidates = result
+      state.candidateBusy = false
+      renderCandidates()
+      if (!result.matches?.length) toast('没有找到匹配的特征', 'info', 4)
+    } catch (error) {
+      if (token !== candidateRequest) return
+      state.candidateBusy = false
+      state.candidates = null
+      renderCandidates()
+      toast(`解析指代失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    }
+  }
+
+  const closeCandidates = () => {
+    candidateRequest += 1
+    candidateHover += 1
+    state.candidates = null
+    state.candidateBusy = false
+    renderCandidates()
+    if (!state.reference) post('highlight', { centers: [] })
+  }
+
+  const highlightCandidate = async (candidate, card) => {
+    const token = ++candidateHover
+    const status = card.querySelector('.bxw-candidate-status')
+    const centers = await featureCenters(candidate.id)
+    if (token !== candidateHover) return
+    if (!centers.length) {
+      card.dataset.locate = 'failed'
+      if (status) {
+        status.dataset.failed = 'true'
+        status.textContent = '没有可定位的独立面'
+      }
+      return
+    }
+    card.dataset.locate = 'ok'
+    if (status) {
+      status.dataset.failed = 'false'
+      status.textContent = `已定位 ${centers.length} 个面`
+    }
+    post('highlight', { centers, seconds: 0, tone: 'change' })
+  }
+
+  const chooseCandidate = async (candidate) => {
+    const centers = await featureCenters(candidate.id)
+    if (!centers.length) {
+      toast(`无法定位 ${candidate.id} 的面，未选择`, 'error', 5)
+      return
+    }
+    clearSelection()
+    state.reference = {
+      id: candidate.id,
+      type: candidate.type,
+      what: candidate.what,
+      reasons: candidate.reasons || [],
+      version: state.version,
+    }
+    state.candidates = null
+    state.candidateBusy = false
+    candidateHover += 1
+    renderCandidates()
+    renderSelection()
+    post('highlight', { centers, seconds: 0, tone: 'selection' })
+    toast(`已引用 ${candidate.what}`, 'info', 2)
+    input.focus()
+  }
+
+  const renderCandidates = () => {
+    const data = state.candidates
+    const visible = state.candidateBusy || Boolean(data)
+    candidatePanel.hidden = !visible
+    if (!visible) return
+    candidateNote.hidden = true
+    candidateNote.textContent = ''
+    candidateGrid.textContent = ''
+    if (state.candidateBusy) {
+      candidateMeta.textContent = data?.phrase ? `正在解析「${data.phrase}」…` : '正在解析…'
+      candidateNote.hidden = false
+      candidateNote.textContent = '正在匹配文档里的特征…'
+      return
+    }
+    const matches = (data.matches || []).slice(0, 4)
+    candidateMeta.textContent = matches.length
+      ? `「${data.phrase}」 · ${matches.length} 个候选`
+      : `「${data.phrase}」 · 没有候选`
+    if (!matches.length) {
+      candidateNote.hidden = false
+      candidateNote.textContent = data.question || '没有找到对应的特征，请换一种说法。'
+      return
+    }
+    if (!data.confident) {
+      candidateNote.hidden = false
+      candidateNote.textContent = '找到多个特征，选择后会把特征引用带入下一条指令。'
+    }
+    for (const candidate of matches) {
+      const card = el('button', { type: 'button', className: 'bxw-candidate' })
+      card.append(
+        el('span', { className: 'bxw-candidate-id' }, candidate.id),
+        el('span', { className: 'bxw-candidate-what' }, candidate.what || candidate.type),
+        el('span', { className: 'bxw-candidate-type' },
+          `类型 ${CANDIDATE_TYPES[candidate.type] || candidate.type}`),
+      )
+      const reasons = (candidate.reasons || []).slice(0, 2).join('；')
+      card.append(el('span', { className: 'bxw-candidate-reasons' }, reasons || '按特征匹配'))
+      card.append(el('span', { className: 'bxw-candidate-status' }, `匹配度 ${candidate.score ?? '—'}`))
+      card.title = [candidate.id, candidate.what, ...(candidate.reasons || [])].join('\n')
+      card.addEventListener('mouseenter', () => { highlightCandidate(candidate, card) })
+      card.addEventListener('focus', () => { highlightCandidate(candidate, card) })
+      const leave = () => {
+        candidateHover += 1
+        if (!state.reference && !state.selection) post('highlight', { centers: [] })
+      }
+      card.addEventListener('mouseleave', leave)
+      card.addEventListener('blur', leave)
+      card.addEventListener('click', () => { chooseCandidate(candidate) })
+      candidateGrid.append(card)
+    }
+  }
+
+  const resetCandidates = () => {
+    candidateRequest += 1
+    candidateHover += 1
+    candidateCenters.clear()
+    state.candidates = null
+    state.candidateBusy = false
+    renderCandidates()
+  }
+
   const renderDocuments = () => {    docSelect.textContent = ''
     if (!state.documents.length) {
       docSelect.append(el('option', { value: '' }, '没有模型'))
@@ -1975,6 +2210,7 @@ export function mountWorkbench(host, options) {
     const selected = docSelect.selectedOptions?.[0]
     if (selected) selected.textContent = `${doc.name || state.docId} · v${state.version}`
     if (state.selection?.version != null && state.selection.version !== state.version) clearSelection()
+    if (state.reference?.version != null && state.reference.version !== state.version) clearSelection()
     if (state.variantPreview != null) state.variantPreview = null
     if (state.ghost) syncGhost()
     renderReview()
@@ -2012,10 +2248,12 @@ export function mountWorkbench(host, options) {
       state.checks = null
       pickSeq += 1
       state.selection = null
+      state.reference = null
       renderSelection()
       post('highlight', { centers: [] })
       resetReviewTools()
       resetVariants()
+      resetCandidates()
       empty.dataset.on = 'true'
       return
     }
@@ -2025,10 +2263,12 @@ export function mountWorkbench(host, options) {
     state.current = null
     pickSeq += 1
     state.selection = null
+    state.reference = null
     renderSelection()
     post('highlight', { centers: [] })
     resetReviewTools()
     resetVariants()
+    resetCandidates()
     setLoading(true)
     const startedAt = performance.now()
     const loadTimer = setInterval(() => {
@@ -2139,10 +2379,12 @@ export function mountWorkbench(host, options) {
       return
     }
     const selected = state.selection ? `[${formatSelection(state.selection)}] ` : ''
+    const reference = state.reference
+      ? `[特征 ${state.reference.id} · ${state.reference.what}] ` : ''
     const doc = state.current?.document || {}
     const docName = doc.name ? ` · ${doc.name}` : ''
     const docTag = `[当前文档 ${state.docId}${docName} v${doc.version ?? state.version}] `
-    const message = docTag + selected + text
+    const message = docTag + reference + selected + text
     if (state.variantPreview != null) exitVariantPreview()
     state.busy = true
     send.disabled = true

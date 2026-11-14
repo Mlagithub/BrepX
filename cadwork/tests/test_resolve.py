@@ -23,6 +23,16 @@ def plate() -> Document:
     ))
 
 
+def kernel_cover() -> Document:
+    return Document(id="k", name="盖", features=(
+        Feature("disc", "k_cylinder", params={"radius": 60, "height": 12}),
+        Feature("rib_pattern", "pattern", params={"count": 4}),
+        Feature("hole_pattern", "pattern", params={"count": 6}),
+        Feature("root", "blend_group", params={"radius": 2}),
+        Feature("outer_c2", "blend_group", params={"radius": 1}),
+    ))
+
+
 class DescribeTests(unittest.TestCase):
     def test_features_are_named_in_plain_words(self) -> None:
         payload = summarize(plate())
@@ -85,6 +95,38 @@ class ResolveTests(unittest.TestCase):
         self.assertFalse(payload["confident"])
         self.assertFalse(payload["matches"])
         self.assertIn("没找到", payload["question"])
+
+
+class KernelResolveTests(unittest.TestCase):
+    def test_kernel_names_are_readable(self) -> None:
+        payload = summarize(kernel_cover())
+        names = [entry["what"] for entry in payload["features"]]
+        self.assertTrue(names[0].startswith("圆柱"), names[0])
+        self.assertIn("阵列", names[1])
+        self.assertIn("圆角组", names[3])
+
+    def test_kernel_cylinder_resolves(self) -> None:
+        payload = resolve(kernel_cover(), "把这个圆柱加高")
+        self.assertEqual(payload["matches"][0]["id"], "disc")
+        self.assertTrue(payload["confident"])
+
+    def test_pattern_without_qualifier_asks(self) -> None:
+        payload = resolve(kernel_cover(), "改一下这个阵列")
+        self.assertFalse(payload["confident"])
+        self.assertIsNotNone(payload["question"])
+        self.assertGreaterEqual(len(payload["matches"]), 2)
+
+    def test_explicit_feature_id_resolves(self) -> None:
+        payload = resolve(kernel_cover(), "rib_pattern 再高一点")
+        self.assertEqual(payload["matches"][0]["id"], "rib_pattern")
+        self.assertTrue(payload["confident"])
+        self.assertIn("直接点名", payload["matches"][0]["reasons"][0])
+
+    def test_blend_group_is_ambiguous(self) -> None:
+        payload = resolve(kernel_cover(), "这个圆角小一点")
+        self.assertFalse(payload["confident"])
+        self.assertEqual({item["id"] for item in payload["matches"]},
+                         {"root", "outer_c2"})
 
 
 if __name__ == "__main__":

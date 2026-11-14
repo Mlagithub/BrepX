@@ -20,22 +20,23 @@ from cadwork.design.document import Document, Feature
 
 # What people call a kind of feature.
 NOUNS: dict[str, tuple[str, ...]] = {
-    "孔": ("hole",),
-    "洞": ("hole",),
-    "孔洞": ("hole",),
-    "螺孔": ("hole",),
-    "板": ("solid_box",),
-    "方块": ("solid_box",),
-    "长方体": ("solid_box",),
-    "圆柱": ("solid_cylinder",),
-    "圆盘": ("solid_cylinder",),
-    "抽壳": ("shell",),
-    "壁": ("shell",),
-    "倒角": ("chamfer",),
-    "圆角": ("fillet",),
-    "拉伸": ("extrude",),
-    "旋转": ("revolve_profile", "hub_revolve"),
-    "扫掠": ("sweep",),
+    "孔": ("hole", "k_hole"),
+    "洞": ("hole", "k_hole"),
+    "孔洞": ("hole", "k_hole"),
+    "螺孔": ("hole", "k_hole"),
+    "板": ("solid_box", "k_box"),
+    "方块": ("solid_box", "k_box"),
+    "长方体": ("solid_box", "k_box"),
+    "圆柱": ("solid_cylinder", "k_cylinder"),
+    "圆盘": ("solid_cylinder", "k_cylinder"),
+    "抽壳": ("shell", "k_shell"),
+    "壁": ("shell", "k_shell"),
+    "倒角": ("chamfer", "k_chamfer"),
+    "圆角": ("fillet", "k_fillet", "blend_group"),
+    "拉伸": ("extrude", "k_extrude"),
+    "旋转": ("revolve_profile", "hub_revolve", "k_revolve", "k_rotate"),
+    "扫掠": ("sweep", "k_sweep"),
+    "阵列": ("pattern",),
 }
 
 # Words that pick one variant of a feature.
@@ -58,7 +59,6 @@ POSITIONS = {
 }
 
 NUMBER = re.compile(r"\d+(?:\.\d+)?")
-IDENT = re.compile(r"\b[a-z]\d+\b", re.IGNORECASE)
 
 
 def describe(feature: Feature) -> str:
@@ -88,6 +88,35 @@ def describe(feature: Feature) -> str:
         return f"抽壳 壁厚 {_num(params.get('thickness'))}"
     if kind == "extrude":
         return f"拉伸 {_num(params.get('amount'))}"
+    if kind == "k_cylinder":
+        return f"圆柱 Ø{_num((params.get('radius') or 0) * 2)}×{_num(params.get('height'))}"
+    if kind == "k_box":
+        return (f"方块 {_num(params.get('length'))}×{_num(params.get('width'))}"
+                f"×{_num(params.get('height'))}")
+    if kind == "k_chamfer":
+        return f"倒角 {_num(params.get('length'))}"
+    if kind == "k_fillet":
+        return f"圆角 {_num(params.get('radius'))}"
+    if kind == "blend_group":
+        radius = params.get("radius")
+        return f"圆角组 {_num(radius)}" if radius is not None else "圆角组"
+    if kind == "pattern":
+        count = params.get("count")
+        return f"阵列 {_num(count)} 个" if count is not None else "阵列"
+    if kind == "k_cut":
+        return "切除"
+    if kind == "k_fuse":
+        return "合并"
+    if kind == "k_translate":
+        return "平移"
+    if kind == "k_move_faces":
+        return "面调整"
+    if kind in ("k_revolve", "k_rotate"):
+        return "旋转"
+    if kind == "k_extrude":
+        return "拉伸"
+    if kind == "k_shell":
+        return f"抽壳 壁厚 {_num(params.get('thickness'))}"
     return kind
 
 
@@ -97,6 +126,11 @@ def _num(value: Any) -> str:
     except (TypeError, ValueError):
         return str(value)
     return f"{number:g}"
+
+
+def _mentions_id(text: str, feature_id: str) -> bool:
+    token = re.escape(feature_id.lower())
+    return re.search(rf"(?<![a-z0-9_]){token}(?![a-z0-9_])", text) is not None
 
 
 @dataclass
@@ -148,7 +182,6 @@ def resolve(document: Document, phrase: str) -> dict[str, Any]:
     text = phrase.strip()
     lowered = text.lower()
     numbers = [float(item) for item in NUMBER.findall(text)]
-    idents = [item.lower() for item in IDENT.findall(lowered)]
 
     words: list[tuple[str, tuple[str, ...]]] = []
     for noun, types in NOUNS.items():
@@ -162,7 +195,7 @@ def resolve(document: Document, phrase: str) -> dict[str, Any]:
     for index, feature in enumerate(document.features):
         score = 0.0
         reasons: list[str] = []
-        if feature.id.lower() in idents:
+        if _mentions_id(lowered, feature.id):
             score += 10
             reasons.append(f"直接点名 {feature.id}")
         for noun, types in words:
