@@ -74,8 +74,11 @@ def build_mcp_server(service: CADService) -> MCPServer:
     server = MCPServer(
         "cadwork",
         instructions=(
-            "A parametric CAD document. Start a fresh modeling request with new_document; "
-            "use documents to list existing work, then state with that document id to continue. "
+            "A parametric CAD document. A user message that starts with [当前文档 <id> ...] "
+            "already names the active document for that turn: call state with that id and edit "
+            "that document; do not create a new document or ask which document. For a request "
+            "without that tag, start with new_document; use documents to list existing work, "
+            "then state with that document id to continue. "
             "Read with state, measure with probe, and resolve spoken references with resolve. "
             "For a modelling request, maintain the plan (plan, plan_edit, plan_compile) and "
             "execute one ready node at a time with plan_run; never invent kernel code. Use "

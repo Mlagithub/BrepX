@@ -31,9 +31,13 @@ validates the plan and lowers it to kernel actions; you never write kernel calls
 
 ## Start a request
 
-For a new request, call `new_document` and keep its document id for every
-following call. For a follow-up, use `documents` to find the document and pass
-its id. Never mutate a document you did not open for this conversation.
+A message that starts with `[当前文档 <id> ...]` already names the document the
+user is working in. That document is open for this turn: call `state` with its
+id and edit it. Do not create a new document and do not ask which document.
+Otherwise, for a new request, call `new_document` and keep its document id for
+every following call. For a follow-up without that tag, use `documents` to find
+the document and pass its id. Never mutate a document other than the one named
+in this turn or one you created in this conversation.
 
 ## Node shape
 

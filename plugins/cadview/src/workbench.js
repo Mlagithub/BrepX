@@ -127,6 +127,9 @@ const css = `
   .bxw-agent-slot { flex: 1; min-height: 0; overflow: auto; }
   .bxw-agent-slot [data-conversation-region="composer"], .bxw-agent-slot [data-composer-seat],
   .bxw-agent-slot [data-conversation-scroll] > [data-conversation-region="composer"] { display: none !important; }
+  .bxw-agent-slot [data-composer-seat]:has([data-question-key]) { display: flex !important; }
+  .bxw-agent-slot [data-composer-seat] [data-composer-card],
+  .bxw-agent-slot [data-composer-seat] [data-composer-input] { display: none !important; }
   .bxw-thread-item { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
   .bxw-plan-card { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
   .bxw-plan-card-head { display: flex; align-items: center; gap: 7px; }
@@ -203,6 +206,8 @@ const css = `
     border: 1px solid var(--bxw-line); border-radius: 10px; background: var(--bxw-panel); box-shadow: 0 18px 46px rgb(0 0 0 / 24%); }
   .bxw-dock-history[hidden] { display: none; }
   .bxw-dock-history .bxw-agent-slot { width: 100%; max-width: 660px; margin: 0 auto; padding: 8px 16px 12px; }
+  .bxw-dock-history:has([data-question-key]) { width: min(900px, calc(100vw - 48px)); height: min(560px, 62vh); }
+  .bxw-dock-history:has([data-question-key]) .bxw-agent-slot { max-width: 860px; }
   .bxw-dock-bar { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
     border-radius: 10px 10px 0 0; }
   .bxw-dock:has(.bxw-dock-active:not([hidden])) .bxw-dock-bar { border-radius: 0; }
@@ -676,6 +681,10 @@ export function mountWorkbench(host, options) {
     dockStatus.hidden = active
   }
 
+  const revealQuestion = () => {
+    agentSlot.querySelector('[data-question-key]')?.scrollIntoView({ block: 'nearest' })
+  }
+
   const openHistory = (open) => {
     state.historyOpen = Boolean(open)
     if (state.historyOpen) historyPeek.hidden = true
@@ -683,10 +692,7 @@ export function mountWorkbench(host, options) {
     setComposerTarget(state.historyOpen)
     renderDock()
     if (state.historyOpen) {
-      requestAnimationFrame(() => {
-        const question = agentSlot.querySelector('[data-question-key]')
-        question?.scrollIntoView({ block: 'nearest' })
-      })
+      requestAnimationFrame(() => requestAnimationFrame(revealQuestion))
     }
   }
 
@@ -696,6 +702,9 @@ export function mountWorkbench(host, options) {
     state.dockQuestion = next
     state.dockQuestionText = next ? (text || '') : ''
     renderDock()
+    if (next && state.historyOpen) {
+      requestAnimationFrame(() => requestAnimationFrame(revealQuestion))
+    }
     return changed
   }
 
@@ -1329,14 +1338,17 @@ export function mountWorkbench(host, options) {
       return
     }
     const selected = state.selection ? `[${formatSelection(state.selection)}] ` : ''
-    const message = selected + text
+    const doc = state.current?.document || {}
+    const docName = doc.name ? ` · ${doc.name}` : ''
+    const docTag = `[当前文档 ${state.docId}${docName} v${doc.version ?? state.version}] `
+    const message = docTag + selected + text
     state.busy = true
     send.disabled = true
     try {
       await api(`${base}/api/docs/${state.docId}/intents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: message }),
+        body: JSON.stringify({ text: message, base_version: state.version }),
       })
       const sessionId = state.sessionId || options.getSessionId?.()
       if (!sessionId) throw new Error('没有活动会话；请先选择一个会话')
