@@ -329,13 +329,16 @@ class CADService:
                     referenced.update((ref.source, *ref.since, *ref.extra))
         entries: list[dict[str, Any]] = []
         for feature in document.features:
-            entries.append({
+            entry = {
                 "id": feature.id,
                 "type": feature.type,
                 "enabled": feature.enabled,
                 "can_toggle": feature.id not in referenced,
                 "actor": feature.actor,
-            })
+            }
+            if feature.note:
+                entry["note"] = feature.note
+            entries.append(entry)
         return entries
 
     def _metrics(self, result: Any) -> dict[str, Any]:
@@ -794,9 +797,6 @@ class CADService:
                     request_id: str | None = None) -> dict[str, Any]:
         from pathlib import Path as _Path
 
-        format = format.lower().strip()
-        if format not in {"step", "iges", "brep", "stl"}:
-            raise ServiceError("IMPORT_FORMAT", f"unsupported import format {format!r}", status=400)
         source = _Path(path)
         if not source.is_file():
             raise ServiceError("IMPORT_NOT_FOUND", f"no file at {path!r}", status=404)
@@ -804,6 +804,17 @@ class CADService:
             payload = source.read_bytes()
         except OSError as exc:
             raise ServiceError("IMPORT_NOT_FOUND", f"cannot read {path!r}: {exc}", status=404) from exc
+        return self.import_bytes(document_id, source.name, payload, format=format,
+                                 request_id=request_id)
+
+    def import_bytes(self, document_id: str, filename: str, payload: bytes,
+                     format: str = "step", request_id: str | None = None) -> dict[str, Any]:
+        format = format.lower().strip()
+        if format not in {"step", "iges", "brep", "stl"}:
+            raise ServiceError("IMPORT_FORMAT", f"unsupported import format {format!r}",
+                               status=400)
+        if not payload:
+            raise ServiceError("IMPORT_EMPTY", "the imported file is empty", status=400)
         stored, digest = self.store.put_import(payload, format)
         feature_id = f"import_{digest[:8]}"
         document = self.read(document_id)
@@ -816,14 +827,17 @@ class CADService:
                 "type": "import_base",
                 "params": {"ref": str(stored), "format": format, "sha256": digest, "heal": False},
                 "refs": {},
+                "note": f"参考 {filename}",
             },
         }]
         payload_out = self.commit(document_id, document.version, ops,
-                                  title=f"导入基准体 {source.name}", actor="human")
-        self._emit("import.stored", document_id=document_id, request_id=request_id or new_request_id(),
-                   tool="import", detail={"sha256": digest, "format": format, "feature_id": feature_id})
+                                  title=f"导入基准体 {filename}", actor="human")
+        self._emit("import.stored", document_id=document_id,
+                   request_id=request_id or new_request_id(), tool="import",
+                   detail={"sha256": digest, "format": format, "feature_id": feature_id})
         return {"feature_id": feature_id, "sha256": digest, "path": str(stored),
-                "format": format, "version": payload_out["document"]["version"]}
+                "format": format, "filename": filename,
+                "version": payload_out["document"]["version"]}
 
     def _resolve_focus(
         self,

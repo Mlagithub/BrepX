@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import tempfile
 import unittest
@@ -466,6 +467,45 @@ class PlanServiceTests(unittest.TestCase):
             )
             self.assertEqual(bad_format.status_code, 400)
             self.assertEqual(bad_format.json()["error"]["code"], "IMPORT_FORMAT")
+
+    def test_import_upload_accepts_base64_and_rejects_other_formats(self) -> None:
+        from cadwork.design import build as build_document
+        from cadwork.design.document import Document, Feature
+        from cadwork.service.export import export_bytes
+
+        part = build_document(Document(id="t", name="t", features=(
+            Feature("b1", "k_box",
+                    params={"length": 20.0, "width": 20.0, "height": 20.0}),
+        ))).final
+        step_bytes, _ = export_bytes(part, "step")
+        with self._client() as client:
+            document = self._create(client)
+            document_id = document["id"]
+            uploaded = client.post(
+                f"/api/docs/{document_id}/import/file",
+                json={"filename": "reference.step",
+                      "data": base64.b64encode(step_bytes).decode("ascii")},
+            )
+            self.assertEqual(uploaded.status_code, 200, uploaded.text)
+            payload = uploaded.json()
+            self.assertTrue(payload["feature_id"].startswith("import_"))
+            self.assertEqual(payload["filename"], "reference.step")
+            self.assertEqual(payload["version"], 1)
+            state = client.get(f"/api/docs/{document_id}/state").json()
+            self.assertAlmostEqual(state["metrics"]["volume"], 8000.0, delta=1.0)
+
+            bad_format = client.post(
+                f"/api/docs/{document_id}/import/file",
+                json={"filename": "reference.obj", "data": "AA=="},
+            )
+            self.assertEqual(bad_format.status_code, 400)
+            self.assertEqual(bad_format.json()["error"]["code"], "IMPORT_FORMAT")
+            bad_data = client.post(
+                f"/api/docs/{document_id}/import/file",
+                json={"filename": "reference.step", "data": "not-base64!!"},
+            )
+            self.assertEqual(bad_data.status_code, 400)
+            self.assertEqual(bad_data.json()["error"]["code"], "IMPORT_DATA")
 
 
 if __name__ == "__main__":

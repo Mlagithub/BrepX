@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import mimetypes
@@ -107,6 +109,12 @@ class PlanRunRequest(BaseModel):
 class ImportRequest(BaseModel):
     path: str
     format: str = "step"
+
+
+class ImportUpload(BaseModel):
+    filename: str
+    data: str
+    format: str | None = None
 
 
 class GenRunRequest(BaseModel):
@@ -437,6 +445,37 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     @app.post("/api/docs/{document_id}/import")
     def import_file(document_id: str, body: ImportRequest) -> dict[str, Any]:
         return service.import_file(document_id, body.path, format=body.format)
+
+    @app.post("/api/docs/{document_id}/import/file")
+    def import_upload(document_id: str, body: ImportUpload) -> dict[str, Any]:
+        raw = str(body.data or "").strip()
+        if raw.startswith("data:") and "," in raw:
+            raw = raw.split(",", 1)[1]
+        if not raw:
+            raise ServiceError("IMPORT_EMPTY", "the imported file is empty", status=400)
+        if len(raw) > 70_000_000:
+            raise ServiceError("IMPORT_TOO_LARGE", "import larger than 50 MB", status=413)
+        try:
+            payload = base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ServiceError("IMPORT_DATA", "file data is not valid base64", status=400) from exc
+        if len(payload) > 50_000_000:
+            raise ServiceError("IMPORT_TOO_LARGE", "import larger than 50 MB", status=413)
+        suffix = Path(body.filename or "").suffix.lower().lstrip(".")
+        formats = {"step": "step", "stp": "step", "iges": "iges", "igs": "iges",
+                   "brep": "brep", "stl": "stl"}
+        requested = (body.format or suffix or "step").lower()
+        format = formats.get(requested)
+        if format is None or (suffix and suffix not in formats):
+            shown = Path(body.filename or "").suffix or requested
+            raise ServiceError(
+                "IMPORT_FORMAT",
+                f"unsupported reference format {shown!r}",
+                status=400,
+                hint="支持 STEP / IGES / BREP / STL",
+            )
+        return service.import_bytes(document_id, Path(body.filename or "reference").name,
+                                    payload, format=format)
 
     @app.post("/api/docs/{document_id}/variants")
     def create_variants(document_id: str, body: VariantRequest) -> dict[str, Any]:

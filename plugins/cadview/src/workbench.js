@@ -73,6 +73,8 @@ const css = `
   @media (prefers-reduced-motion: reduce) { .bxw-progress::after { animation: none; width: 100%; opacity: .55; } }
   .bxw-actions { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
   .bxw-view-trigger, .bxw-structure-trigger, .bxw-review-trigger { gap: 6px; padding: 0 9px; }
+  .bxw-import-trigger { padding: 0 9px; }
+  .bxw-import-trigger[data-busy="true"] { opacity: .55; }
   .bxw-review-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
   .bxw-structure-trigger[aria-pressed="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
     background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); color: var(--bxw-primary); }
@@ -553,6 +555,29 @@ export function mountWorkbench(host, options) {
   const metricBadge = el('span', { className: 'bxw-badge bxw-metric' }, '—')
   context.append(contextLabel, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
+  const importInput = el('input', {
+    type: 'file',
+    accept: '.step,.stp,.stl,.iges,.igs,.brep',
+    hidden: true,
+    'aria-hidden': 'true',
+  })
+  const importButton = el('button', {
+    className: 'bxw-import-trigger',
+    title: '导入参考几何（当前模型已有特征时会新建模型）',
+    'aria-label': '导入参考几何',
+  }, '导入')
+  importButton.addEventListener('click', () => {
+    if (!state.docId) {
+      toast('先选择一个模型，再导入参考几何', 'info', 3)
+      return
+    }
+    importInput.click()
+  })
+  importInput.addEventListener('change', () => {
+    const file = importInput.files?.[0]
+    importInput.value = ''
+    if (file) importReference(file)
+  })
   const structureButton = el('button', {
     className: 'bxw-structure-trigger',
     title: '显示或隐藏结构',
@@ -652,7 +677,7 @@ export function mountWorkbench(host, options) {
   }
   exportSection.section.append(exportGrid)
   reviewMenu.append(ghostSection.section, sectionSection.section, measureSection.section, exportSection.section)
-  actions.append(structureButton, viewButton, reviewButton, viewMenu, reviewMenu)
+  actions.append(importButton, importInput, structureButton, viewButton, reviewButton, viewMenu, reviewMenu)
   const progressLine = el('div', { className: 'bxw-progress', 'aria-hidden': 'true' })
   header.append(brand, context, actions, progressLine)
 
@@ -790,6 +815,13 @@ export function mountWorkbench(host, options) {
   const historyList = el('div', {})
   historySection.append(historyList)
 
+  const referenceSection = el('section', { className: 'bxw-section', hidden: true })
+  referenceSection.append(el('h3', {}, '参考几何'))
+  referenceSection.append(el('div', { className: 'bxw-node-meta' },
+    '作为基准体加入当前模型；后续特征与计划节点可引用其 id。'))
+  const referenceList = el('div', {})
+  referenceSection.append(referenceList)
+
   const docSection = el('section', { className: 'bxw-section' })
   docSection.append(el('h3', {}, '文档'))
   const docActions = el('div', { className: 'bxw-doc-actions' })
@@ -798,7 +830,8 @@ export function mountWorkbench(host, options) {
   docActions.append(docNew, docDelete)
   docSection.append(docActions)
 
-  inspectorBody.append(metricsSection, selectionSection, focusSection, planSection, checkSection, historySection, docSection)
+  inspectorBody.append(metricsSection, selectionSection, focusSection, planSection, checkSection,
+    referenceSection, historySection, docSection)
   inspector.append(inspectorHead, inspectorBody)
 
   const dock = el('section', { className: 'bxw-dock', 'aria-label': '命令与 Agent' })
@@ -1435,6 +1468,76 @@ export function mountWorkbench(host, options) {
       toast('已创建空白模型')
     } catch (error) {
       toast(`新建模型失败：${error.message}`, 'error', 6)
+    }
+  }
+
+  const importReference = async (file) => {
+    if (!state.docId || !file) return
+    const suffix = (file.name.split('.').pop() || '').toLowerCase()
+    const formats = {
+      step: 'step', stp: 'step', iges: 'iges', igs: 'iges', brep: 'brep', stl: 'stl',
+    }
+    const format = formats[suffix]
+    if (!format) {
+      toast(`不支持 ${file.name}；请选择 STEP / IGES / BREP / STL`, 'error', 6)
+      return
+    }
+    if (file.size > 40_000_000) {
+      toast('参考文件超过 40 MB', 'error', 5)
+      return
+    }
+    if (importButton.disabled) return
+    importButton.disabled = true
+    importButton.dataset.busy = 'true'
+    let targetId = state.docId
+    let created = false
+    let imported = false
+    try {
+      if ((state.current?.features || []).length) {
+        const name = `参考 ${file.name.replace(/\.[^.]+$/, '').slice(0, 60)}`
+        const document = await api(`${base}/api/docs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        })
+        state.documents.unshift(document)
+        renderDocuments()
+        targetId = document.id
+        created = true
+      }
+      const buffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      const chunk = 0x8000
+      for (let offset = 0; offset < bytes.length; offset += chunk) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
+      }
+      const result = await api(`${base}/api/docs/${targetId}/import/file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: btoa(binary), format }),
+      })
+      imported = true
+      toast(created
+        ? `已新建模型并导入 ${file.name} · ${result.feature_id}`
+        : `已导入 ${file.name} · ${result.feature_id}`, 'info', 4)
+      setModels(true)
+      setInspector(true)
+      await loadDocument(targetId, true, true)
+    } catch (error) {
+      if (created && !imported) {
+        try {
+          await api(`${base}/api/docs/${targetId}`, { method: 'DELETE' })
+          state.documents = state.documents.filter((item) => item.id !== targetId)
+          renderDocuments()
+        } catch (cleanup) {
+          /* keep the readable import error even if the empty model cannot be removed */
+        }
+      }
+      toast(`导入失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 7)
+    } finally {
+      importButton.disabled = false
+      delete importButton.dataset.busy
     }
   }
 
@@ -2778,6 +2881,18 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const renderReferences = () => {
+    const imports = (state.current?.features || []).filter((feature) => feature.type === 'import_base')
+    referenceSection.hidden = !imports.length
+    referenceList.textContent = ''
+    for (const feature of imports) {
+      const row = el('div', { className: 'bxw-history-row' })
+      row.append(el('b', {}, feature.id))
+      row.append(el('small', {}, feature.note || '导入基准体'))
+      referenceList.append(row)
+    }
+  }
+
   const renderHistory = () => {
     const milestones = state.current?.milestones || []
     historySection.hidden = !milestones.length
@@ -2863,6 +2978,7 @@ export function mountWorkbench(host, options) {
     renderChecks()
     renderFocus()
     renderVariants()
+    renderReferences()
     renderHistory()
     renderTiming()
     pushDesign(false)
