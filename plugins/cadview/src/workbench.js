@@ -72,7 +72,8 @@ const css = `
   @keyframes bxw-progress { from { transform: translateX(-110%); } to { transform: translateX(250%); } }
   @media (prefers-reduced-motion: reduce) { .bxw-progress::after { animation: none; width: 100%; opacity: .55; } }
   .bxw-actions { position: relative; display: flex; align-items: center; gap: 6px; flex: none; }
-  .bxw-view-trigger, .bxw-structure-trigger { gap: 6px; padding: 0 9px; }
+  .bxw-view-trigger, .bxw-structure-trigger, .bxw-review-trigger { gap: 6px; padding: 0 9px; }
+  .bxw-review-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
   .bxw-structure-trigger[aria-pressed="true"] { border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
     background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); color: var(--bxw-primary); }
   .bxw-view-trigger svg:last-child { width: 12px; height: 12px; opacity: .7; }
@@ -88,6 +89,32 @@ const css = `
   .bxw-view-menu button::before { content: ""; width: 14px; color: var(--bxw-accent); font-weight: 700; }
   .bxw-view-menu button[aria-checked="true"]::before { content: "✓"; }
   .bxw-menu-sep { height: 1px; margin: 4px 6px; background: var(--bxw-line); }
+  .bxw-review-menu { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: 304px;
+    max-height: calc(100vh - 92px); overflow: auto; padding: 6px 10px;
+    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-panel);
+    box-shadow: 0 16px 38px rgb(0 0 0 / 22%); }
+  .bxw-review-menu[hidden] { display: none; }
+  .bxw-review-section { display: flex; flex-direction: column; gap: 7px; padding: 9px 2px;
+    border-top: 1px solid var(--bxw-line); }
+  .bxw-review-section:first-child { border-top: 0; }
+  .bxw-review-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .bxw-review-head h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
+    letter-spacing: .8px; text-transform: uppercase; }
+  .bxw-review-meta { color: var(--bxw-muted); font: 10px/1.3 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-review-row { display: flex; align-items: center; gap: 7px; }
+  .bxw-review-row[hidden] { display: none; }
+  .bxw-review-select { flex: 1; min-width: 0; height: 26px; padding: 0 8px; border: 1px solid var(--bxw-line);
+    border-radius: 5px; background: var(--bxw-layer); color: var(--bxw-primary); font-size: 11px; }
+  .bxw-review-select:disabled { opacity: .55; }
+  .bxw-review-range { flex: 1; min-width: 0; accent-color: var(--bxw-accent); }
+  .bxw-review-seg { display: flex; gap: 4px; }
+  .bxw-review-seg button { height: 24px; padding: 0 9px; font-size: 11px; }
+  .bxw-review-seg button[aria-pressed="true"] { color: var(--bxw-accent);
+    border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
+    background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); }
+  .bxw-review-export { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .bxw-review-export button { height: 28px; font-size: 11px; }
+  .bxw-review-note { color: var(--bxw-muted); font-size: 10px; line-height: 1.45; }
   .bxw-main { position: relative; min-height: 0; overflow: hidden; background: var(--bxw-panel); }
   .bxw-stage { position: absolute; inset: 0; }
   .bxw-models { position: absolute; z-index: 10; left: 14px; top: 14px; bottom: calc(var(--bxw-dock-h, 112px) + 26px);
@@ -165,6 +192,7 @@ const css = `
   .bxw-inspector-head strong { font-size: 12px; font-weight: 600; letter-spacing: .2px; }
   .bxw-inspector-body { padding: 10px 12px 20px; display: flex; flex-direction: column; gap: 16px; }
   .bxw-section { display: flex; flex-direction: column; gap: 7px; }
+  .bxw-section[hidden] { display: none; }
   .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
@@ -251,6 +279,7 @@ const css = `
   @media (max-width: 960px) {
     .bxw-metric { display: none; }
     .bxw-tools button { padding: 0 5px; }
+    .bxw-review-trigger span { display: none; }
   }
   @media (max-width: 720px) {
     .bxw-models, .bxw-inspector, .bxw-resizer, .bxw-structure-trigger { display: none; }
@@ -272,6 +301,11 @@ const ICONS = {
   fit: svg('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'),
   wire: svg('<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>'),
   refresh: svg('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>'),
+  review: svg('<path d="M4 4h16v16H4z"/><path d="m8 12 3 3 5-6"/>'),
+  ghost: svg('<path d="M12 3a7 7 0 0 1 7 7v11l-3-2-2 2-2-2-2 2-2-2-3 2V10a7 7 0 0 1 7-7Z"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/>'),
+  section: svg('<path d="M4 7h16v10H4z"/><path d="M4 12h16"/>'),
+  measure: svg('<path d="m3 17 14-14 4 4L7 21z"/><path d="m7 13 4 4M11 9l4 4"/>'),
+  download: svg('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>'),
   send: svg('<path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/>'),
   close: svg('<path d="m6 6 12 12M18 6 6 18"/>'),
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
@@ -357,6 +391,11 @@ export function mountWorkbench(host, options) {
     renderMs: null,
     modeling: false,
     simplified: false,
+    ghost: false,
+    ghostVersion: null,
+    section: { on: false, axis: 'Z', t: 0.5 },
+    measure: false,
+    measureResult: null,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -400,7 +439,80 @@ export function mountWorkbench(host, options) {
   const menuInspector = el('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': 'true' }, '检查器')
   const menuRefresh = el('button', { type: 'button', role: 'menuitem' }, '刷新模型状态')
   viewMenu.append(menuModels, menuNav, menuInspector, el('div', { className: 'bxw-menu-sep' }), menuRefresh)
-  actions.append(structureButton, viewButton, viewMenu)
+  const reviewButton = el('button', {
+    className: 'bxw-review-trigger',
+    title: '审查工具',
+    'aria-label': '审查工具',
+    'aria-haspopup': 'dialog',
+    'aria-expanded': 'false',
+    html: ICONS.review + '<span>审查</span>' + ICONS.chevron,
+  })
+  const reviewMenu = el('div', {
+    className: 'bxw-review-menu',
+    role: 'dialog',
+    'aria-label': '审查工具',
+    hidden: true,
+  })
+  const reviewScrim = el('div', { className: 'bxw-menu-scrim', hidden: true })
+  const reviewSection = (title) => {
+    const section = el('section', { className: 'bxw-review-section' })
+    const head = el('div', { className: 'bxw-review-head' })
+    head.append(el('h3', {}, title))
+    section.append(head)
+    return { section, head }
+  }
+  const ghostSection = reviewSection('残影对比')
+  const ghostMeta = el('span', { className: 'bxw-review-meta' }, '')
+  const ghostToggle = el('button', { type: 'button', 'aria-pressed': 'false' }, '开启残影')
+  ghostSection.head.append(ghostMeta, ghostToggle)
+  ghostSection.section.append(el('div', { className: 'bxw-review-note' }, '半透明叠加上一里程碑，相机保持不变。'))
+  const ghostRow = el('div', { className: 'bxw-review-row' })
+  const ghostSelect = el('select', { className: 'bxw-review-select', 'aria-label': '残影基准版本' })
+  ghostRow.append(ghostSelect)
+  ghostSection.section.append(ghostRow)
+  const sectionSection = reviewSection('动态剖切')
+  const sectionToggle = el('button', { type: 'button', 'aria-pressed': 'false' }, '开启剖切')
+  sectionSection.head.append(sectionToggle)
+  const sectionControls = el('div', { className: 'bxw-review-row' })
+  const sectionAxisGroup = el('div', { className: 'bxw-review-seg', role: 'group', 'aria-label': '剖切轴' })
+  const sectionAxisButtons = {}
+  for (const axis of ['X', 'Y', 'Z']) {
+    const button = el('button', { type: 'button', 'aria-pressed': axis === state.section.axis ? 'true' : 'false' }, axis)
+    button.addEventListener('click', () => {
+      state.section.axis = axis
+      for (const [name, node] of Object.entries(sectionAxisButtons)) {
+        node.setAttribute('aria-pressed', name === axis ? 'true' : 'false')
+      }
+      post('section', { ...state.section })
+    })
+    sectionAxisButtons[axis] = button
+    sectionAxisGroup.append(button)
+  }
+  const sectionRange = el('input', {
+    type: 'range', min: '0', max: '1', step: '0.01', value: String(state.section.t),
+    className: 'bxw-review-range', 'aria-label': '剖切位置',
+  })
+  sectionRange.disabled = true
+  sectionRange.addEventListener('input', () => {
+    state.section.t = Number(sectionRange.value)
+    post('section', { ...state.section })
+  })
+  sectionControls.append(sectionAxisGroup, sectionRange)
+  sectionSection.section.append(sectionControls)
+  const measureSection = reviewSection('几何测量')
+  const measureToggle = el('button', { type: 'button', 'aria-pressed': 'false' }, '开始测量')
+  measureSection.head.append(measureToggle)
+  measureSection.section.append(el('div', { className: 'bxw-review-note' }, '在画布上点两处，显示距离、三轴分量与法向夹角。'))
+  const exportSection = reviewSection('导出当前版本')
+  const exportGrid = el('div', { className: 'bxw-review-export' })
+  for (const [format, label] of [['step', 'STEP'], ['stl', 'STL'], ['glb', 'GLB'], ['cfd', 'CFD JSON']]) {
+    const button = el('button', { type: 'button', title: `导出 ${label}` }, label)
+    button.addEventListener('click', () => { downloadExport(format).catch(() => {}) })
+    exportGrid.append(button)
+  }
+  exportSection.section.append(exportGrid)
+  reviewMenu.append(ghostSection.section, sectionSection.section, measureSection.section, exportSection.section)
+  actions.append(structureButton, viewButton, reviewButton, viewMenu, reviewMenu)
   const progressLine = el('div', { className: 'bxw-progress', 'aria-hidden': 'true' })
   header.append(brand, context, actions, progressLine)
 
@@ -480,6 +592,15 @@ export function mountWorkbench(host, options) {
   const selectionSummary = el('div', { className: 'bxw-check' }, '在画布上点选面或边')
   selectionSection.append(selectionSummary)
 
+  const measureInspector = el('section', { className: 'bxw-section', hidden: true })
+  const measureHead = el('div', { className: 'bxw-section-head' })
+  measureHead.append(el('h3', {}, '测量'))
+  const measureClear = el('button', { type: 'button', title: '清除测量', 'aria-label': '清除测量', html: ICONS.close })
+  measureHead.append(measureClear)
+  const measureText = el('div', { className: 'bxw-check' }, '在画布上点两处')
+  measureInspector.append(measureHead, measureText)
+  inspectorBody.append(measureInspector)
+
   const checkSection = el('section', { className: 'bxw-section' })
   checkSection.append(el('h3', {}, '检查'))
   const checkSummary = el('div', { className: 'bxw-check' }, '—')
@@ -525,7 +646,7 @@ export function mountWorkbench(host, options) {
   dock.append(composer)
   const toastNode = el('div', { className: 'bxw-toast', role: 'status' })
   const menuScrim = el('div', { className: 'bxw-menu-scrim', hidden: true })
-  shell.append(header, main, dock, menuScrim, toastNode)
+  shell.append(header, main, dock, menuScrim, reviewScrim, toastNode)
   main.append(models, stage, inspector)
   const leftResizer = el('div', { className: 'bxw-resizer bxw-resizer-left', role: 'separator', tabindex: '0', 'aria-label': '调整结构栏宽度', 'aria-orientation': 'vertical' })
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
@@ -970,6 +1091,7 @@ export function mountWorkbench(host, options) {
     viewButton.setAttribute('aria-expanded', 'false')
   }
   const openViewMenu = () => {
+    closeReviewMenu()
     viewMenu.hidden = false
     menuScrim.hidden = false
     viewButton.setAttribute('aria-expanded', 'true')
@@ -992,6 +1114,24 @@ export function mountWorkbench(host, options) {
   })
   document.addEventListener('click', closeViewMenu)
   menuScrim.addEventListener('click', closeViewMenu)
+
+  reviewButton.addEventListener('click', (event) => {
+    event.stopPropagation()
+    if (reviewMenu.hidden) openReviewMenu()
+    else closeReviewMenu()
+  })
+  reviewMenu.addEventListener('click', (event) => event.stopPropagation())
+  reviewScrim.addEventListener('click', () => closeReviewMenu())
+  document.addEventListener('click', () => closeReviewMenu())
+  ghostToggle.addEventListener('click', () => setGhost(!state.ghost))
+  ghostSelect.addEventListener('change', () => {
+    state.ghostVersion = Number(ghostSelect.value)
+    if (state.ghost) syncGhost()
+    else renderReview()
+  })
+  sectionToggle.addEventListener('click', () => setSection(!state.section.on))
+  measureToggle.addEventListener('click', () => setMeasure(!state.measure))
+  measureClear.addEventListener('click', () => clearMeasure())
 
   const toggleHistory = () => openHistory(!state.historyOpen)
   dockAgent.addEventListener('click', toggleHistory)
@@ -1062,6 +1202,169 @@ export function mountWorkbench(host, options) {
       fit,
       simplified: state.simplified,
     })
+  }
+
+  const previousVersion = () => {
+    const milestones = state.current?.milestones || []
+    const latest = milestones[milestones.length - 1]
+    if (Number.isInteger(latest?.parent_version)) return latest.parent_version
+    return state.version > 0 ? state.version - 1 : null
+  }
+
+  const measureTextFor = (result) => {
+    if (!result) return '在画布上点两处'
+    const parts = [
+      `距离 ${Number(result.distance).toFixed(2)} mm`,
+      `Δx ${Number(result.dx).toFixed(2)} · Δy ${Number(result.dy).toFixed(2)} · Δz ${Number(result.dz).toFixed(2)}`,
+    ]
+    if (result.angle != null) parts.push(`夹角 ${Number(result.angle).toFixed(1)}°`)
+    return parts.join(' · ')
+  }
+
+  const renderMeasure = () => {
+    const visible = state.measure || Boolean(state.measureResult)
+    measureInspector.hidden = !visible
+    if (!visible) return
+    measureText.textContent = state.measureResult ? measureTextFor(state.measureResult) : '在画布上点两处取距离与夹角'
+  }
+
+  const renderGhostSelect = () => {
+    const milestones = (state.current?.milestones || [])
+      .filter((item) => Number(item.version) > 0 && Number(item.version) < state.version)
+      .sort((a, b) => b.version - a.version)
+    const chosen = state.ghostVersion ?? previousVersion()
+    ghostSelect.textContent = ''
+    if (!milestones.length) {
+      ghostSelect.append(el('option', { value: '' }, '无历史版本'))
+      ghostSelect.disabled = true
+      return
+    }
+    for (const item of milestones) {
+      ghostSelect.append(el('option', { value: String(item.version) }, `v${item.version} · ${item.title || '里程碑'}`))
+    }
+    ghostSelect.disabled = false
+    ghostSelect.value = chosen != null ? String(chosen) : String(milestones[0].version)
+  }
+
+  const renderReview = () => {
+    ghostToggle.setAttribute('aria-pressed', state.ghost ? 'true' : 'false')
+    ghostToggle.textContent = state.ghost ? '关闭残影' : '开启残影'
+    const version = state.ghostVersion ?? previousVersion()
+    ghostMeta.textContent = state.ghost && version != null ? `v${version}` : ''
+    renderGhostSelect()
+    sectionToggle.setAttribute('aria-pressed', state.section.on ? 'true' : 'false')
+    sectionToggle.textContent = state.section.on ? '关闭剖切' : '开启剖切'
+    sectionControls.hidden = !state.section.on
+    sectionRange.disabled = !state.section.on
+    for (const [name, node] of Object.entries(sectionAxisButtons)) {
+      node.setAttribute('aria-pressed', name === state.section.axis ? 'true' : 'false')
+    }
+    measureToggle.setAttribute('aria-pressed', state.measure ? 'true' : 'false')
+    measureToggle.textContent = state.measure ? '结束测量' : '开始测量'
+    renderMeasure()
+  }
+
+  const syncGhost = () => {
+    if (!state.ghost) return
+    const version = state.ghostVersion ?? previousVersion()
+    if (version == null || version === 0) return
+    state.ghostVersion = version
+    post('ghost', { on: true, documentId: state.docId, version })
+    ghostMeta.textContent = `v${version}`
+    if (ghostSelect.value !== String(version)) ghostSelect.value = String(version)
+  }
+
+  const setGhost = (on) => {
+    const next = Boolean(on)
+    const version = state.ghostVersion ?? previousVersion()
+    if (next && (version == null || version === 0)) {
+      toast('没有可对比的历史版本', 'info', 3)
+      return
+    }
+    state.ghost = next
+    if (next) state.ghostVersion = version
+    renderReview()
+    if (state.ghost) syncGhost()
+    else post('ghost', { on: false })
+  }
+
+  const setSection = (on) => {
+    state.section.on = Boolean(on)
+    renderReview()
+    post('section', { ...state.section })
+  }
+
+  const clearMeasure = () => {
+    state.measure = false
+    state.measureResult = null
+    renderReview()
+    measureInspector.hidden = true
+    post('measure', { on: false })
+  }
+
+  const setMeasure = (on) => {
+    state.measure = Boolean(on)
+    if (!state.measure) state.measureResult = null
+    renderReview()
+    post('measure', { on: state.measure })
+    if (state.measure) {
+      setInspector(true)
+      toast('测量已开启：在画布上点两处', 'info', 3)
+      closeReviewMenu()
+    }
+  }
+
+  const downloadExport = async (format) => {
+    if (!state.docId) return
+    const extension = { step: 'step', stl: 'stl', glb: 'glb', cfd: 'json' }[format] || format
+    const name = String(state.current?.document?.name || state.docId).replace(/[\\/:*?"<>|]/g, '_')
+    try {
+      const response = await fetch(`${base}/api/docs/${state.docId}/export/${format}?version=${state.version}`)
+      if (!response.ok) {
+        let message = `${response.status} ${response.statusText}`
+        try { message = (await response.text()) || message } catch (error) { /* keep status */ }
+        throw new Error(message)
+      }
+      const blob = await response.blob()
+      const href = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = `${name}-v${state.version}.${extension}`
+      anchor.rel = 'noopener'
+      document.body.append(anchor)
+      anchor.click()
+      anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(href), 30000)
+      toast(`已导出 ${format.toUpperCase()}`, 'info', 3)
+    } catch (error) {
+      toast(`导出失败：${error.message}`, 'error', 6)
+    }
+  }
+
+  const closeReviewMenu = () => {
+    reviewMenu.hidden = true
+    reviewScrim.hidden = true
+    reviewButton.setAttribute('aria-expanded', 'false')
+  }
+
+  const openReviewMenu = () => {
+    closeViewMenu()
+    renderReview()
+    reviewMenu.hidden = false
+    reviewScrim.hidden = false
+    reviewButton.setAttribute('aria-expanded', 'true')
+  }
+
+  const resetReviewTools = () => {
+    state.ghost = false
+    state.ghostVersion = null
+    state.section.on = false
+    state.measure = false
+    state.measureResult = null
+    post('ghost', { on: false })
+    post('section', { on: false })
+    post('measure', { on: false })
+    renderReview()
   }
 
   const renderDocuments = () => {
@@ -1183,6 +1486,8 @@ export function mountWorkbench(host, options) {
     state.version = doc.version ?? 0
     state.simplified = false
     if (state.selection?.version != null && state.selection.version !== state.version) clearSelection()
+    if (state.ghost) syncGhost()
+    renderReview()
     renderPlan()
     renderChecks()
     renderTiming()
@@ -1217,6 +1522,7 @@ export function mountWorkbench(host, options) {
       state.selection = null
       renderSelection()
       post('highlight', { centers: [] })
+      resetReviewTools()
       empty.dataset.on = 'true'
       return
     }
@@ -1228,6 +1534,7 @@ export function mountWorkbench(host, options) {
     state.selection = null
     renderSelection()
     post('highlight', { centers: [] })
+    resetReviewTools()
     setLoading(true)
     const startedAt = performance.now()
     const loadTimer = setInterval(() => {
@@ -1403,6 +1710,12 @@ export function mountWorkbench(host, options) {
       }
     } else if (data.type === 'pick') {
       applyPick(data.pick || null)
+    } else if (data.type === 'measure' && data.result) {
+      state.measureResult = data.result
+      state.measure = true
+      renderReview()
+      setInspector(true)
+      toast(measureTextFor(data.result), 'info', 8)
     } else if (data.type === 'error') {
       toast(`视图错误：${data.text}`, 'error', 6)
     }
@@ -1451,6 +1764,7 @@ export function mountWorkbench(host, options) {
   setModels(false)
   menuModels.setAttribute('aria-checked', 'false')
   renderSelection()
+  renderReview()
   openHistory(false)
   loadThread()
   options.onFocus?.()

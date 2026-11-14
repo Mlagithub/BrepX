@@ -341,17 +341,24 @@ const applySection = () => {
     const high = sectionAxis === 'X' ? box.max.x : sectionAxis === 'Y' ? box.max.y : box.max.z
     sectionPlane.constant = low + (high - low) * sectionT
   }
-  display.traverse((child) => {
-    if (!child.isMesh || !child.material) return
-    child.material.clippingPlanes = sectionOn ? [sectionPlane] : null
-    child.material.side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
-    child.material.needsUpdate = true
-    const edges = child.userData.edges
-    if (edges) {
-      edges.material.clippingPlanes = sectionOn ? [sectionPlane] : null
-      edges.material.needsUpdate = true
-    }
-  })
+  const planes = sectionOn ? [sectionPlane] : null
+  const paint = (root) => {
+    if (!root) return
+    root.traverse((child) => {
+      if (!child.material) return
+      const isMesh = child.isMesh
+      if (!isMesh && !child.isLineSegments && !child.isLine) return
+      child.material.clippingPlanes = planes
+      if (isMesh) child.material.side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
+      child.material.needsUpdate = true
+      if (isMesh && child.userData.edges) {
+        child.userData.edges.material.clippingPlanes = planes
+        child.userData.edges.material.needsUpdate = true
+      }
+    })
+  }
+  paint(display)
+  paint(ghost)
 }
 
 const applyWire = () => {
@@ -467,6 +474,7 @@ const showGhost = async (documentId, version) => {
     })
     ghost = object
     scene.add(ghost)
+    applySection()
     say(`残影 v${version} 叠加中`)
   } catch (error) {
     say(`残影加载失败 ${error.message}`)
@@ -580,6 +588,7 @@ const pickAt = (event) => {
     -((event.clientY - rect.top) / rect.height) * 2 + 1,
   ), camera)
   const hits = raycaster.intersectObject(display, true)
+    .filter((hit) => !sectionOn || sectionPlane.distanceToPoint(hit.point) >= -1e-6)
   if (!hits.length) return null
   const hit = hits[0]
   const brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
@@ -634,13 +643,25 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     const delta = end.clone().sub(measureA.point)
     let text = `距离 ${delta.length().toFixed(2)} mm · Δx ${delta.x.toFixed(2)} `
       + `Δy ${delta.y.toFixed(2)} Δz ${delta.z.toFixed(2)}`
+    let angle = null
     if (measureA.normal && found.normal) {
       const a = new THREE.Vector3(...measureA.normal).normalize()
       const b = new THREE.Vector3(...found.normal).normalize()
-      const angle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1)))
+      angle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1)))
       text += ` · 夹角 ${angle.toFixed(1)}°`
     }
     say(text)
+    post('measure', {
+      result: {
+        distance: delta.length(),
+        dx: delta.x,
+        dy: delta.y,
+        dz: delta.z,
+        angle,
+        a: [measureA.point.x, measureA.point.y, measureA.point.z],
+        b: found.point,
+      },
+    })
     measureA = null
     return
   }
