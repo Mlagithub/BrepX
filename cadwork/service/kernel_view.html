@@ -149,6 +149,7 @@ let previewActive = false
 let wire = false
 let measureMode = false
 let measureA = null
+let pickScope = 'face'
 let sectionOn = false
 let sectionAxis = 'Z'
 let sectionT = 0.5
@@ -665,7 +666,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
     measureA = null
     return
   }
-  post('pick', { pick: { ...found, documentId: currentDoc, version: currentVersion } })
+  post('pick', { pick: { ...found, scope: pickScope, documentId: currentDoc, version: currentVersion } })
   say(`拾取 (${found.point.map((n) => n.toFixed(1)).join(', ')})`
     + (found.area != null ? ` · ${Number(found.area).toFixed(1)} mm²` : ''))
 })
@@ -728,6 +729,9 @@ addEventListener('message', (event) => {
     setView(data.name)
   } else if (data.type === 'fit') {
     if (display) fit(display)
+  } else if (data.type === 'scope') {
+    pickScope = ['body', 'face', 'edge', 'point'].includes(data.scope) ? data.scope : 'face'
+    say(`选择范围：${{ body: '实体', face: '面', edge: '边', point: '点' }[pickScope]}`)
   } else if (data.type === 'wire') {
     wire = typeof data.on === 'boolean' ? data.on : !wire
     applyWire()

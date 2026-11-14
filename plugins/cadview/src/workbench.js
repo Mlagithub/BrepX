@@ -173,6 +173,11 @@ const css = `
   .bxw-tools button { height: 26px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); }
   .bxw-tools button:hover { color: var(--bxw-primary, #e8edf5); background: var(--bxw-layer); }
   .bxw-tools button[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 12%, transparent); }
+  .bxw-scopes { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--bxw-layer); }
+  .bxw-scopes button { height: 22px; min-width: 24px; padding: 0 6px; border: 0; background: transparent;
+    color: var(--bxw-muted); font-size: 10px; }
+  .bxw-scopes button[aria-pressed="true"] { color: var(--bxw-accent);
+    background: color-mix(in srgb, var(--bxw-accent) 15%, transparent); }
   .bxw-caption { display: flex; align-items: center; gap: 0; white-space: nowrap;
     color: var(--bxw-muted); font: 10px/1.3 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-caption span + span::before { content: "·"; margin: 0 6px; color: var(--bxw-line); }
@@ -399,6 +404,7 @@ const css = `
     .bxw-metric { display: none; }
     .bxw-tools button { padding: 0 5px; }
     .bxw-review-trigger span { display: none; }
+    .bxw-scopes button { min-width: 20px; padding: 0 4px; }
   }
   @media (max-width: 720px) {
     .bxw-models, .bxw-inspector, .bxw-resizer, .bxw-structure-trigger { display: none; }
@@ -504,6 +510,7 @@ export function mountWorkbench(host, options) {
     shown: -1,
     ready: false,
     wire: false,
+    pickScope: 'face',
     inspector: true,
     busy: false,
     selection: null,
@@ -671,6 +678,21 @@ export function mountWorkbench(host, options) {
     post('wire', { on: state.wire })
   })
   tools.append(fitButton, wireButton)
+  tools.append(el('span', { className: 'bxw-sep' }))
+  const scopeGroup = el('div', { className: 'bxw-scopes', role: 'group', 'aria-label': '选择范围' })
+  const scopeButtons = {}
+  for (const [scope, label, title] of [
+    ['body', '体', '选择整个实体'],
+    ['face', '面', '选择面'],
+    ['edge', '边', '选择边'],
+    ['point', '点', '选择顶点'],
+  ]) {
+    const button = el('button', { type: 'button', title, 'aria-pressed': scope === state.pickScope ? 'true' : 'false' }, label)
+    button.addEventListener('click', () => setPickScope(scope))
+    scopeButtons[scope] = button
+    scopeGroup.append(button)
+  }
+  tools.append(scopeGroup)
   header.insertBefore(tools, actions)
   const caption = el('div', { className: 'bxw-caption' })
   const captionFaces = el('span', {}, '—')
@@ -1054,6 +1076,27 @@ export function mountWorkbench(host, options) {
     if (!pick) return ''
     if (pick.pending) return '正在解析拾取…'
     const parts = []
+    if (pick.scope === 'body') {
+      if (pick.feature_id) parts.push(pick.feature_id)
+      parts.push('实体')
+      if (pick.body_metrics?.faces != null) parts.push(`${pick.body_metrics.faces} 面`)
+      if (pick.body_bbox) parts.push(`范围 ${pick.body_bbox.map((value) => fmt(value, 1)).join('×')} mm`)
+      if (pick.body_metrics?.volume != null) parts.push(`${fmt(pick.body_metrics.volume, 1)} mm³`)
+      return parts.join(' · ')
+    }
+    if (pick.scope === 'edge') {
+      parts.push('边')
+      if (Number.isInteger(pick.edge_index)) parts.push(`#${pick.edge_index}`)
+      if (pick.edge_length != null) parts.push(`${fmt(pick.edge_length, 2)} mm`)
+      if (pick.feature_id) parts.push(pick.feature_id)
+      return parts.join(' · ')
+    }
+    if (pick.scope === 'point') {
+      parts.push('顶点')
+      if (pick.point) parts.push(`(${pick.point.map((value) => Number(value).toFixed(1)).join(', ')})`)
+      if (pick.feature_id) parts.push(pick.feature_id)
+      return parts.join(' · ')
+    }
     if (pick.feature_id) parts.push(pick.feature_id)
     if (pick.surface_type) parts.push(SURFACE_LABELS[pick.surface_type] || pick.surface_type)
     if (pick.orientation) parts.push(ORIENTATION_LABELS[pick.orientation] || pick.orientation)
@@ -1073,14 +1116,83 @@ export function mountWorkbench(host, options) {
     return `选中 ${selectionText(pick)}${point ? ` @(${point})` : ''}`
   }
 
+  const sceneCache = new Map()
+
+  const sceneForDocument = async () => {
+    if (!state.docId || !state.current) return null
+    const key = `${state.docId}:${state.version}`
+    if (sceneCache.has(key)) return sceneCache.get(key)
+    const scene = await api(`${base}/api/docs/${state.docId}/scene`)
+    sceneCache.set(key, scene)
+    return scene
+  }
+
+  const nearestOnSegment = (point, a, b) => {
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]]
+    const ap = [point[0] - a[0], point[1] - a[1], point[2] - a[2]]
+    const length2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]
+    const t = length2 > 0 ? Math.min(1, Math.max(0, (ap[0] * ab[0] + ap[1] * ab[1] + ap[2] * ab[2]) / length2)) : 0
+    const closest = [a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t]
+    const dx = point[0] - closest[0]
+    const dy = point[1] - closest[1]
+    const dz = point[2] - closest[2]
+    return { closest, distance: Math.hypot(dx, dy, dz) }
+  }
+
+  const nearestEdge = (scene, point) => {
+    let best = null
+    for (const edge of scene.edges || []) {
+      const points = edge.points || []
+      for (let index = 1; index < points.length; index += 1) {
+        const near = nearestOnSegment(point, points[index - 1], points[index])
+        if (!best || near.distance < best.distance) best = { edge, closest: near.closest, distance: near.distance }
+      }
+    }
+    return best
+  }
+
+  const nearestVertex = (scene, point) => {
+    let best = null
+    const visit = (value) => {
+      if (!Array.isArray(value) || value.length < 3) return
+      const distance = Math.hypot(point[0] - value[0], point[1] - value[1], point[2] - value[2])
+      if (!best || distance < best.distance) best = { value: [value[0], value[1], value[2]], distance }
+    }
+    for (const edge of scene.edges || []) for (const value of edge.points || []) visit(value)
+    for (const face of scene.faces || []) for (const value of face.vertices || []) visit(value)
+    return best
+  }
+
+  const sceneSize = (scene) => {
+    let min = [Infinity, Infinity, Infinity]
+    let max = [-Infinity, -Infinity, -Infinity]
+    for (const edge of scene.edges || []) {
+      for (const value of edge.points || []) {
+        for (let axis = 0; axis < 3; axis += 1) {
+          min[axis] = Math.min(min[axis], value[axis])
+          max[axis] = Math.max(max[axis], value[axis])
+        }
+      }
+    }
+    if (!min.every(Number.isFinite)) return null
+    return [max[0] - min[0], max[1] - min[1], max[2] - min[2]]
+  }
+
+  const scopeTolerance = (scene) => {
+    const size = sceneSize(scene)
+    const diag = size ? Math.hypot(...size) : 0
+    return diag > 0 ? Math.max(0.8, diag * 0.012) : 1.5
+  }
+
   const resolveSelection = async (raw) => {
     const documentId = raw.documentId || state.docId
     const version = Number.isFinite(Number(raw.version))
       ? Number(raw.version)
       : state.current?.document?.version
     if (!documentId || version == null) return { ...raw, pending: false, face_index: undefined }
+    let semantic = null
     try {
-      const semantic = await api(`${base}/api/docs/${documentId}/pick`, {
+      semantic = await api(`${base}/api/docs/${documentId}/pick`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1091,23 +1203,82 @@ export function mountWorkbench(host, options) {
           face_index: raw.face_index,
         }),
       })
-      const dimensions = semantic.dimensions || {}
-      return {
-        ...raw,
-        pending: false,
-        feature_id: semantic.feature_id || '',
-        face_index: semantic.face_index,
-        surface_type: semantic.surface_type || '',
-        orientation: dimensions.orientation || '',
-        area: dimensions.area ?? raw.area,
-        center: dimensions.center || raw.point,
-        normal: dimensions.normal || raw.normal,
-        label: semantic.label || '',
-        suggested_ref: semantic.suggested_ref || null,
-      }
     } catch (error) {
-      return { ...raw, pending: false, face_index: undefined }
+      semantic = null
     }
+    const dimensions = semantic?.dimensions || {}
+    const resolved = {
+      ...raw,
+      pending: false,
+      feature_id: semantic?.feature_id || '',
+      face_index: semantic?.face_index,
+      surface_type: semantic?.surface_type || '',
+      orientation: dimensions.orientation || '',
+      area: dimensions.area ?? raw.area,
+      center: dimensions.center || raw.point,
+      normal: dimensions.normal || raw.normal,
+      label: semantic?.label || '',
+      suggested_ref: semantic?.suggested_ref || null,
+    }
+    if (!raw.scope || raw.scope === 'face') return resolved
+    let scene
+    try {
+      scene = await sceneForDocument()
+    } catch (error) {
+      return { ...resolved, scopeError: '无法读取该模型的实体/边/点信息' }
+    }
+    if (!scene) return { ...resolved, scopeError: '当前没有可分析的几何' }
+    if (raw.scope === 'body') {
+      const centers = (scene.faces || []).map((face) => face.center).filter(Array.isArray)
+      return {
+        ...resolved,
+        scope: 'body',
+        feature_id: scene.feature || resolved.feature_id,
+        body_metrics: scene.metrics || {},
+        body_bbox: sceneSize(scene),
+        highlight_centers: centers.length ? centers : (resolved.center ? [resolved.center] : []),
+      }
+    }
+    const tolerance = scopeTolerance(scene)
+    if (raw.scope === 'edge') {
+      const nearest = nearestEdge(scene, raw.point)
+      if (!nearest || nearest.distance > tolerance) {
+        return { ...resolved, scope: 'edge', scopeError: '附近没有可命中的边；请放大或切回面选择' }
+      }
+      return {
+        ...resolved,
+        scope: 'edge',
+        edge_index: nearest.edge.index,
+        edge_length: nearest.edge.length,
+        point: nearest.closest,
+        center: resolved.center || nearest.closest,
+        highlight_centers: resolved.center ? [resolved.center] : [nearest.closest],
+      }
+    }
+    if (raw.scope === 'point') {
+      const nearest = nearestVertex(scene, raw.point)
+      if (!nearest || nearest.distance > tolerance) {
+        return { ...resolved, scope: 'point', scopeError: '附近没有可命中的顶点；请放大或切回面选择' }
+      }
+      return {
+        ...resolved,
+        scope: 'point',
+        point: nearest.value,
+        center: resolved.center || nearest.value,
+        highlight_centers: resolved.center ? [resolved.center] : [nearest.value],
+      }
+    }
+    return resolved
+  }
+
+  const setPickScope = (scope) => {
+    if (!['body', 'face', 'edge', 'point'].includes(scope)) return
+    state.pickScope = scope
+    for (const [name, button] of Object.entries(scopeButtons)) {
+      button.setAttribute('aria-pressed', name === scope ? 'true' : 'false')
+    }
+    post('scope', { scope })
+    if (state.selection) clearSelection()
   }
 
   const clearSelection = () => {
@@ -1131,9 +1302,16 @@ export function mountWorkbench(host, options) {
     setInspector(true)
     resolveSelection(raw).then((resolved) => {
       if (seq !== pickSeq) return
+      if (resolved.scopeError) {
+        clearSelection()
+        toast(resolved.scopeError, 'info', 5)
+        return
+      }
       state.selection = resolved
       renderSelection()
-      post('highlight', resolved.center ? { centers: [resolved.center], seconds: 0, tone: 'selection' } : { centers: [] })
+      const centers = resolved.highlight_centers
+        || (resolved.center ? [resolved.center] : [])
+      post('highlight', centers.length ? { centers, seconds: 0, tone: 'selection' } : { centers: [] })
     })
   }
 
