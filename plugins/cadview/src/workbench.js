@@ -138,6 +138,9 @@ const css = `
   .bxw-structure-progress[hidden] { display: none; }
   .bxw-structure-row { display: flex; align-items: flex-start; gap: 7px; padding: 7px 7px; border-radius: 6px; cursor: default; }
   .bxw-structure-row:hover { background: var(--bxw-layer); }
+  .bxw-structure-row[data-node] { cursor: pointer; }
+  .bxw-structure-row[data-selected="true"] { background: color-mix(in srgb, var(--bxw-accent) 10%, transparent);
+    box-shadow: inset 2px 0 0 var(--bxw-accent); }
   .bxw-structure-row .bxw-dot { margin-top: 4px; }
   .bxw-structure-main { min-width: 0; flex: 1; }
   .bxw-structure-main b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-primary);
@@ -203,11 +206,41 @@ const css = `
     border-radius: 5px; background: var(--bxw-layer); color: var(--bxw-primary);
     font: 11px/1 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-focus-unit { flex: none; color: var(--bxw-muted); font: 10px/1 var(--dsw-font-mono, ui-monospace, monospace); }
-  .bxw-focus-range { width: 100%; accent-color: var(--bxw-accent); }
-  .bxw-focus-actions { display: flex; justify-content: flex-end; margin-top: -2px; }
+  .bxw-focus-range { width: 100%; accent-color: var(--bxw-accent); }  .bxw-focus-actions { display: flex; justify-content: flex-end; margin-top: -2px; }
   .bxw-focus-compare { height: 20px; padding: 0 4px; border: 0; background: transparent;
     color: var(--bxw-accent); font-size: 10px; }
   .bxw-focus-compare:hover { background: color-mix(in srgb, var(--bxw-accent) 9%, transparent); }
+  .bxw-node-head { display: flex; align-items: center; gap: 7px; }
+  .bxw-node-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bxw-node-status { margin-left: auto; flex: none; color: var(--bxw-muted);
+    font: 9px/1 var(--dsw-font-mono, ui-monospace, monospace); text-transform: uppercase; }
+  .bxw-node-status[data-state="failed"] { color: var(--bxw-bad); }
+  .bxw-node-status[data-state="done"] { color: var(--bxw-ok); }
+  .bxw-node-meta { color: var(--bxw-muted); font: 10px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-node-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .bxw-node-actions button { height: 24px; padding: 0 8px; font-size: 10px; }
+  .bxw-node-deps { display: flex; flex-wrap: wrap; gap: 4px; }
+  .bxw-node-dep { padding: 1px 5px; border: 1px solid var(--bxw-line); border-radius: 4px;
+    color: var(--bxw-soft); font: 9px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-node-block { max-height: 112px; overflow: auto; padding: 6px 7px; border: 1px solid var(--bxw-line);
+    border-radius: 5px; background: var(--bxw-layer); color: var(--bxw-soft);
+    font: 10px/1.45 var(--dsw-font-mono, ui-monospace, monospace); white-space: pre-wrap; word-break: break-word; }
+  .bxw-check-observed { color: var(--bxw-soft); font: 9px/1.4 var(--dsw-font-mono, ui-monospace, monospace);
+    word-break: break-word; }
+  .bxw-row[data-ok="false"] { cursor: pointer; }
+  .bxw-job { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border: 1px solid
+    color-mix(in srgb, var(--bxw-accent) 32%, var(--bxw-line)); border-radius: 6px; background: var(--bxw-layer); }
+  .bxw-job[hidden] { display: none; }
+  .bxw-job span { min-width: 0; flex: 1; color: var(--bxw-soft); font-size: 10px; }
+  .bxw-job button { flex: none; height: 23px; padding: 0 7px; font-size: 10px; }
+  .bxw-history-row { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-top: 1px solid var(--bxw-line); }
+  .bxw-history-row:first-child { border-top: 0; }
+  .bxw-history-row b { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--bxw-soft); font-size: 10px; font-weight: 500; }
+  .bxw-history-row small { flex: none; color: var(--bxw-muted); font: 9px/1 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-history-row button { flex: none; height: 22px; padding: 0 6px; font-size: 9px; }
+  .bxw-doc-actions { display: flex; gap: 6px; }
+  .bxw-doc-actions button { height: 25px; font-size: 10px; }
   .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
@@ -493,6 +526,9 @@ export function mountWorkbench(host, options) {
     candidates: null,
     candidateBusy: false,
     reference: null,
+    selectedNode: null,
+    job: null,
+    jobTimer: null,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -709,7 +745,38 @@ export function mountWorkbench(host, options) {
   const checkList = el('ul', { className: 'bxw-list' })
   checkSection.append(checkSummary, checkList)
 
-  inspectorBody.append(metricsSection, selectionSection, focusSection, checkSection)
+  const planSection = el('section', { className: 'bxw-section', hidden: true })
+  planSection.append(el('h3', {}, '计划节点'))
+  const planHead = el('div', { className: 'bxw-node-head' })
+  const planTitle = el('b', {}, '选择一个节点')
+  const planStatus = el('span', { className: 'bxw-node-status' }, '')
+  planHead.append(planTitle, planStatus)
+  const planPicker = el('select', { className: 'bxw-review-select', 'aria-label': '选择计划节点' })
+  planPicker.addEventListener('change', () => {
+    if (planPicker.value) selectPlanNode(planPicker.value)
+  })
+  const planActions = el('div', { className: 'bxw-node-actions' })
+  const planDetails = el('div', { className: 'bxw-focus' })
+  const planJob = el('div', { className: 'bxw-job', hidden: true })
+  const planJobText = el('span', {}, '')
+  const planJobCancel = el('button', { type: 'button' }, '取消')
+  planJob.append(planJobText, planJobCancel)
+  planSection.append(planHead, planPicker, planActions, planJob, planDetails)
+
+  const historySection = el('section', { className: 'bxw-section', hidden: true })
+  historySection.append(el('h3', {}, '版本历史'))
+  const historyList = el('div', {})
+  historySection.append(historyList)
+
+  const docSection = el('section', { className: 'bxw-section' })
+  docSection.append(el('h3', {}, '文档'))
+  const docActions = el('div', { className: 'bxw-doc-actions' })
+  const docNew = el('button', { type: 'button' }, '新建')
+  const docDelete = el('button', { type: 'button' }, '删除当前模型')
+  docActions.append(docNew, docDelete)
+  docSection.append(docActions)
+
+  inspectorBody.append(metricsSection, selectionSection, focusSection, planSection, checkSection, historySection, docSection)
   inspector.append(inspectorHead, inspectorBody)
 
   const dock = el('section', { className: 'bxw-dock', 'aria-label': '命令与 Agent' })
@@ -1193,6 +1260,22 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const deleteCurrentDocument = async () => {
+    if (!state.docId) return
+    const deleted = state.docId
+    try {
+      await api(`${base}/api/docs/${deleted}`, { method: 'DELETE' })
+      state.documents = state.documents.filter((item) => item.id !== deleted)
+      renderDocuments()
+      const next = state.documents[0]?.id
+      if (next) await loadDocument(next, true, true)
+      else await loadDocument('', true)
+      toast('模型已删除', 'info', 2)
+    } catch (error) {
+      toast(`删除模型失败：${error.message}`, 'error', 6)
+    }
+  }
+
   const runCommand = (text) => {
     if (!text.startsWith('/')) return false
     const [rawName, ...args] = text.slice(1).trim().split(/\s+/)
@@ -1287,6 +1370,23 @@ export function mountWorkbench(host, options) {
   sectionToggle.addEventListener('click', () => setSection(!state.section.on))
   measureToggle.addEventListener('click', () => setMeasure(!state.measure))
   measureClear.addEventListener('click', () => clearMeasure())
+  planJobCancel.addEventListener('click', () => cancelJob())
+  docNew.addEventListener('click', () => { createModel().catch((error) => toast(error.message, 'error')) })
+  docDelete.addEventListener('click', () => {
+    if (docDelete.dataset.armed === 'true') {
+      clearTimeout(Number(docDelete.dataset.timer || 0))
+      docDelete.dataset.armed = 'false'
+      docDelete.textContent = '删除当前模型'
+      deleteCurrentDocument()
+      return
+    }
+    docDelete.dataset.armed = 'true'
+    docDelete.textContent = '确认删除'
+    docDelete.dataset.timer = String(setTimeout(() => {
+      docDelete.dataset.armed = 'false'
+      docDelete.textContent = '删除当前模型'
+    }, 3000))
+  })
 
   const toggleHistory = () => openHistory(!state.historyOpen)
   dockAgent.addEventListener('click', toggleHistory)
@@ -2130,15 +2230,48 @@ export function mountWorkbench(host, options) {
       return
     }
     for (const entry of entries) {
-      const row = el('div', { className: 'bxw-structure-row' })
+      const node = nodes.find((item) => item.id === entry.key || item.feature_id === entry.key)
+      const row = el('div', { className: 'bxw-structure-row', tabindex: '0' })
+      row.dataset.key = entry.key
+      if (node) row.dataset.node = node.id
+      if (state.selectedNode && (node?.id === state.selectedNode || entry.key === state.selectedNode)) {
+        row.dataset.selected = 'true'
+      }
       const dot = el('span', { className: 'bxw-dot' })
       dot.dataset.state = entry.status
       const main = el('div', { className: 'bxw-structure-main' })
       main.append(el('b', {}, entry.title), el('span', {}, entry.meta))
       row.append(dot, main)
       row.title = entry.error || `${entry.title}\n${entry.meta}`
+      if (node) {
+        const activate = () => selectPlanNode(node.id)
+        row.addEventListener('click', activate)
+        row.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          activate()
+        })
+      }
       structureList.append(row)
     }
+  }
+
+  const checkItems = (checks) => {
+    if (!checks) return []
+    if (Array.isArray(checks.items)) return checks.items
+    const items = []
+    for (const feature of checks.features || []) {
+      for (const check of feature.checks || []) {
+        items.push({ feature_id: feature.id, ...check })
+      }
+    }
+    return items
+  }
+
+  const checkValue = (value) => {
+    if (value == null || value === '') return ''
+    if (typeof value === 'string') return value
+    try { return JSON.stringify(value) } catch (error) { return String(value) }
   }
 
   const renderChecks = () => {
@@ -2149,23 +2282,356 @@ export function mountWorkbench(host, options) {
       checkSummary.dataset.ok = 'true'
       return
     }
+    const items = checkItems(checks)
     checkSummary.textContent = `${checks.passed}/${checks.total} 通过`
     checkSummary.dataset.ok = checks.ok ? 'true' : 'false'
-    for (const item of (checks.items || []).slice(0, 8)) {
-      const row = el('li', { className: 'bxw-row' })
+    for (const item of items.slice(0, 200)) {
+      const row = el('li', { className: 'bxw-row', tabindex: item.ok ? '-1' : '0', 'data-ok': String(Boolean(item.ok)) })
       const dot = el('span', { className: 'bxw-dot' })
       dot.dataset.state = item.ok ? 'done' : 'failed'
       const text = el('div', { className: 'bxw-row-main' })
       text.append(el('b', {}, `${item.feature_id || 'model'} · ${item.name}`), el('span', {}, item.expected || ''))
+      const observed = checkValue(item.observed)
+      if (observed) text.append(el('div', { className: 'bxw-check-observed' }, observed))
+      if (!item.ok && item.hint) text.append(el('div', { className: 'bxw-check-observed' }, item.hint))
       row.append(dot, text)
-      row.title = item.hint || item.expected || ''
+      row.title = [item.feature_id, item.name, item.expected, observed, item.hint].filter(Boolean).join('\n')
+      if (!item.ok && item.feature_id) {
+        row.addEventListener('click', () => selectPlanNodeForFeature(item.feature_id))
+        row.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          selectPlanNodeForFeature(item.feature_id)
+        })
+      }
       checkList.append(row)
     }
-    if ((checks.items || []).length > 8) {
-      checkList.append(el('li', { className: 'bxw-row bxw-check' }, `还有 ${checks.items.length - 8} 条检查`))
+    if (items.length > 200) {
+      checkList.append(el('li', { className: 'bxw-row bxw-check' }, `还有 ${items.length - 200} 条检查`))
     }
   }
 
+  const planNodes = () => state.plan?.plan?.nodes || []
+
+  const stopJobPoll = () => {
+    if (state.jobTimer) clearInterval(state.jobTimer)
+    state.jobTimer = null
+  }
+
+  const planNodeStatus = (node) => {
+    const status = node?.status || 'pending'
+    return status === 'failed' ? '失败' : status === 'done' ? '完成'
+      : status === 'running' ? '运行中' : status === 'ready' ? '就绪' : '待运行'
+  }
+
+  const renderJob = () => {
+    const job = state.job
+    planJob.hidden = !job
+    if (!job) return
+    const terminal = ['done', 'failed', 'cancelled'].includes(job.status)
+    const elapsed = job.elapsed_ms != null ? `${(job.elapsed_ms / 1000).toFixed(1)}s` : ''
+    planJobText.textContent = `异步 · ${job.node_id} · ${job.status}${elapsed ? ` · ${elapsed}` : ''}`
+      + (job.error ? ` · ${job.error}` : '')
+    planJobText.title = planJobText.textContent
+    planJobCancel.hidden = terminal
+    planJobCancel.disabled = terminal || job.status === 'cancelling'
+  }
+
+  const pollJob = async () => {
+    if (!state.job) return
+    try {
+      const job = await api(`${base}/api/jobs/${state.job.job_id}`)
+      state.job = job
+      renderJob()
+      if (['done', 'failed', 'cancelled'].includes(job.status)) {
+        stopJobPoll()
+        if (job.status === 'done') {
+          toast(`节点 ${job.node_id} 已完成`, 'info', 3)
+          await loadDocument(state.docId, true)
+        } else {
+          toast(job.error || `节点 ${job.node_id} ${job.status}`, job.status === 'failed' ? 'error' : 'info', 6)
+          await refreshPlan()
+        }
+      }
+    } catch (error) {
+      /* keep polling; a transient read must not lose the cancel handle */
+    }
+  }
+
+  const cancelJob = async () => {
+    if (!state.job) return
+    try {
+      state.job = await api(`${base}/api/jobs/${state.job.job_id}/cancel`, { method: 'POST' })
+      renderJob()
+    } catch (error) {
+      toast(`取消失败：${error.message}`, 'error', 5)
+    }
+  }
+
+  const refreshPlan = async () => {
+    if (!state.docId) return
+    try {
+      state.plan = await api(`${base}/api/docs/${state.docId}/plan`)
+      renderPlan()
+      renderPlanInspector()
+    } catch (error) {
+      toast(`读取计划失败：${error.message}`, 'error', 5)
+    }
+  }
+
+  const runPlanNode = async (node, asyncMode = false) => {
+    if (!state.docId || state.busy) return
+    if (state.job && !['done', 'failed', 'cancelled'].includes(state.job.status)) {
+      toast('已有异步任务在运行，请先取消或等待', 'info', 3)
+      return
+    }
+    try {
+      if (asyncMode) {
+        state.job = await api(`${base}/api/docs/${state.docId}/plan/run_async`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_id: node.id, base_version: state.version }),
+        })
+        stopJobPoll()
+        state.jobTimer = setInterval(pollJob, 700)
+        renderJob()
+        return
+      }
+      const result = await api(`${base}/api/docs/${state.docId}/plan/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_id: node.id, base_version: state.version }),
+      })
+      state.plan = result
+      toast(`节点 ${node.id} 已运行`, 'info', 2)
+      await loadDocument(state.docId, true)
+    } catch (error) {
+      toast(`节点运行失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 7)
+      await refreshPlan()
+    }
+  }
+
+  const removePlanNode = async (node) => {
+    const plan = state.plan?.plan
+    if (!plan) return
+    try {
+      state.plan = await api(`${base}/api/docs/${state.docId}/plan/edit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ops: [{ op: 'remove_node', id: node.id }],
+          base_revision: plan.revision,
+        }),
+      })
+      state.selectedNode = null
+      renderPlan()
+      renderPlanInspector()
+      toast(`已从计划移除 ${node.id}`, 'info', 3)
+    } catch (error) {
+      toast(`移除节点失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    }
+  }
+
+  const revertToVersion = async (version) => {
+    if (!state.docId || version === state.version) return
+    try {
+      await api(`${base}/api/docs/${state.docId}/revert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_version: version, title: `回滚到 v${version}` }),
+      })
+      toast(`已回滚到 v${version}`, 'info', 3)
+      await loadDocument(state.docId, true)
+    } catch (error) {
+      toast(`回滚失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    }
+  }
+
+  const selectPlanNode = (nodeId) => {
+    state.selectedNode = nodeId
+    setInspector(true)
+    renderPlan()
+    renderPlanInspector()
+  }
+
+  const selectPlanNodeForFeature = (featureId) => {
+    const node = planNodes().find((item) => item.id === featureId || item.feature_id === featureId)
+    if (node) selectPlanNode(node.id)
+    else toast(`计划中没有 ${featureId} 节点`, 'info', 3)
+  }
+
+  const expectedText = (expect) => {
+    if (!expect) return '—'
+    const value = expect.value == null ? '' : ` ${expect.value}`
+    return `${expect.metric || expect.name || 'metric'} ${expect.op || ''}${value}`
+  }
+
+  const observedText = (node, expect) => {
+    const observed = node?.observed?.[expect?.metric]
+    if (observed == null) return ''
+    if (typeof observed === 'object' && 'observed' in observed) return checkValue(observed.observed)
+    return checkValue(observed)
+  }
+
+  const renderPlanInspector = () => {
+    const nodes = planNodes()
+    if (!nodes.length) {
+      planSection.hidden = true
+      planJob.hidden = true
+      return
+    }
+    planSection.hidden = false
+    let node = nodes.find((item) => item.id === state.selectedNode)
+    if (!node) {
+      node = nodes.find((item) => item.status === 'failed') || nodes[nodes.length - 1]
+      state.selectedNode = node.id
+    }
+    planTitle.textContent = node.title || node.id
+    planTitle.title = `${node.id} · ${node.action || node.kind || ''}`
+    const signature = nodes.map((item) => item.id).join('|')
+    if (planPicker.dataset.signature !== signature) {
+      planPicker.textContent = ''
+      for (const item of nodes) {
+        planPicker.append(el('option', { value: item.id },
+          `${item.id} · ${planNodeStatus(item)} · ${item.title || ''}`))
+      }
+      planPicker.dataset.signature = signature
+    }
+    planPicker.value = node.id
+    planStatus.textContent = planNodeStatus(node)
+    planStatus.dataset.state = node.status || 'pending'
+    planActions.textContent = ''
+    const addAction = (label, title, handler, disabled = false) => {
+      const button = el('button', { type: 'button', title, disabled }, label)
+      button.addEventListener('click', handler)
+      planActions.append(button)
+      return button
+    }
+    const runnable = node.kind !== 'goal' && node.status !== 'done'
+    addAction(node.status === 'failed' ? '重试' : '运行', '同步运行该节点', () => runPlanNode(node), !runnable)
+    addAction('异步运行', '后台运行并显示进度', () => runPlanNode(node, true), !runnable)
+    if (node.status === 'failed') {
+      const remove = addAction('移除节点', '从计划中删除失败节点', () => {
+        if (remove.dataset.armed === 'true') {
+          clearTimeout(Number(remove.dataset.timer || 0))
+          removePlanNode(node)
+          return
+        }
+        remove.dataset.armed = 'true'
+        remove.textContent = '确认移除'
+        remove.dataset.timer = String(setTimeout(() => {
+          remove.dataset.armed = 'false'
+          remove.textContent = '移除节点'
+        }, 3000))
+      })
+    }
+    addAction('回滚上一版本', '回退当前文档一个里程碑', () => {
+      if (state.version <= 0) return
+      const button = planActions.querySelector('button:last-child')
+      if (button.dataset.armed === 'true') {
+        clearTimeout(Number(button.dataset.timer || 0))
+        button.dataset.armed = 'false'
+        button.textContent = '回滚上一版本'
+        revertToVersion(state.version - 1)
+        return
+      }
+      button.dataset.armed = 'true'
+      button.textContent = '确认回滚'
+      button.dataset.timer = String(setTimeout(() => {
+        button.dataset.armed = 'false'
+        button.textContent = '回滚上一版本'
+      }, 3000))
+    }, state.version <= 0)
+    planDetails.textContent = ''
+    const meta = el('div', { className: 'bxw-node-meta' },
+      `${node.kind || 'feature'} · ${node.action || '—'}`
+      + (node.milestone_version != null ? ` · v${node.milestone_version}` : ''))
+    planDetails.append(meta)
+    if (node.deps?.length) {
+      const deps = el('div', { className: 'bxw-node-deps' })
+      for (const dep of node.deps) deps.append(el('span', { className: 'bxw-node-dep' }, dep))
+      planDetails.append(deps)
+    }
+    const refs = Object.entries(node.refs || {})
+    if (refs.length) {
+      const summary = refs.map(([key, value]) => Array.isArray(value)
+        ? `${key} × ${value.length}`
+        : `${key} ← ${value?.source || '—'}`).join(' · ')
+      planDetails.append(el('div', { className: 'bxw-node-meta' }, `引用 ${summary}`))
+    }
+    if (node.params && Object.keys(node.params).length) {
+      planDetails.append(el('div', { className: 'bxw-node-block' }, JSON.stringify(node.params, null, 2)))
+    }
+    for (const expect of node.expect || []) {
+      const actual = observedText(node, expect)
+      const row = el('div', { className: 'bxw-node-meta' },
+        `期望 ${expectedText(expect)}${actual ? ` · 实测 ${actual}` : ''}`)
+      planDetails.append(row)
+    }
+    if (node.error) {
+      planDetails.append(el('div', { className: 'bxw-node-block', style: 'color: var(--bxw-bad)' }, node.error))
+    }
+    renderJob()
+  }
+
+  const showGhostVersion = (version) => {
+    state.ghostVersion = version
+    state.ghost = true
+    renderReview()
+    syncGhost()
+    toast(`残影 v${version}`, 'info', 2)
+  }
+
+  const compareVersion = async (version) => {
+    if (!state.docId || version <= 0) return
+    try {
+      const diff = await api(`${base}/api/docs/${state.docId}/diff?base=${version - 1}&target=${version}`)
+      const changed = diff.changed_face_indices?.length || 0
+      const added = diff.doc_diff?.added?.length || 0
+      const removed = diff.doc_diff?.removed?.length || 0
+      const delta = diff.metrics_delta?.volume_delta
+      toast(`v${version - 1} → v${version} · +${added}/-${removed} 特征 · ${changed} 面变化`
+        + (delta != null ? ` · 体积 ${delta >= 0 ? '+' : ''}${fmt(delta, 1)} mm³` : ''), 'info', 8)
+      if (diff.changed_face_centers?.length) {
+        post('highlight', { centers: diff.changed_face_centers, seconds: 4, tone: 'change' })
+      }
+    } catch (error) {
+      toast(`版本对比失败：${error.message}`, 'error', 5)
+    }
+  }
+
+  const renderHistory = () => {
+    const milestones = state.current?.milestones || []
+    historySection.hidden = !milestones.length
+    historyList.textContent = ''
+    for (const milestone of [...milestones].slice(-8).reverse()) {
+      const row = el('div', { className: 'bxw-history-row' })
+      row.append(el('b', {}, `v${milestone.version} · ${milestone.title || '里程碑'}`))
+      row.append(el('small', {}, milestone.actor || ''))
+      const diff = el('button', { type: 'button', title: '对比上一版本' }, '对比')
+      diff.addEventListener('click', () => compareVersion(milestone.version))
+      const ghost = el('button', { type: 'button', title: '叠加该版本残影' }, '残影')
+      ghost.addEventListener('click', () => showGhostVersion(milestone.version))
+      const revert = el('button', { type: 'button', title: '回滚到该版本' }, '回滚')
+      const revertArmed = () => {
+        if (revert.dataset.armed === 'true') {
+          clearTimeout(Number(revert.dataset.timer || 0))
+          revertToVersion(milestone.version)
+          return
+        }
+        revert.dataset.armed = 'true'
+        revert.textContent = '确认'
+        revert.dataset.timer = String(setTimeout(() => {
+          revert.dataset.armed = 'false'
+          revert.textContent = '回滚'
+        }, 3000))
+      }
+      revert.addEventListener('click', revertArmed)
+      revert.disabled = milestone.version === state.version
+      row.append(diff, ghost, revert)
+      historyList.append(row)
+    }
+  }
   const renderTiming = () => {
     const parts = []
     if (state.timings?.state) parts.push(`加载 ${(state.timings.state / 1000).toFixed(1)}s`)
@@ -2215,9 +2681,11 @@ export function mountWorkbench(host, options) {
     if (state.ghost) syncGhost()
     renderReview()
     renderPlan()
+    renderPlanInspector()
     renderChecks()
     renderFocus()
     renderVariants()
+    renderHistory()
     renderTiming()
     pushDesign(false)
   }
@@ -2243,6 +2711,9 @@ export function mountWorkbench(host, options) {
 
   const loadDocument = async (docId, force = false, manual = false) => {
     if (!docId) {
+      stopJobPoll()
+      state.job = null
+      state.selectedNode = null
       state.current = null
       state.plan = null
       state.checks = null
@@ -2259,6 +2730,9 @@ export function mountWorkbench(host, options) {
     }
     if (docId === state.docId && state.current && !force) return
     stopModelingProgress()
+    stopJobPoll()
+    state.job = null
+    if (docId !== state.docId) state.selectedNode = null
     state.docId = docId
     state.current = null
     pickSeq += 1
@@ -2293,7 +2767,7 @@ export function mountWorkbench(host, options) {
       state.renderMs = null
       state.current = stateView
       state.plan = plan
-      state.checks = checks
+      state.checks = checks ? { ...checks, items: checkItems(checks) } : null
       state.version = stateView.document.version
       empty.dataset.on = stateView.vacant ? 'true' : 'false'
       emptySpinner.hidden = true
