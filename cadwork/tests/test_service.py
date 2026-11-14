@@ -134,6 +134,19 @@ class ServiceTests(unittest.TestCase):
         step = fresh.step_bytes(document_id)
         self.assertIn(b"ISO-10303", step[:200])
 
+    def test_cached_scene_is_opt_in_and_reused(self) -> None:
+        with self._client() as client:
+            document_id, _ = self._build_box(client)
+            missing = client.get(f"/api/docs/{document_id}/scene?version=1&cached=1")
+            self.assertEqual(missing.status_code, 404)
+            built = client.get(f"/api/docs/{document_id}/scene?version=1")
+            self.assertEqual(built.status_code, 200, built.text)
+            payload = built.json()
+            self.assertTrue(payload["faces"])
+            cached = client.get(f"/api/docs/{document_id}/scene?version=1&cached=1")
+            self.assertEqual(cached.status_code, 200, cached.text)
+            self.assertEqual(len(cached.json()["faces"]), len(payload["faces"]))
+
     def test_health_and_catalog(self) -> None:
         with self._client() as client:
             self.assertEqual(client.get("/api/health").json()["status"], "ok")

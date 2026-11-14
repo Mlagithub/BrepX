@@ -544,8 +544,16 @@ def register_routes(app: FastAPI, service: CADService) -> None:
 
     @app.get("/api/docs/{document_id}/scene")
     def scene(document_id: str, request: Request,
-              feature: str | None = None) -> Response:
-        payload = service.scene(document_id, feature=feature)
+              feature: str | None = None, version: int | None = None,
+              cached: int = 0) -> Response:
+        if cached:
+            payload = service.cached_scene(document_id, version=version)
+            if payload is None:
+                return JSONResponse({"error": {"code": "SCENE_NOT_CACHED",
+                                               "message": "scene is not cached"}},
+                                    status_code=404)
+        else:
+            payload = service.scene(document_id, feature=feature, version=version)
         etag = f'"{payload["version"]}:{payload["feature"]}"'
         if request.headers.get("if-none-match") == etag:
             return Response(status_code=304, headers={"ETag": etag})

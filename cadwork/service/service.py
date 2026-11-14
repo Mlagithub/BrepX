@@ -1480,24 +1480,40 @@ class CADService:
             actor="human",
         )
 
-    def scene(self, document_id: str, feature: str | None = None) -> dict[str, Any]:
-        document = self.read(document_id)
+    def cached_scene(self, document_id: str, version: int | None = None) -> dict[str, Any] | None:
+        document = self.read(document_id, version=version)
         if not document.features:
             return {"version": document.version, "feature": None, "faces": [], "edges": [],
                     "metrics": {"faces": 0, "volume": 0.0, "edges": 0}}
-        result = self._build(document)
+        feature_id = display_feature(document)
+        if feature_id is None:
+            return {"version": document.version, "feature": None, "faces": [], "edges": []}
+        key = f"{self._geometry_digest(document)}:{feature_id}"
+        payload = self.store.get_scene(key)
+        if payload is not None:
+            payload["version"] = document.version
+        return payload
+
+    def scene(self, document_id: str, feature: str | None = None,
+              version: int | None = None) -> dict[str, Any]:
+        document = self.read(document_id, version=version)
+        if not document.features:
+            return {"version": document.version, "feature": None, "faces": [], "edges": [],
+                    "metrics": {"faces": 0, "volume": 0.0, "edges": 0}}
         feature_id = feature or display_feature(document)
         if feature_id is None:
             return {"version": document.version, "feature": None, "faces": [], "edges": []}
+        key = f"{self._geometry_digest(document)}:{feature_id}"
+        cached = self.store.get_scene(key)
+        if cached is not None:
+            cached["version"] = document.version
+            return cached
+        result = self._build(document)
         if feature_id not in result.outputs:
             raise ServiceError("UNKNOWN_FEATURE", f"no output {feature_id!r}", status=404)
-        key = f"{document_id}:{document.version}:{feature_id}"
-        cached = self._scene_cache.get(document_id)
-        if cached and cached.key == key:
-            return cached.payload
         payload = build_scene(result.outputs[feature_id], feature_id)
         payload["version"] = document.version
-        self._scene_cache[document_id] = SceneCacheEntry(key, payload)
+        self.store.put_scene(key, payload)
         return payload
 
     def render(self, document_id: str, feature: str | None = None,

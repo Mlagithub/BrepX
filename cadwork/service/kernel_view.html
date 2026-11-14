@@ -186,7 +186,10 @@ const rebuildGrid = (isDark) => {
 }
 
 const bytes = new Map()
+const scenes = new Map()
+const objects = new Map()
 const CACHE_LIMIT = 6
+const OBJECT_LIMIT = 3
 
 const remember = (store, key, value) => {
   if (store.has(key)) store.delete(key)
@@ -194,6 +197,25 @@ const remember = (store, key, value) => {
   while (store.size > CACHE_LIMIT) {
     const oldest = store.keys().next().value
     store.delete(oldest)
+  }
+}
+
+const takeObject = (key) => {
+  const object = objects.get(key)
+  if (!object) return null
+  objects.delete(key)
+  return object
+}
+
+const rememberObject = (key, object) => {
+  if (!key || !object) return
+  objects.delete(key)
+  objects.set(key, object)
+  while (objects.size > OBJECT_LIMIT) {
+    const oldest = objects.keys().next().value
+    const evicted = objects.get(oldest)
+    objects.delete(oldest)
+    disposeObject(evicted)
   }
 }
 
@@ -289,9 +311,84 @@ const fetchBytes = async (documentId, version) => {
   return payload
 }
 
+const fetchScene = async (documentId, version) => {
+  const key = `${documentId}:${version}`
+  if (scenes.has(key)) return scenes.get(key)
+  const response = await fetch(`/api/docs/${documentId}/scene?version=${version}&cached=1`)
+  if (!response.ok) throw new Error(`SCENE ${response.status}`)
+  const payload = await response.json()
+  remember(scenes, key, payload)
+  return payload
+}
+
+const objectFromScene = (payload) => {
+  const faces = payload.faces || []
+  let vertexTotal = 0
+  let indexTotal = 0
+  for (const face of faces) {
+    vertexTotal += Array.isArray(face.vertices?.[0]) ? face.vertices.length : (face.vertices || []).length / 3
+    indexTotal += (face.triangles || []).length
+  }
+  const positions = new Float32Array(vertexTotal * 3)
+  const indices = new Uint32Array(indexTotal)
+  const triangleFaces = new Uint32Array(Math.floor(indexTotal / 3))
+  const faceData = new Map()
+  let position = 0
+  let index = 0
+  let triangle = 0
+  for (const face of faces) {
+    const base = position / 3
+    const vertices = face.vertices || []
+    if (Array.isArray(vertices[0])) {
+      for (const point of vertices) {
+        positions[position++] = point[0]
+        positions[position++] = point[1]
+        positions[position++] = point[2]
+      }
+    } else {
+      for (let offset = 0; offset < vertices.length; offset += 3) {
+        positions[position++] = vertices[offset]
+        positions[position++] = vertices[offset + 1]
+        positions[position++] = vertices[offset + 2]
+      }
+    }
+    faceData.set(face.index, {
+      index: face.index, area: face.area, center: face.center, normal: face.normal,
+    })
+    const triangles = face.triangles || []
+    for (let offset = 0; offset + 2 < triangles.length; offset += 3) {
+      indices[index++] = base + triangles[offset]
+      indices[index++] = base + triangles[offset + 1]
+      indices[index++] = base + triangles[offset + 2]
+      triangleFaces[triangle++] = face.index
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  const material = new THREE.MeshStandardMaterial({
+    color: palette.solid.clone(), metalness: 0.1, roughness: 0.62,
+  })
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.userData.solidMaterial = material
+  mesh.userData.faceData = faceData
+  mesh.userData.faceCount = faces.length
+  mesh.userData.triangleFaceIndex = triangleFaces
+  const group = new THREE.Group()
+  group.userData.faceCount = faces.length
+  group.add(mesh)
+  return group
+}
+
 const objectFor = async (documentId, version) => {
-  // Parsing yields objects owned by the kernel loader; each consumer gets a
-  // freshly parsed copy so its materials never come from a foreign renderer.
+  try {
+    const scenePayload = await fetchScene(documentId, version)
+    if (scenePayload?.faces?.length) return objectFromScene(scenePayload)
+  } catch (error) {
+    /* fall back to the exact STEP path when a scene payload is unavailable */
+  }
   return parseBytes(await fetchBytes(documentId, version))
 }
 
@@ -522,17 +619,41 @@ const showVersion = async (documentId, version, options = {}) => {
     return
   }
   const keep = display
+  const cacheKey = `${documentId}:${version}`
   try {
     const parseStart = performance.now()
-    const object = await objectFor(documentId, version)
+    let object = takeObject(cacheKey)
+    let fetchMs = 0
+    if (object) {
+      dressSolid(object)
+      say(`复用已解析几何 · ${object.userData.faceCount || countFaces(object)} 个面`)
+    } else {
+      const scenePayload = await fetchScene(documentId, version)
+      fetchMs = performance.now() - parseStart
+      if (scenePayload?.faces?.length) {
+        say(`场景 ${scenePayload.faces.length} 面 · 读取 ${fetchMs.toFixed(0)}ms · 构建中`)
+        object = objectFromScene(scenePayload)
+      } else {
+        const stepBytes = await fetchBytes(documentId, version)
+        fetchMs = performance.now() - parseStart
+        say(`STEP ${(stepBytes.byteLength / 1024).toFixed(0)} KB · 读取 ${fetchMs.toFixed(0)}ms · 正在三角化`)
+        object = parseBytes(stepBytes)
+      }
+      object.userData.cacheKey = cacheKey
+    }
     const parseMs = performance.now() - parseStart
     if (requestToken !== latestDesignRequest) {
-      disposeObject(object)
+      if (object.userData.cacheKey) rememberObject(object.userData.cacheKey, object)
+      else disposeObject(object)
       return
     }
     display = object
     scene.add(display)
-    disposeObject(keep)
+    if (keep) {
+      scene.remove(keep)
+      if (keep.userData.cacheKey) rememberObject(keep.userData.cacheKey, keep)
+      else disposeObject(keep)
+    }
     clearHandle()
     currentVersion = version
     if (!hasFitted || options.fit) { fit(display); hasFitted = true }
@@ -541,9 +662,9 @@ const showVersion = async (documentId, version, options = {}) => {
     applySection()
     const edgesMs = performance.now() - edgesStart
     if (options.highlight?.length) highlightFaces(options.highlight)
-    const meshes = countFaces(display)
-    say(`v${version} · ${meshes} 个面组`)
-    post('shown', { version, documentId, faces: meshes, timings: { parseMs, edgesMs, totalMs: performance.now() - parseStart } })
+    const meshes = object.userData.faceCount || countFaces(display)
+    say(`v${version} · ${meshes} 个面 · 解析 ${parseMs.toFixed(0)}ms · 边 ${edgesMs.toFixed(0)}ms`)
+    post('shown', { version, documentId, faces: meshes, timings: { parseMs, edgesMs, fetchMs, totalMs: performance.now() - parseStart } })
   } catch (error) {
     display = keep
     say(`模型加载失败 ${error.message}`)
@@ -598,7 +719,11 @@ const pickAt = (event) => {
     .filter((hit) => !sectionOn || sectionPlane.distanceToPoint(hit.point) >= -1e-6)
   if (!hits.length) return null
   const hit = hits[0]
-  const brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
+  let brep = hit.brep || hit.object.userData?.brep || hit.object.userData?.face
+  if (!brep && hit.object.userData?.triangleFaceIndex && hit.object.userData?.faceData) {
+    const faceIndex = hit.object.userData.triangleFaceIndex[hit.faceIndex]
+    brep = hit.object.userData.faceData.get(faceIndex)
+  }
   let normal = null
   if (hit.face?.normal) {
     normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
@@ -607,7 +732,7 @@ const pickAt = (event) => {
     point: [hit.point.x, hit.point.y, hit.point.z],
     normal: normal ? [normal.x, normal.y, normal.z] : null,
     area: brep?.area ?? null,
-    face_index: hit.faceIndex ?? null,
+    face_index: brep?.index ?? hit.faceIndex ?? null,
   }
 }
 
