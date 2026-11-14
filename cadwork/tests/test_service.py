@@ -14,6 +14,8 @@ from cadwork.design.document import feature_to_json
 from cadwork.design.features import FEATURES
 from cadwork.samples.impeller import impeller_document
 from cadwork.service import create_app
+from cadwork.service.service import CADService
+from cadwork.service.store import Store
 
 
 def _impeller_ops() -> list[dict]:
@@ -118,6 +120,19 @@ class ServiceTests(unittest.TestCase):
                       "normal": [0.0, 0.0, 1.0]},
             ).json()["handle"]
             self.assertEqual(cap["param"], "height")
+
+    def test_committed_geometry_and_analysis_survive_a_cold_service(self) -> None:
+        with self._client() as client:
+            document_id, _ = self._build_box(client)
+        fresh = CADService(Store(self.folder.name))
+        fresh._build = lambda document: (_ for _ in ()).throw(AssertionError("cold build attempted"))
+        state = fresh.state(document_id)
+        self.assertEqual(state["document"]["version"], 1)
+        self.assertAlmostEqual(state["metrics"]["volume"], 8000.0, delta=1.0)
+        checks = fresh.checks(document_id)
+        self.assertEqual(checks["total"], checks["passed"])
+        step = fresh.step_bytes(document_id)
+        self.assertIn(b"ISO-10303", step[:200])
 
     def test_health_and_catalog(self) -> None:
         with self._client() as client:

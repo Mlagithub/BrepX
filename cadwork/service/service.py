@@ -248,9 +248,9 @@ class CADService:
         metrics: dict[str, Any] | None = None
         checks = {"passed": 0, "total": 0, "ok": True, "items": []}
         if not vacant:
-            result = self._build(document)
-            metrics = self._metrics(result)
-            checks = self._checks_projection(result)
+            analysis = self._analysis_for(document)
+            metrics = analysis.get("metrics")
+            checks = analysis.get("checks") or checks
         latest = document.milestones[-1] if document.milestones else None
         plan = self.store.get_plan(document_id)
         plan_summary = None
@@ -479,6 +479,7 @@ class CADService:
             updated = self._replace_latest(updated, latest, focus=focus)
             if updated.features:
                 result = self._build(updated)
+                self._prime_step(updated, result)
                 metrics = self._metrics(result)
                 delta = self._changed_faces(document, updated)
             else:
@@ -1537,6 +1538,21 @@ class CADService:
         except ValueError as exc:
             raise ServiceError("UNSUPPORTED_FORMAT", str(exc), status=400) from exc
 
+    def _prime_step(self, document: Document, result: Any) -> None:
+        if not document.features:
+            return
+        digest = self._geometry_digest(document)
+        if self.store.get_step(digest) is not None:
+            return
+        feature_id = display_feature(document)
+        if feature_id is None or feature_id not in result.outputs:
+            return
+        try:
+            payload, _ = export_bytes(result.outputs[feature_id], "step")
+        except (OSError, ValueError):
+            return
+        self.store.put_step(digest, payload)
+
     def step_bytes(self, document_id: str, version: int | None = None) -> bytes:
         document = self.read(document_id, version=version)
         if not document.features:
@@ -1544,9 +1560,7 @@ class CADService:
         enabled = tuple(item for item in document.features if item.enabled)
         if not enabled:
             raise ServiceError("EMPTY_DOCUMENT", "没有启用的特征可导出", status=409)
-        digest_key = hashlib.sha256(
-            f"{CACHE_EPOCH}:{features_digest(enabled)}".encode("utf-8")
-        ).hexdigest()
+        digest_key = self._geometry_digest(document)
         cached = self.store.get_step(digest_key)
         if cached is not None:
             return cached
@@ -1558,16 +1572,13 @@ class CADService:
         document = self.read(document_id)
         if not document.features:
             return {"version": document.version, "features": [], "tags": {}, **self._checks_projection_empty()}
-        result = self._build(document)
+        analysis = self._analysis_for(document)
         payload = {
             "version": document.version,
-            "features": [
-                {"id": item.feature_id, "checks": [check.__dict__ for check in item.checks]}
-                for item in result.features
-            ],
-            "tags": result.tags,
+            "features": analysis.get("features") or [],
+            "tags": analysis.get("tags") or {},
         }
-        projection = self._checks_projection(result)
+        projection = analysis.get("checks") or self._checks_projection_empty()
         payload.update({"passed": projection["passed"], "total": projection["total"],
                         "ok": projection["ok"]})
         return payload
@@ -1576,17 +1587,57 @@ class CADService:
     def _checks_projection_empty() -> dict[str, Any]:
         return {"passed": 0, "total": 0, "ok": True}
 
+    def _geometry_digest(self, document: Document) -> str:
+        enabled = tuple(feature for feature in document.features if feature.enabled)
+        return hashlib.sha256(
+            f"{CACHE_EPOCH}:{features_digest(enabled)}".encode("utf-8")
+        ).hexdigest()
+
+    def _analysis_payload(self, result: Any) -> dict[str, Any]:
+        return {
+            "metrics": self._metrics(result),
+            "checks": self._checks_projection(result),
+            "features": [
+                {"id": item.feature_id, "checks": [check.__dict__ for check in item.checks]}
+                for item in result.features
+            ],
+            "tags": result.tags,
+        }
+
+    def _store_analysis(self, document: Document, result: Any) -> dict[str, Any]:
+        payload = self._analysis_payload(result)
+        self.store.put_analysis(self._geometry_digest(document), payload)
+        return payload
+
+    def _analysis_for(self, document: Document) -> dict[str, Any]:
+        digest = self._geometry_digest(document)
+        cached = self.store.get_analysis(digest)
+        required = {"metrics", "checks", "features", "tags"}
+        if cached is not None and required <= set(cached):
+            return cached
+        result = self._build(document)
+        cached = self.store.get_analysis(digest)
+        if cached is not None and required <= set(cached):
+            return cached
+        return self._analysis_payload(result)
+
     def _build(self, document: Document):
         if not document.features:
             raise ServiceError("EMPTY_DOCUMENT", "empty document has no geometry", status=409)
         try:
-            return build(document, self.cache)
+            result = build(document, self.cache)
         except BuildError as exc:
             detail = {"feature_id": exc.feature_id,
                       "blocked_downstream": list(exc.blocked),
                       "checks": [check.__dict__ for check in exc.checks]}
             raise ServiceError(exc.code, exc.message, status=422, hint=exc.hint,
                                detail=detail) from exc
+        try:
+            self._store_analysis(document, result)
+        except (OSError, TypeError, ValueError):
+            pass
+        return result
+
 
 
 def focus_param_json_with_bounds(focus: FocusParam, feature: Any) -> dict[str, Any]:

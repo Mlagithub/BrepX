@@ -191,6 +191,31 @@ class Store:
             os.replace(temp, path)
         return path
 
+    def _analysis_dir(self) -> Path:
+        path = self.root / "analysis"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def get_analysis(self, digest: str) -> dict[str, Any] | None:
+        path = self._analysis_dir() / f"{digest}.json"
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    def put_analysis(self, digest: str, payload: dict[str, Any]) -> Path:
+        with self._lock:
+            path = self._analysis_dir() / f"{digest}.json"
+            if not path.is_file():
+                temp = path.with_suffix(".tmp")
+                temp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                                encoding="utf-8")
+                os.replace(temp, path)
+            return path
+
     def add_intent(self, document_id: str, text: str,
                    base_version: int | None = None) -> dict[str, Any]:
         with self._lock:
