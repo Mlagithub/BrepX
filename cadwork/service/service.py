@@ -226,6 +226,12 @@ class CADService:
         except StoreError as exc:
             raise ServiceError(exc.code, exc.message, status=exc.status) from exc
 
+    def document_meta(self, document_id: str) -> dict[str, Any]:
+        document = self.read(document_id)
+        payload = document_to_json(document)
+        payload["vacant"] = document.version == 0 or not document.features
+        return payload
+
     def document_json(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         payload = document_to_json(document)

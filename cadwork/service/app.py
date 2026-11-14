@@ -273,6 +273,10 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     def read_document(document_id: str) -> dict[str, Any]:
         return service.document_json(document_id)
 
+    @app.get("/api/docs/{document_id}/meta")
+    def read_document_meta(document_id: str) -> dict[str, Any]:
+        return service.document_meta(document_id)
+
     @app.put("/api/docs/{document_id}")
     def edit_document(document_id: str, body: EditRequest) -> dict[str, Any]:
         return service.commit(document_id, body.base_version, body.ops,

@@ -528,6 +528,14 @@ export function mountWorkbench(host, options) {
     request: 0,
     shown: -1,
     ready: false,
+    geometryLoading: false,
+    stateBusy: false,
+    checksBusy: false,
+    backgroundStarted: false,
+    loadToken: 0,
+    loadDocId: null,
+    loadTimer: null,
+    loadFallback: null,
     wire: false,
     pickScope: 'face',
     inspector: true,
@@ -965,9 +973,9 @@ export function mountWorkbench(host, options) {
   const setLoading = (on) => {
     empty.dataset.on = 'true'
     emptySpinner.hidden = !on
-    emptyTitle.textContent = on ? '正在加载模型' : '选择一个模型'
+    emptyTitle.textContent = on ? '正在加载几何' : '选择一个模型'
     emptyBody.textContent = on
-      ? '正在读取几何、计划和检查结果。'
+      ? '几何先显示，指标与检查随后在后台更新。'
       : '新建文档或从模型库打开已有文档，画布会在这里显示。'
     emptyButton.hidden = on
     if (on) {
@@ -1157,6 +1165,7 @@ export function mountWorkbench(host, options) {
   let pickSeq = 0
   let dimensionSeq = 0
   let handleSeq = 0
+  let loadSeq = 0
 
   const selectionText = (pick) => {
     if (!pick) return ''
@@ -2813,7 +2822,8 @@ export function mountWorkbench(host, options) {
           error: node.error,
         }))
     if (!entries.length) {
-      structureList.append(el('div', { className: 'bxw-structure-empty' }, state.current ? '这个模型还没有特征' : '选择一个模型查看结构'))
+      structureList.append(el('div', { className: 'bxw-structure-empty' },
+        state.stateBusy ? '正在读取结构…' : state.current ? '这个模型还没有特征' : '选择一个模型查看结构'))
       return
     }
     for (const entry of entries) {
@@ -2865,7 +2875,7 @@ export function mountWorkbench(host, options) {
     checkList.textContent = ''
     const checks = state.checks
     if (!checks) {
-      checkSummary.textContent = '暂无检查'
+      checkSummary.textContent = state.checksBusy ? '检查中…' : '暂无检查'
       checkSummary.dataset.ok = 'true'
       return
     }
@@ -3250,7 +3260,10 @@ export function mountWorkbench(host, options) {
     docSelect.value = state.docId
     version.textContent = `v${doc.version ?? 0}`
     const checks = state.current.checks
-    if (checks) {
+    if (state.checksBusy && !state.checks) {
+      checkBadge.textContent = '检查中…'
+      checkBadge.dataset.tone = 'busy'
+    } else if (checks) {
       checkBadge.textContent = checks.ok ? `检查 ${checks.passed}/${checks.total}` : `检查 ${checks.passed}/${checks.total}`
       checkBadge.dataset.tone = checks.ok ? 'ok' : 'bad'
     } else {
@@ -3264,7 +3277,7 @@ export function mountWorkbench(host, options) {
     metricNodes.watertight.textContent = metrics.watertight ? '是' : '否'
     captionFaces.textContent = `${fmt(metrics.faces)} 面`
     captionTight.textContent = metrics.watertight ? '水密' : '非水密'
-    empty.dataset.on = 'false'
+    if (!state.geometryLoading) empty.dataset.on = 'false'
     state.version = doc.version ?? 0
     state.simplified = false
     const known = state.documents.find((item) => item.id === state.docId)
@@ -3287,7 +3300,7 @@ export function mountWorkbench(host, options) {
     renderReferences()
     renderHistory()
     renderTiming()
-    pushDesign(false)
+    if (!state.geometryLoading && state.shown !== state.version) pushDesign(false)
   }
 
   const readBinding = (sessionId) => {
@@ -3309,8 +3322,99 @@ export function mountWorkbench(host, options) {
     try { localStorage.setItem(`cadview.document.${sessionId}`, JSON.stringify({ id: docId, manual: Boolean(manual) })) } catch (error) { /* private mode */ }
   }
 
+  const hideLoadingOverlay = () => {
+    state.geometryLoading = false
+    if (state.loadTimer) {
+      clearInterval(state.loadTimer)
+      state.loadTimer = null
+    }
+    emptySpinner.hidden = true
+    if (!state.current?.vacant) empty.dataset.on = 'false'
+  }
+
+  const timedApi = async (path) => {
+    const start = performance.now()
+    const value = await api(path)
+    return { value, ms: performance.now() - start }
+  }
+
+  const loadBackground = async (docId, token) => {
+    if (!docId || token !== state.loadToken || docId !== state.docId) return
+    state.stateBusy = true
+    state.checksBusy = true
+    renderState()
+    try {
+      const stateResult = await timedApi(`${base}/api/docs/${docId}/state`)
+      if (token !== state.loadToken || docId !== state.docId) return
+      const view = stateResult.value
+      state.current = view
+      state.version = view.document.version
+      state.stateBusy = false
+      state.checksBusy = !view.vacant
+      state.timings = { ...state.timings, state: stateResult.ms }
+      renderState()
+      if (view.vacant) {
+        hideLoadingOverlay()
+        emptyTitle.textContent = '空白模型'
+        emptyBody.textContent = '在下方描述要创建的零件，或选择另一个已有模型。'
+        emptyButton.hidden = false
+        empty.dataset.on = 'true'
+      }
+      timedApi(`${base}/api/docs/${docId}/plan`)
+        .then(({ value, ms }) => {
+          if (token !== state.loadToken) return
+          state.plan = value
+          state.timings = { ...state.timings, plan: ms }
+          renderPlan()
+          renderPlanInspector()
+        })
+        .catch(() => {})
+      if (view.vacant) return
+      const checksResult = await timedApi(`${base}/api/docs/${docId}/checks`)
+      if (token !== state.loadToken || docId !== state.docId) return
+      const checks = checksResult.value
+      state.checks = checks ? { ...checks, items: checkItems(checks) } : null
+      if (state.current) {
+        state.current.checks = checks
+          ? { passed: checks.passed, total: checks.total, ok: checks.ok }
+          : null
+      }
+      state.checksBusy = false
+      state.timings = { ...state.timings, checks: checksResult.ms }
+      renderState()
+    } catch (error) {
+      if (token !== state.loadToken) return
+      state.stateBusy = false
+      state.checksBusy = false
+      renderState()
+      if (state.geometryLoading) {
+        hideLoadingOverlay()
+        emptySpinner.hidden = true
+        emptyTitle.textContent = '加载失败'
+        emptyBody.textContent = error.message
+        emptyButton.hidden = false
+        empty.dataset.on = 'true'
+      }
+      toast(`后台加载失败：${error.message}`, 'error', 6)
+    }
+  }
+
   const loadDocument = async (docId, force = false, manual = false) => {
     if (!docId) {
+      state.loadToken = ++loadSeq
+      state.loadDocId = null
+      state.backgroundStarted = false
+      state.geometryLoading = false
+      state.stateBusy = false
+      state.checksBusy = false
+      if (state.loadTimer) {
+        clearInterval(state.loadTimer)
+        state.loadTimer = null
+      }
+      if (state.loadFallback) {
+        clearTimeout(state.loadFallback)
+        state.loadFallback = null
+      }
       stopJobPoll()
       state.job = null
       state.selectedNode = null
@@ -3342,6 +3446,8 @@ export function mountWorkbench(host, options) {
     if (docId !== state.docId) state.selectedNode = null
     state.docId = docId
     state.current = null
+    state.plan = null
+    state.checks = null
     pickSeq += 1
     state.selection = null
     state.reference = null
@@ -3357,40 +3463,52 @@ export function mountWorkbench(host, options) {
     state.handle = null
     renderDimensions()
     post('handle', null)
-    setLoading(true)
-    const startedAt = performance.now()
-    const loadTimer = setInterval(() => {
-      if (empty.dataset.on !== 'true') return
-      emptyBody.textContent = `正在读取几何、计划和检查结果… ${((performance.now() - startedAt) / 1000).toFixed(1)}s`
-    }, 250)
-    const timed = async (path) => {
-      const start = performance.now()
-      const value = await api(path)
-      return { value, ms: performance.now() - start }
+    const token = ++loadSeq
+    state.loadToken = token
+    state.loadDocId = docId
+    state.backgroundStarted = false
+    state.shown = -1
+    state.timings = {}
+    state.renderMs = null
+    state.stateBusy = true
+    state.checksBusy = true
+    state.geometryLoading = true
+    if (state.loadTimer) {
+      clearInterval(state.loadTimer)
+      state.loadTimer = null
     }
+    if (state.loadFallback) {
+      clearTimeout(state.loadFallback)
+      state.loadFallback = null
+    }
+    setLoading(true)
+    emptyTitle.textContent = '正在加载几何'
+    emptyBody.textContent = '几何先显示；指标与检查随后在后台更新。'
+    const startedAt = performance.now()
+    state.loadTimer = setInterval(() => {
+      if (empty.dataset.on !== 'true') return
+      const suffix = state.stateBusy ? ' · 结构/检查后台更新' : ''
+      emptyBody.textContent = `正在加载几何… ${((performance.now() - startedAt) / 1000).toFixed(1)}s${suffix}`
+    }, 250)
     try {
-      const [stateResult, planResult, checksResult] = await Promise.all([
-        timed(`${base}/api/docs/${docId}/state`),
-        timed(`${base}/api/docs/${docId}/plan`).catch(() => ({ value: null, ms: 0 })),
-        timed(`${base}/api/docs/${docId}/checks`).catch(() => ({ value: null, ms: 0 })),
-      ])
-      const stateView = stateResult.value
-      const plan = planResult.value
-      const checks = checksResult.value
-      state.timings = { state: stateResult.ms, plan: planResult.ms, checks: checksResult.ms }
-      state.renderMs = null
-      state.current = stateView
-      state.plan = plan
-      state.checks = checks ? { ...checks, items: checkItems(checks) } : null
-      state.version = stateView.document.version
-      empty.dataset.on = stateView.vacant ? 'true' : 'false'
-      emptySpinner.hidden = true
-      clearInterval(loadTimer)
-      if (stateView.vacant) {
-        emptyTitle.textContent = '空白模型'
-        emptyBody.textContent = '在下方描述要创建的零件，或选择另一个已有模型。'
-        emptyButton.hidden = false
+      const meta = await api(`${base}/api/docs/${docId}/meta`)
+      if (token !== state.loadToken) return
+      const version = Number(meta.version) || 0
+      const vacant = Boolean(meta.vacant)
+      state.version = version
+      state.current = {
+        document: { id: docId, name: meta.name, version },
+        vacant,
+        metrics: null,
+        checks: null,
+        features: meta.features || [],
+        milestones: meta.milestones || [],
+        focus: [],
+        plan: null,
       }
+      state.stateBusy = !vacant
+      state.checksBusy = !vacant
+      state.geometryLoading = !vacant
       renderState()
       const sessionId = state.sessionId || options.getSessionId?.()
       if (sessionId) {
@@ -3398,9 +3516,36 @@ export function mountWorkbench(host, options) {
         if (manual) writeBinding(sessionId, docId, true)
         else if (!readBinding(sessionId)?.manual) writeBinding(sessionId, docId, false)
       }
+      if (vacant) {
+        hideLoadingOverlay()
+        emptyTitle.textContent = '空白模型'
+        emptyBody.textContent = '在下方描述要创建的零件，或选择另一个已有模型。'
+        emptyButton.hidden = false
+        empty.dataset.on = 'true'
+        state.backgroundStarted = true
+        loadBackground(docId, token)
+        return
+      }
+      pushDesign(true)
+      state.loadFallback = setTimeout(() => {
+        if (state.backgroundStarted || token !== state.loadToken) return
+        state.backgroundStarted = true
+        loadBackground(docId, token)
+      }, 30000)
     } catch (error) {
-      clearInterval(loadTimer)
+      if (token !== state.loadToken) return
       state.current = null
+      state.stateBusy = false
+      state.checksBusy = false
+      state.geometryLoading = false
+      if (state.loadTimer) {
+        clearInterval(state.loadTimer)
+        state.loadTimer = null
+      }
+      if (state.loadFallback) {
+        clearTimeout(state.loadFallback)
+        state.loadFallback = null
+      }
       emptySpinner.hidden = true
       emptyTitle.textContent = '加载失败'
       emptyBody.textContent = error.message
@@ -3526,6 +3671,20 @@ export function mountWorkbench(host, options) {
       startWatchdog()
     } else if (data.type === 'shown') {
       state.shown = data.version
+      if (data.documentId === state.docId && data.version === state.version) {
+        if (state.geometryLoading) {
+          hideLoadingOverlay()
+          renderState()
+        }
+        if (!state.backgroundStarted) {
+          state.backgroundStarted = true
+          if (state.loadFallback) {
+            clearTimeout(state.loadFallback)
+            state.loadFallback = null
+          }
+          loadBackground(state.docId, state.loadToken)
+        }
+      }
       if (state.designStarted != null) {
         state.renderMs = performance.now() - state.designStarted
         state.designStarted = null
@@ -3558,6 +3717,18 @@ export function mountWorkbench(host, options) {
       setInspector(true)
       toast(measureTextFor(data.result), 'info', 8)
     } else if (data.type === 'error') {
+      if (state.geometryLoading) {
+        hideLoadingOverlay()
+        emptySpinner.hidden = true
+        emptyTitle.textContent = '几何加载失败'
+        emptyBody.textContent = data.text
+        emptyButton.hidden = false
+        empty.dataset.on = 'true'
+      }
+      if (!state.backgroundStarted) {
+        state.backgroundStarted = true
+        loadBackground(state.docId, state.loadToken)
+      }
       toast(`视图错误：${data.text}`, 'error', 6)
     }
   }

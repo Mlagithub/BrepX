@@ -57,6 +57,15 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return document["id"], response.json()
 
+    def test_document_meta_reads_geometry_metadata_without_a_build(self) -> None:
+        with self._client() as client:
+            document_id, _ = self._build_box(client)
+            meta = client.get(f"/api/docs/{document_id}/meta").json()
+            self.assertEqual(meta["version"], 1)
+            self.assertEqual(len(meta["features"]), 1)
+            self.assertNotIn("build", meta)
+            self.assertTrue(meta["milestones"])
+
     def test_dimension_editing_and_face_handles_use_feature_parameters(self) -> None:
         with self._client() as client:
             document_id, _ = self._build_box(client, length=30.0)
