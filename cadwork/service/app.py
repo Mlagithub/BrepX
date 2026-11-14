@@ -480,8 +480,8 @@ def register_routes(app: FastAPI, service: CADService) -> None:
         return service.summary(document_id)
 
     @app.get("/api/docs/{document_id}/resolve")
-    def resolve(document_id: str, q: str) -> dict[str, Any]:
-        return service.resolve_reference(document_id, q)
+    def resolve(document_id: str, q: str, anchor: str | None = None) -> dict[str, Any]:
+        return service.resolve_reference(document_id, q, anchor)
 
     @app.get("/api/docs/{document_id}/scene")
     def scene(document_id: str, request: Request,

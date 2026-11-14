@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from cadwork.design.document import Document, Feature, Ref
-from cadwork.service.resolve import resolve, summarize
+from cadwork.service.resolve import resolve, resolve_gate, summarize
 
 
 def plate() -> Document:
@@ -127,6 +127,32 @@ class KernelResolveTests(unittest.TestCase):
         self.assertFalse(payload["confident"])
         self.assertEqual({item["id"] for item in payload["matches"]},
                          {"root", "outer_c2"})
+
+
+class ReferenceGateTests(unittest.TestCase):
+    def test_ambiguous_reference_blocks_writes(self) -> None:
+        payload = resolve_gate(kernel_cover(), "改一下这个阵列")
+        self.assertFalse(payload["can_write"])
+        self.assertIsNone(payload["resolved_id"])
+        self.assertIn("hole_pattern", payload["question"])
+        self.assertIn("rib_pattern", payload["question"])
+
+    def test_explicit_feature_id_allows_write(self) -> None:
+        payload = resolve_gate(kernel_cover(), "把 rib_pattern 再调高")
+        self.assertTrue(payload["can_write"])
+        self.assertEqual(payload["resolved_id"], "rib_pattern")
+
+    def test_picked_anchor_allows_write(self) -> None:
+        payload = resolve_gate(kernel_cover(), "把这个改高", anchor="hole_pattern")
+        self.assertTrue(payload["can_write"])
+        self.assertEqual(payload["resolved_id"], "hole_pattern")
+        self.assertEqual(payload["anchor"], "hole_pattern")
+
+    def test_no_match_blocks_write(self) -> None:
+        payload = resolve_gate(kernel_cover(), "把颜色改成蓝色")
+        self.assertFalse(payload["can_write"])
+        self.assertIsNone(payload["resolved_id"])
+        self.assertIn("没找到", payload["question"])
 
 
 if __name__ == "__main__":

@@ -80,6 +80,13 @@ def build_mcp_server(service: CADService) -> MCPServer:
             "without that tag, start with new_document; use documents to list existing work, "
             "then state with that document id to continue. "
             "Read with state, measure with probe, and resolve spoken references with resolve. "
+            "Before any change that refers to existing geometry by a demonstrative or position "
+            "(这个/那个/左边/右边/上面/下面/刚才/最后/它/该) without a feature id, call resolve with "
+            "the exact phrase and any picked anchor. If can_write is false, do not call plan, "
+            "plan_edit, plan_run or any write: ask its question with 2-4 concrete id/name/basis "
+            "options and the anchor. Reuse the id the user picks; do not resolve the same phrase "
+            "twice. A skipped or unanswered clarifying question is not permission to write; if "
+            "the request has no concrete value, ask for it or stop. "
             "For a modelling request, maintain the plan (plan, plan_edit, plan_compile) and "
             "execute one ready node at a time with plan_run; never invent kernel code. Use "
             "preview when a direct edit is simpler, render for visual checks, and import to "
@@ -141,10 +148,15 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def resolve(document_id: str, phrase: str) -> dict[str, Any]:
-        """Map a spoken reference such as "左边的沉头" to feature ids with a clarifying question."""
+    def resolve(document_id: str, phrase: str, anchor: str | None = None) -> dict[str, Any]:
+        """Map a spoken reference to feature ids and decide if a write is allowed.
+
+        `can_write` is false unless the phrase is confident or a picked feature
+        anchor is supplied; in that case ask the returned question with its
+        concrete candidates and do not plan or edit yet.
+        """
         try:
-            return service.resolve_reference(document_id, phrase)
+            return service.resolve_reference(document_id, phrase, anchor)
         except ServiceError as exc:
             raise _fail(exc) from exc
 

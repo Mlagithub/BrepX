@@ -50,7 +50,7 @@ from cadwork.design.verify import evaluate as evaluate_expects
 from .events import DomainEvent, EventLog, new_request_id, timeline as build_timeline
 
 from .export import export_bytes
-from .resolve import resolve as resolve_phrase
+from .resolve import resolve_gate
 from .resolve import summarize as summarize_document
 from .scene import build_scene, display_feature
 from .store import Store, StoreError
@@ -1230,8 +1230,9 @@ class CADService:
             return summarize_document(document, None)
         return summarize_document(document, self._build(document))
 
-    def resolve_reference(self, document_id: str, phrase: str) -> dict[str, Any]:
-        return resolve_phrase(self.read(document_id), phrase)
+    def resolve_reference(self, document_id: str, phrase: str,
+                          anchor: str | None = None) -> dict[str, Any]:
+        return resolve_gate(self.read(document_id), phrase, anchor)
 
     def create_variants(self, document_id: str, *,
                         variants: list[dict[str, Any]] | None = None,

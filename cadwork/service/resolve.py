@@ -247,6 +247,39 @@ def resolve(document: Document, phrase: str) -> dict[str, Any]:
     }
 
 
+def resolve_gate(
+    document: Document,
+    phrase: str,
+    anchor: str | None = None,
+) -> dict[str, Any]:
+    """Decide whether a spoken reference is safe to write against.
+
+    A picked feature is already an address; otherwise only a confident match
+    yields a writable feature id. Everything else must go back to the person as
+    a concrete choice, never as a guessed edit.
+    """
+    payload = resolve(document, phrase)
+    if anchor:
+        payload.update(can_write=True, resolved_id=anchor, anchor=anchor)
+        return payload
+    matches = payload["matches"]
+    if payload["confident"] and matches:
+        payload.update(can_write=True, resolved_id=matches[0]["id"], anchor=None)
+        return payload
+    if matches:
+        options = "；".join(
+            f"{item['id']}（{item['what']}"
+            + (f"；{item['reasons'][0]}" if item.get("reasons") else "")
+            + "）"
+            for item in matches[:4]
+        )
+        question = f"你指的是哪一个：{options}？"
+    else:
+        question = payload["question"] or "没有找到对应的特征，请换一种说法。"
+    payload.update(can_write=False, resolved_id=None, anchor=None, question=question)
+    return payload
+
+
 def names_present(document: Document) -> Iterable[str]:
     for feature in document.features:
         yield feature.id

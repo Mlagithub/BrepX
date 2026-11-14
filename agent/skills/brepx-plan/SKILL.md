@@ -39,6 +39,29 @@ every following call. For a follow-up without that tag, use `documents` to find
 the document and pass its id. Never mutate a document other than the one named
 in this turn or one you created in this conversation.
 
+## Resolve before writing
+
+A phrase that refers to existing geometry by "这个/那个/左边/右边/上面/下面/
+刚才/最后/它/该" and a shape noun is not an address. Call `resolve` with the
+user's exact phrase before `plan`, `plan_add_node`, `plan_edit`, `plan_compile`
+or `plan_run`.
+
+- `can_write: false` means stop: do not add, edit or run a node. Ask the returned
+  question with its 2-4 concrete options (`id`, human name, basis). If the user
+  picked a face or the message carries `[选中 ...]` / `[特征 <id> ...]`, pass that
+  id as `anchor`; the question must name the anchor, not ask for it again.
+- `can_write: true` means use `resolved_id`; do not re-resolve the same phrase
+  after the user answers with one of the candidates.
+- A skipped or unanswered question is not permission. If the request has no
+  concrete value (for example "调整一下" without a number), ask for that value
+  or stop; do not pick a convenient default and write it.
+- No matches means say so and ask for a different description; never invent a
+  feature id or fall back to guessing.
+
+Example: "把左边那个阵列改一下" on a document with `hole_pattern` and
+`rib_pattern` returns two candidates. Ask which one; do not create a plan node
+until the answer names one.
+
 ## Node shape
 
 ```json
