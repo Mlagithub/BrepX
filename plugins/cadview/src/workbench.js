@@ -193,6 +193,17 @@ const css = `
   .bxw-inspector-body { padding: 10px 12px 20px; display: flex; flex-direction: column; gap: 16px; }
   .bxw-section { display: flex; flex-direction: column; gap: 7px; }
   .bxw-section[hidden] { display: none; }
+  .bxw-focus { display: flex; flex-direction: column; gap: 10px; }
+  .bxw-focus-row { display: flex; flex-direction: column; gap: 5px; }
+  .bxw-focus-row[data-busy="true"] { opacity: .6; }
+  .bxw-focus-head { display: flex; align-items: center; gap: 7px; }
+  .bxw-focus-head span { flex: 1; min-width: 0; color: var(--bxw-soft); font-size: 11px;
+    line-height: 1.35; white-space: normal; }
+  .bxw-focus-number { width: 76px; height: 24px; padding: 0 6px; border: 1px solid var(--bxw-line);
+    border-radius: 5px; background: var(--bxw-layer); color: var(--bxw-primary);
+    font: 11px/1 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-focus-unit { flex: none; color: var(--bxw-muted); font: 10px/1 var(--dsw-font-mono, ui-monospace, monospace); }
+  .bxw-focus-range { width: 100%; accent-color: var(--bxw-accent); }
   .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
@@ -592,6 +603,11 @@ export function mountWorkbench(host, options) {
   const selectionSummary = el('div', { className: 'bxw-check' }, '在画布上点选面或边')
   selectionSection.append(selectionSummary)
 
+  const focusSection = el('section', { className: 'bxw-section', hidden: true })
+  focusSection.append(el('h3', {}, '焦点参数'))
+  const focusList = el('div', { className: 'bxw-focus' })
+  focusSection.append(focusList)
+
   const measureInspector = el('section', { className: 'bxw-section', hidden: true })
   const measureHead = el('div', { className: 'bxw-section-head' })
   measureHead.append(el('h3', {}, '测量'))
@@ -607,7 +623,7 @@ export function mountWorkbench(host, options) {
   const checkList = el('ul', { className: 'bxw-list' })
   checkSection.append(checkSummary, checkList)
 
-  inspectorBody.append(metricsSection, selectionSection, checkSection)
+  inspectorBody.append(metricsSection, selectionSection, focusSection, checkSection)
   inspector.append(inspectorHead, inspectorBody)
 
   const dock = el('section', { className: 'bxw-dock', 'aria-label': '命令与 Agent' })
@@ -1367,6 +1383,167 @@ export function mountWorkbench(host, options) {
     renderReview()
   }
 
+  const FOCUS_LABELS = {
+    size: '尺寸', length: '长度', width: '宽度', height: '高度', radius: '半径',
+    diameter: '直径', thickness: '壁厚', depth: '深度', count: '数量',
+    angular_range: '角度范围', angle: '角度', amount: '长度',
+    dx: 'X 偏移', dy: 'Y 偏移', dz: 'Z 偏移',
+    x: 'X 位置', y: 'Y 位置', z: 'Z 位置',
+  }
+  const FOCUS_UNITS = { copies: '个', deg: '°', mm: 'mm' }
+  const focusRows = new Map()
+  let focusSignature = ''
+  let focusTimer = null
+  let focusRunning = false
+  const focusPending = new Map()
+
+  const focusLabel = (param) => `${FOCUS_LABELS[param.param] || param.param} · ${param.feature_id}`
+
+  const focusBounds = (param) => {
+    const value = Number(param.value) || 0
+    const span = Math.max(4, Math.abs(value) * 2)
+    const backendMin = Number.isFinite(Number(param.minimum)) ? Number(param.minimum) : null
+    const backendMax = Number.isFinite(Number(param.maximum)) ? Number(param.maximum) : null
+    let min = backendMin != null ? Math.max(backendMin, value - span) : value - span
+    let max = backendMax != null ? Math.min(backendMax, value + span) : value + span
+    const signed = ['x', 'y', 'z', 'dx', 'dy', 'dz'].includes(param.param)
+    if (backendMin == null && value >= 0 && !signed) min = Math.max(0, value - span)
+    if (!(max > min)) {
+      min = value - span
+      max = value + span
+    }
+    const integer = param.param === 'count' || param.unit === 'copies' || param.unit === 'deg'
+    return { min, max, step: integer ? 1 : 0.1 }
+  }
+
+  const scheduleFocus = (param, value, entry) => {
+    focusPending.set(`${param.feature_id}.${param.param}`, {
+      featureId: param.feature_id, param: param.param, value, entry,
+    })
+    clearTimeout(focusTimer)
+    focusTimer = setTimeout(runFocus, 120)
+  }
+
+  const refreshFocusState = async () => {
+    if (!state.docId) return
+    const view = await api(`${base}/api/docs/${state.docId}/state`)
+    if (!view?.document || view.document.id !== state.docId) return
+    state.current = view
+    state.version = view.document.version
+    renderState()
+  }
+
+  const runFocus = async () => {
+    if (focusRunning) {
+      focusTimer = setTimeout(runFocus, 120)
+      return
+    }
+    const jobs = [...focusPending.values()].filter((job) => job.value !== job.entry.lastValue)
+    focusPending.clear()
+    if (!jobs.length || !state.docId) return
+    focusRunning = true
+    for (const job of jobs) job.entry.row.dataset.busy = 'true'
+    const summary = jobs.map((job) => `${job.featureId}.${job.param}`).join(' · ')
+    try {
+      await api(`${base}/api/docs/${state.docId}/tweak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_version: state.version,
+          changes: jobs.map((job) => ({
+            feature_id: job.featureId,
+            params: { [job.param]: job.value },
+          })),
+          title: `微调 ${jobs.map((job) => `${job.param}=${job.value}`).join(', ')}`,
+        }),
+      })
+      for (const job of jobs) job.entry.lastValue = job.value
+      toast(`已微调 ${summary}`, 'info', 2)
+      await refreshFocusState().catch((error) => toast(`已提交，但刷新失败：${error.message}`, 'error', 5))
+    } catch (error) {
+      for (const job of jobs) {
+        job.entry.number.value = String(job.entry.lastValue)
+        job.entry.range.value = String(job.entry.lastValue)
+      }
+      toast(`微调失败：${error.message}`, 'error', 6)
+      await refreshFocusState().catch(() => {})
+    } finally {
+      for (const job of jobs) job.entry.row.dataset.busy = 'false'
+      focusRunning = false
+      if (focusPending.size) focusTimer = setTimeout(runFocus, 120)
+    }
+  }
+
+  const renderFocus = () => {
+    const params = (state.current?.focus_params || []).slice(0, 4)
+    if (!params.length) {
+      focusSection.hidden = true
+      focusList.textContent = ''
+      focusRows.clear()
+      focusSignature = ''
+      return
+    }
+    focusSection.hidden = false
+    const signature = params.map((param) => `${param.feature_id}.${param.param}`).join('|')
+    if (signature !== focusSignature) {
+      focusList.textContent = ''
+      focusRows.clear()
+      for (const param of params) {
+        const bounds = focusBounds(param)
+        const row = el('div', { className: 'bxw-focus-row' })
+        const head = el('div', { className: 'bxw-focus-head' })
+        const label = el('span', {}, focusLabel(param))
+        label.title = `${param.feature_id}.${param.param}`
+        const number = el('input', {
+          type: 'number', className: 'bxw-focus-number', step: String(bounds.step),
+          value: String(param.value),
+        })
+        number.setAttribute('aria-label', focusLabel(param))
+        const unit = el('span', { className: 'bxw-focus-unit' }, FOCUS_UNITS[param.unit] || param.unit || '')
+        head.append(label, number, unit)
+        const range = el('input', {
+          type: 'range', className: 'bxw-focus-range',
+          min: String(bounds.min), max: String(bounds.max), step: String(bounds.step),
+          value: String(param.value),
+        })
+        range.setAttribute('aria-label', `${focusLabel(param)} 滑块`)
+        const entry = { row, number, range, bounds, lastValue: Number(param.value) }
+        const apply = (raw) => {
+          const value = raw === '' ? NaN : Number(raw)
+          if (!Number.isFinite(value)) return
+          number.value = String(value)
+          if (value >= entry.bounds.min && value <= entry.bounds.max) {
+            range.value = String(value)
+          }
+          if (value === entry.lastValue) {
+            focusPending.delete(`${param.feature_id}.${param.param}`)
+            if (!focusPending.size) clearTimeout(focusTimer)
+            return
+          }
+          scheduleFocus(param, value, entry)
+        }
+        range.addEventListener('input', () => apply(range.value))
+        number.addEventListener('input', () => apply(number.value))
+        number.addEventListener('change', () => apply(number.value))
+        row.append(head, range)
+        focusList.append(row)
+        focusRows.set(`${param.feature_id}.${param.param}`, entry)
+      }
+      focusSignature = signature
+    }
+    for (const param of params) {
+      const entry = focusRows.get(`${param.feature_id}.${param.param}`)
+      if (!entry) continue
+      entry.bounds = focusBounds(param)
+      entry.lastValue = Number(param.value)
+      entry.number.value = String(param.value)
+      entry.range.min = String(entry.bounds.min)
+      entry.range.max = String(entry.bounds.max)
+      entry.range.step = String(entry.bounds.step)
+      entry.range.value = String(param.value)
+    }
+  }
+
   const renderDocuments = () => {
     docSelect.textContent = ''
     if (!state.documents.length) {
@@ -1485,11 +1662,19 @@ export function mountWorkbench(host, options) {
     empty.dataset.on = 'false'
     state.version = doc.version ?? 0
     state.simplified = false
+    const known = state.documents.find((item) => item.id === state.docId)
+    if (known) {
+      known.version = state.version
+      known.name = doc.name || known.name
+    }
+    const selected = docSelect.selectedOptions?.[0]
+    if (selected) selected.textContent = `${doc.name || state.docId} · v${state.version}`
     if (state.selection?.version != null && state.selection.version !== state.version) clearSelection()
     if (state.ghost) syncGhost()
     renderReview()
     renderPlan()
     renderChecks()
+    renderFocus()
     renderTiming()
     pushDesign(false)
   }
