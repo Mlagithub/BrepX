@@ -62,6 +62,27 @@ FOCUS_PREFERENCE = (
     "count", "angle", "amount", "diameter", "wrap", "factor", "distance",
     "fillet_r", "r_in", "turns", "pitch", "height_mm",
 )
+LINEAR_DIMENSIONS = {
+    "radius", "r_out", "r_in", "diameter", "hole_radius", "height", "depth",
+    "length", "width", "thickness", "size", "distance", "spacing", "pitch",
+    "fillet_r", "x", "y", "z",
+}
+ANGLE_DIMENSIONS = {"angle", "start_angle", "wrap"}
+POSITIVE_DIMENSIONS = {
+    "radius", "r_out", "r_in", "diameter", "hole_radius", "height", "depth",
+    "length", "width", "thickness", "size", "distance", "spacing", "pitch",
+    "fillet_r", "turns",
+}
+
+
+def _unit(vector: list[float] | tuple[float, ...] | None) -> list[float]:
+    values = [float(value) for value in (vector or [])][:3]
+    if len(values) != 3:
+        return [0.0, 0.0, 1.0]
+    length = (values[0] ** 2 + values[1] ** 2 + values[2] ** 2) ** 0.5
+    if length < 1e-9:
+        return [0.0, 0.0, 1.0]
+    return [values[0] / length, values[1] / length, values[2] / length]
 
 
 class ServiceError(Exception):
@@ -1243,6 +1264,113 @@ class CADService:
         if not document.features:
             return summarize_document(document, None)
         return summarize_document(document, self._build(document))
+
+    def dimensions(self, document_id: str, feature_id: str) -> dict[str, Any]:
+        document = self.read(document_id)
+        feature = next((item for item in document.features if item.id == feature_id), None)
+        if feature is None:
+            raise ServiceError("FEATURE_NOT_FOUND", f"no feature {feature_id!r}",
+                               status=404)
+        spec = spec_for(feature.type)
+        params: list[dict[str, Any]] = []
+        if spec is not None:
+            for name, param in spec.params.items():
+                if param.kind not in {"float", "int"}:
+                    continue
+                value = feature.params.get(name, param.default)
+                if value is None:
+                    continue
+                unit = param.unit or ""
+                if not unit and name in LINEAR_DIMENSIONS:
+                    unit = "mm"
+                elif not unit and name in ANGLE_DIMENSIONS:
+                    unit = "deg"
+                minimum = param.minimum
+                if minimum is None and name in POSITIVE_DIMENSIONS:
+                    minimum = 0.01
+                if minimum is None and name == "count":
+                    minimum = 1
+                maximum = param.maximum
+                if maximum is None and name == "start_angle":
+                    maximum = 360.0
+                params.append({
+                    "name": name,
+                    "label": param.description or name,
+                    "unit": unit,
+                    "value": value,
+                    "minimum": minimum,
+                    "maximum": maximum,
+                    "integer": param.kind == "int",
+                })
+        return {"feature_id": feature.id, "feature_type": feature.type,
+                "params": params}
+
+    def handles(self, document_id: str, feature_id: str, point: list[float],
+                normal: list[float], scope: str = "face") -> dict[str, Any]:
+        dimensions = self.dimensions(document_id, feature_id)
+        params = dimensions["params"]
+        if not params:
+            return {"handle": None, "reason": "这个特征没有可直接拖动的数值参数"}
+        feature_type = dimensions["feature_type"]
+        normal = _unit(normal)
+        basis = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}
+        axis_by_name = {
+            "x": basis["x"], "y": basis["y"], "z": basis["z"],
+            "length": basis["x"], "width": basis["y"], "height": basis["z"],
+            "depth": basis["z"], "thickness": normal,
+            "radius": normal, "diameter": normal, "hole_radius": normal,
+            "size": normal, "offset": normal,
+        }
+        best = None
+        for param in params:
+            name = param["name"]
+            if name in {"count", "start_angle", "turns", "segments", "sides"} and len(params) > 1:
+                continue
+            axis = axis_by_name.get(name)
+            if feature_type == "k_cylinder":
+                axis = basis["z"] if name in {"height", "depth"} else normal
+            if axis is None:
+                axis = normal
+            axis = _unit(axis)
+            alignment = sum(axis[index] * normal[index] for index in range(3))
+            preference = 0.0
+            if feature_type == "k_cylinder":
+                axial = abs(normal[2]) > 0.72
+                if axial and name in {"height", "depth"}:
+                    preference = 3.0
+                elif not axial and name in {"radius", "diameter"}:
+                    preference = 3.0
+            if feature_type in {"k_translate", "k_move_faces"}:
+                preference = 1.0 if name in {"x", "y", "z"} else 0.0
+            if feature_type in {"blend_group", "k_chamfer", "k_fillet"}:
+                preference = 2.0 if name in {"size", "radius"} else 0.0
+            score = abs(alignment) * 10.0 + preference
+            if best is None or score > best["score"]:
+                best = {"param": param, "axis": axis, "score": score,
+                        "alignment": alignment}
+        if best is None:
+            return {"handle": None, "reason": "没有找到可拖动的方向"}
+        axis = best["axis"]
+        if best["alignment"] < 0:
+            axis = [-axis[0], -axis[1], -axis[2]]
+        param = best["param"]
+        return {
+            "handle": {
+                "feature_id": feature_id,
+                "feature_type": feature_type,
+                "param": param["name"],
+                "label": param["label"],
+                "unit": param["unit"],
+                "value": param["value"],
+                "minimum": param["minimum"],
+                "maximum": param["maximum"],
+                "integer": param["integer"],
+                "axis": axis,
+                "point": point,
+                "scope": scope,
+            },
+            "reason": None,
+        }
 
     def resolve_reference(self, document_id: str, phrase: str,
                           anchor: str | None = None) -> dict[str, Any]:

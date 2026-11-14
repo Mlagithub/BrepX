@@ -117,6 +117,13 @@ class ImportUpload(BaseModel):
     format: str | None = None
 
 
+class HandleRequest(BaseModel):
+    feature_id: str
+    point: list[float]
+    normal: list[float] = [0.0, 0.0, 1.0]
+    scope: str = "face"
+
+
 class GenRunRequest(BaseModel):
     key: str
     run_id: str | None = None
@@ -370,6 +377,15 @@ def register_routes(app: FastAPI, service: CADService) -> None:
     @app.post("/api/docs/{document_id}/pick")
     def pick(document_id: str, body: PickRequest) -> dict[str, Any]:
         return service.pick(document_id, body.model_dump())
+
+    @app.get("/api/docs/{document_id}/dimensions")
+    def dimensions(document_id: str, feature_id: str) -> dict[str, Any]:
+        return service.dimensions(document_id, feature_id)
+
+    @app.post("/api/docs/{document_id}/handles")
+    def handles(document_id: str, body: HandleRequest) -> dict[str, Any]:
+        return service.handles(document_id, body.feature_id, body.point, body.normal,
+                               scope=body.scope)
 
     @app.post("/api/docs/{document_id}/tweak")
     def tweak(document_id: str, body: TweakRequest) -> dict[str, Any]:

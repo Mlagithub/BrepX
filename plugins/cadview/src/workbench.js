@@ -169,6 +169,11 @@ const css = `
   .bxw-plan-card-meta { margin-top: 3px; color: var(--bxw-muted); font: 10px/1.4 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-stage { min-width: 0; min-height: 0; background: color-mix(in srgb, var(--bxw-panel) 70%, var(--bxw-bg, #101318)); }
   .bxw-frame { width: 100%; height: 100%; border: 0; display: block; }
+  .bxw-handle-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line));
+    border-radius: 6px; background: color-mix(in srgb, var(--bxw-panel) 92%, transparent);
+    color: var(--bxw-primary); font-size: 11px; pointer-events: none; z-index: 5; white-space: nowrap; }
+  .bxw-handle-hint[hidden] { display: none; }
   .bxw-tools { display: flex; align-items: center; gap: 2px; flex: none; padding-left: 10px;
     border-left: 1px solid var(--bxw-line); }
   .bxw-tools .bxw-sep { width: 1px; height: 16px; background: var(--bxw-line); margin: 0 4px; }
@@ -248,6 +253,18 @@ const css = `
   .bxw-history-row button { flex: none; height: 22px; padding: 0 6px; font-size: 9px; }
   .bxw-doc-actions { display: flex; gap: 6px; }
   .bxw-doc-actions button { height: 25px; font-size: 10px; }
+  .bxw-dimensions { display: flex; flex-direction: column; gap: 6px; }
+  .bxw-dimension { display: flex; align-items: center; gap: 6px; }
+  .bxw-dimension label { min-width: 0; flex: 1; color: var(--bxw-soft); font-size: 11px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bxw-dimension input { width: 76px; height: 25px; padding: 0 6px; border: 1px solid var(--bxw-line);
+    border-radius: 5px; background: var(--bxw-layer); color: var(--bxw-primary);
+    font-size: 11px; text-align: right; }
+  .bxw-dimension-unit { min-width: 26px; color: var(--bxw-muted); font-size: 9px; }
+  .bxw-dimension button { height: 24px; padding: 0 7px; font-size: 10px; }
+  .bxw-dimension[data-busy="true"] { opacity: .55; }
+  .bxw-dimension input[data-invalid="true"] { border-color: var(--bxw-bad); }
+  .bxw-check[hidden] { display: none; }
   .bxw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .bxw-section-head h3 { margin: 0; }
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: 10px; font-weight: 650;
@@ -538,6 +555,12 @@ export function mountWorkbench(host, options) {
     selectedNode: null,
     job: null,
     jobTimer: null,
+    dimensions: null,
+    dimensionFeature: null,
+    dimensionBusy: false,
+    handle: null,
+    handleBusy: false,
+    drag: null,
     historyOpen: false,
     dockQuestion: false,
     dockQuestionText: '',
@@ -734,7 +757,8 @@ export function mountWorkbench(host, options) {
   emptyCard.append(emptyButton)
   empty.append(emptyCard)
   empty.dataset.on = 'false'
-  stage.append(frame, empty)
+  const handleChip = el('div', { className: 'bxw-handle-hint', hidden: true, 'aria-live': 'polite' })
+  stage.append(frame, empty, handleChip)
 
   const models = el('aside', { className: 'bxw-models', 'aria-label': '当前模型结构' })
   const modelsHead = el('div', { className: 'bxw-models-head' })
@@ -776,6 +800,17 @@ export function mountWorkbench(host, options) {
   focusSection.append(el('h3', {}, '焦点参数'))
   const focusList = el('div', { className: 'bxw-focus' })
   focusSection.append(focusList)
+
+  const dimensionSection = el('section', { className: 'bxw-section', hidden: true })
+  const dimensionHead = el('div', { className: 'bxw-section-head' })
+  const dimensionTitle = el('h3', {}, '尺寸')
+  const dimensionRefresh = el('button', { type: 'button', title: '重新读取尺寸', 'aria-label': '重新读取尺寸' }, '刷新')
+  dimensionHead.append(dimensionTitle, dimensionRefresh)
+  dimensionSection.append(dimensionHead)
+  const dimensionHint = el('div', { className: 'bxw-node-meta' }, '')
+  const dimensionList = el('div', { className: 'bxw-dimensions' })
+  const dimensionError = el('div', { className: 'bxw-check', hidden: true, role: 'alert' })
+  dimensionSection.append(dimensionHint, dimensionList, dimensionError)
 
   const measureInspector = el('section', { className: 'bxw-section', hidden: true })
   const measureHead = el('div', { className: 'bxw-section-head' })
@@ -830,8 +865,8 @@ export function mountWorkbench(host, options) {
   docActions.append(docNew, docDelete)
   docSection.append(docActions)
 
-  inspectorBody.append(metricsSection, selectionSection, focusSection, planSection, checkSection,
-    referenceSection, historySection, docSection)
+  inspectorBody.append(metricsSection, selectionSection, focusSection, dimensionSection, planSection,
+    checkSection, referenceSection, historySection, docSection)
   inspector.append(inspectorHead, inspectorBody)
 
   const dock = el('section', { className: 'bxw-dock', 'aria-label': '命令与 Agent' })
@@ -1103,7 +1138,25 @@ export function mountWorkbench(host, options) {
     angled: '斜面',
     face: '面',
   }
+  const DIMENSION_LABELS = {
+    radius: '半径', r_out: '外半径', r_in: '内半径', diameter: '直径',
+    hole_radius: '孔半径', height: '高度', depth: '深度', length: '长度',
+    width: '宽度', thickness: '壁厚', size: '尺寸', offset: '偏移',
+    distance: '距离', spacing: '孔距', pitch: '节距', count: '数量',
+    start_angle: '起始角', angle: '角度', turns: '圈数', wrap: '包角',
+    amount: '数量', factor: '系数', fillet_r: '圆角半径',
+    x: 'X 位置', y: 'Y 位置', z: 'Z 位置',
+  }
+  const DIMENSION_UNITS = { deg: '°', degree: '°', degrees: '°', mm: 'mm', rad: 'rad' }
+  const LINEAR_DIMENSIONS = new Set([
+    'radius', 'r_out', 'r_in', 'diameter', 'hole_radius', 'height', 'depth',
+    'length', 'width', 'thickness', 'size', 'offset', 'distance', 'spacing',
+    'pitch', 'fillet_r', 'x', 'y', 'z',
+  ])
+  const ANGLE_DIMENSIONS = new Set(['angle', 'start_angle', 'wrap'])
   let pickSeq = 0
+  let dimensionSeq = 0
+  let handleSeq = 0
 
   const selectionText = (pick) => {
     if (!pick) return ''
@@ -1304,6 +1357,245 @@ export function mountWorkbench(host, options) {
     return resolved
   }
 
+  const refreshAfterCommit = async () => {
+    if (!state.docId) return
+    const [view, planView, checks] = await Promise.all([
+      api(`${base}/api/docs/${state.docId}/state`),
+      api(`${base}/api/docs/${state.docId}/plan`),
+      api(`${base}/api/docs/${state.docId}/checks`),
+    ])
+    if (!view?.document || view.document.id !== state.docId) return
+    state.current = view
+    state.version = view.document.version
+    state.plan = planView
+    state.checks = checks ? { ...checks, items: checkItems(checks) } : null
+    if (state.selection) state.selection = { ...state.selection, version: state.version }
+    renderState()
+  }
+
+  const loadDimensions = async (featureId) => {
+    const seq = ++dimensionSeq
+    state.dimensionFeature = featureId || null
+    state.dimensions = null
+    renderDimensions()
+    if (!featureId || !state.docId) return
+    try {
+      const dimensions = await api(
+        `${base}/api/docs/${state.docId}/dimensions?feature_id=${encodeURIComponent(featureId)}`)
+      if (seq !== dimensionSeq) return
+      state.dimensions = dimensions
+      renderDimensions()
+    } catch (error) {
+      if (seq !== dimensionSeq) return
+      state.dimensions = null
+      renderDimensions()
+      toast(`读取尺寸失败：${error.message}`, 'error', 4)
+    }
+  }
+
+  const applyDimension = async (param, input, row) => {
+    if (!state.docId || !state.dimensionFeature || state.dimensionBusy) return
+    const raw = input.value.trim()
+    const value = Number(raw)
+    let problem = ''
+    if (raw === '' || !Number.isFinite(value)) problem = '请输入数值'
+    else if (param.integer && !Number.isInteger(value)) problem = '需要整数'
+    else if (param.minimum != null && value < param.minimum) problem = `不能小于 ${param.minimum}`
+    else if (param.maximum != null && value > param.maximum) problem = `不能大于 ${param.maximum}`
+    if (problem) {
+      input.dataset.invalid = 'true'
+      dimensionError.hidden = false
+      dimensionError.textContent = `${param.label || param.name}：${problem}`
+      toast(dimensionError.textContent, 'error', 4)
+      return
+    }
+    if (value === param.value) {
+      input.dataset.invalid = 'false'
+      return
+    }
+    input.dataset.invalid = 'false'
+    dimensionError.hidden = true
+    state.dimensionBusy = true
+    row.dataset.busy = 'true'
+    try {
+      await api(`${base}/api/docs/${state.docId}/tweak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_version: state.version,
+          changes: [{ feature_id: state.dimensionFeature, params: { [param.name]: value } }],
+          title: `尺寸 ${state.dimensionFeature}.${param.name} = ${value}${param.unit || ''}`,
+        }),
+      })
+      toast(`已更新 ${param.name} = ${value}`, 'info', 2)
+      await refreshAfterCommit()
+      await loadDimensions(state.dimensionFeature)
+      post('handle', null)
+      state.handle = null
+      setHandleHint(null)
+    } catch (error) {
+      input.value = String(param.value)
+      input.dataset.invalid = 'true'
+      dimensionError.hidden = false
+      dimensionError.textContent = `更新失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`
+      toast(dimensionError.textContent, 'error', 6)
+    } finally {
+      state.dimensionBusy = false
+      row.dataset.busy = 'false'
+    }
+  }
+
+  const renderDimensions = () => {
+    const featureId = state.dimensionFeature
+    dimensionSection.hidden = !featureId
+    dimensionError.hidden = true
+    dimensionError.textContent = ''
+    dimensionList.textContent = ''
+    if (!featureId) return
+    dimensionTitle.textContent = `尺寸 · ${featureId}`
+    const dimensions = state.dimensions
+    if (!dimensions) {
+      dimensionHint.textContent = '正在读取尺寸…'
+      return
+    }
+    dimensionHint.textContent = dimensions.feature_type || ''
+    if (!dimensions.params?.length) {
+      dimensionHint.textContent = '这个特征没有可直接编辑的数值参数'
+      return
+    }
+    for (const param of dimensions.params) {
+      const row = el('div', { className: 'bxw-dimension' })
+      const range = []
+      if (param.minimum != null) range.push(`≥ ${param.minimum}`)
+      if (param.maximum != null) range.push(`≤ ${param.maximum}`)
+      const baseLabel = DIMENSION_LABELS[param.name] || param.label || param.name
+      const label = el('label', {
+        title: param.label || param.name,
+      }, baseLabel + (range.length ? ` (${range.join(' ')})` : ''))
+      let unitText = DIMENSION_UNITS[param.unit] || param.unit || ''
+      if (!unitText && ANGLE_DIMENSIONS.has(param.name)) unitText = '°'
+      else if (!unitText && LINEAR_DIMENSIONS.has(param.name)) unitText = 'mm'
+      const input = el('input', {
+        type: 'number',
+        value: String(param.value),
+        step: param.integer ? '1' : 'any',
+        'aria-label': `${baseLabel}${unitText ? ` (${unitText})` : ''}`,
+      })
+      if (param.minimum != null) input.min = String(param.minimum)
+      if (param.maximum != null) input.max = String(param.maximum)
+      const unit = el('span', { className: 'bxw-dimension-unit' }, unitText)
+      const apply = el('button', { type: 'button', title: '应用这个尺寸' }, '应用')
+      apply.addEventListener('click', () => applyDimension(param, input, row))
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return
+        event.preventDefault()
+        applyDimension(param, input, row)
+      })
+      input.addEventListener('input', () => {
+        input.dataset.invalid = 'false'
+        dimensionError.hidden = true
+        dimensionError.textContent = ''
+      })
+      if (range.length) row.title = `范围 ${range.join(' 且 ')}`
+      row.append(label, input, unit, apply)
+      dimensionList.append(row)
+    }
+  }
+
+  const dimensionLabel = (param, fallback) => DIMENSION_LABELS[param] || fallback || param
+
+  const setHandleHint = (handle, value) => {
+    if (!handle) {
+      handleChip.hidden = true
+      handleChip.textContent = ''
+      return
+    }
+    const unit = DIMENSION_UNITS[handle.unit] || handle.unit
+      || (ANGLE_DIMENSIONS.has(handle.param) ? '°'
+        : LINEAR_DIMENSIONS.has(handle.param) ? 'mm' : '')
+    const axis = handle.axis || [0, 0, 1]
+    const absolute = axis.map((item) => Math.abs(item))
+    let direction = '法向'
+    if (!['radius', 'diameter', 'hole_radius'].includes(handle.param)) {
+      if (absolute[0] > 0.8) direction = 'X 轴'
+      else if (absolute[1] > 0.8) direction = 'Y 轴'
+      else if (absolute[2] > 0.8) direction = 'Z 轴'
+    }
+    const current = value ?? handle.value
+    handleChip.textContent = `拖动 ${dimensionLabel(handle.param, handle.label)} · ${current}${unit} · 沿 ${direction}`
+    handleChip.hidden = false
+  }
+
+  const loadHandle = async (selection) => {
+    const seq = ++handleSeq
+    state.handle = null
+    post('handle', null)
+    setHandleHint(null)
+    if (!state.docId || !selection?.feature_id) return
+    try {
+      const result = await api(`${base}/api/docs/${state.docId}/handles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feature_id: selection.feature_id,
+          point: selection.point || selection.center || [0, 0, 0],
+          normal: selection.normal || [0, 0, 1],
+          scope: selection.scope || 'face',
+        }),
+      })
+      if (seq !== handleSeq) return
+      if (!result.handle) {
+        post('handle', null)
+        setHandleHint(null)
+        return
+      }
+      state.handle = result.handle
+      setHandleHint(result.handle)
+      post('handle', { ...result.handle, point: selection.point || selection.center })
+    } catch (error) {
+      if (seq !== handleSeq) return
+      state.handle = null
+      post('handle', null)
+      setHandleHint(null)
+    }
+  }
+
+  const commitHandleValue = async (payload) => {
+    if (!state.handle || !state.docId || state.dimensionBusy) return
+    const handle = state.handle
+    const value = Number(payload?.value)
+    if (!Number.isFinite(value)) return
+    const label = dimensionLabel(handle.param, handle.label)
+    let problem = ''
+    if (handle.integer && !Number.isInteger(value)) problem = '需要整数'
+    else if (handle.minimum != null && value < handle.minimum) problem = `不能小于 ${handle.minimum}`
+    else if (handle.maximum != null && value > handle.maximum) problem = `不能大于 ${handle.maximum}`
+    if (problem) {
+      toast(`${label}：${problem}`, 'error', 4)
+      return
+    }
+    state.dimensionBusy = true
+    try {
+      await api(`${base}/api/docs/${state.docId}/tweak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_version: state.version,
+          changes: [{ feature_id: handle.feature_id, params: { [handle.param]: value } }],
+          title: `拖动 ${label} = ${value}${handle.unit || ''}`,
+        }),
+      })
+      toast(`已拖动 ${label} 到 ${value}${handle.unit || ''}`, 'info', 3)
+      await refreshAfterCommit()
+      clearSelection()
+    } catch (error) {
+      toast(`拖动失败：${error.message}${error.hint ? ` · ${error.hint}` : ''}`, 'error', 6)
+    } finally {
+      state.dimensionBusy = false
+      state.drag = null
+    }
+  }
+
   const setPickScope = (scope) => {
     if (!['body', 'face', 'edge', 'point'].includes(scope)) return
     state.pickScope = scope
@@ -1316,8 +1608,17 @@ export function mountWorkbench(host, options) {
 
   const clearSelection = () => {
     pickSeq += 1
+    dimensionSeq += 1
+    handleSeq += 1
     state.selection = null
     state.reference = null
+    state.handle = null
+    state.dimensions = null
+    state.dimensionFeature = null
+    state.drag = null
+    renderDimensions()
+    setHandleHint(null)
+    post('handle', null)
     renderSelection()
     post('highlight', { centers: [] })
   }
@@ -1345,6 +1646,8 @@ export function mountWorkbench(host, options) {
       const centers = resolved.highlight_centers
         || (resolved.center ? [resolved.center] : [])
       post('highlight', centers.length ? { centers, seconds: 0, tone: 'selection' } : { centers: [] })
+      loadDimensions(resolved.feature_id)
+      loadHandle(resolved)
     })
   }
 
@@ -1651,6 +1954,9 @@ export function mountWorkbench(host, options) {
   sectionToggle.addEventListener('click', () => setSection(!state.section.on))
   measureToggle.addEventListener('click', () => setMeasure(!state.measure))
   measureClear.addEventListener('click', () => clearMeasure())
+  dimensionRefresh.addEventListener('click', () => {
+    if (state.dimensionFeature) loadDimensions(state.dimensionFeature)
+  })
   planJobCancel.addEventListener('click', () => cancelJob())
   docNew.addEventListener('click', () => { createModel().catch((error) => toast(error.message, 'error')) })
   docDelete.addEventListener('click', () => {
@@ -3019,6 +3325,13 @@ export function mountWorkbench(host, options) {
       resetReviewTools()
       resetVariants()
       resetCandidates()
+      dimensionSeq += 1
+      handleSeq += 1
+      state.dimensions = null
+      state.dimensionFeature = null
+      state.handle = null
+      renderDimensions()
+      post('handle', null)
       empty.dataset.on = 'true'
       return
     }
@@ -3037,6 +3350,13 @@ export function mountWorkbench(host, options) {
     resetReviewTools()
     resetVariants()
     resetCandidates()
+    dimensionSeq += 1
+    handleSeq += 1
+    state.dimensions = null
+    state.dimensionFeature = null
+    state.handle = null
+    renderDimensions()
+    post('handle', null)
     setLoading(true)
     const startedAt = performance.now()
     const loadTimer = setInterval(() => {
@@ -3215,6 +3535,22 @@ export function mountWorkbench(host, options) {
       }
     } else if (data.type === 'pick') {
       applyPick(data.pick || null)
+    } else if (data.type === 'handleMove') {
+      state.drag = data
+      if (state.handle) {
+        const unit = DIMENSION_UNITS[state.handle.unit] || state.handle.unit
+          || (ANGLE_DIMENSIONS.has(state.handle.param) ? '°'
+            : LINEAR_DIMENSIONS.has(state.handle.param) ? 'mm' : '')
+        dimensionHint.textContent = `拖动 ${dimensionLabel(state.handle.param, state.handle.label)}：`
+          + `${data.value}${unit}`
+        setHandleHint(state.handle, data.value)
+      }
+    } else if (data.type === 'handleCommit') {
+      commitHandleValue(data)
+    } else if (data.type === 'handleCancel') {
+      state.drag = null
+      if (state.handle) setHandleHint(state.handle)
+      toast('已取消拖动，模型未改变', 'info', 2)
     } else if (data.type === 'measure' && data.result) {
       state.measureResult = data.result
       state.measure = true

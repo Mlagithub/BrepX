@@ -57,6 +57,59 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return document["id"], response.json()
 
+    def test_dimension_editing_and_face_handles_use_feature_parameters(self) -> None:
+        with self._client() as client:
+            document_id, _ = self._build_box(client, length=30.0)
+            dimensions = client.get(
+                f"/api/docs/{document_id}/dimensions?feature_id=b1"
+            ).json()
+            values = {item["name"]: item["value"] for item in dimensions["params"]}
+            self.assertEqual(values["length"], 30.0)
+            self.assertEqual(values["width"], 20.0)
+            self.assertEqual(values["height"], 20.0)
+            self.assertEqual(dimensions["params"][0]["unit"], "mm")
+            self.assertEqual(dimensions["params"][0]["minimum"], 0.01)
+            side = client.post(
+                f"/api/docs/{document_id}/handles",
+                json={"feature_id": "b1", "point": [15.0, 0.0, 10.0],
+                      "normal": [1.0, 0.0, 0.0], "scope": "face"},
+            ).json()["handle"]
+            self.assertEqual(side["param"], "length")
+            self.assertEqual(side["axis"], [1.0, 0.0, 0.0])
+            top = client.post(
+                f"/api/docs/{document_id}/handles",
+                json={"feature_id": "b1", "point": [0.0, 0.0, 10.0],
+                      "normal": [0.0, 0.0, 1.0], "scope": "face"},
+            ).json()["handle"]
+            self.assertEqual(top["param"], "height")
+            self.assertEqual(top["axis"], [0.0, 0.0, 1.0])
+
+    def test_cylinder_handle_uses_radius_on_the_side_and_height_on_the_cap(self) -> None:
+        with self._client() as client:
+            document = self._create(client)
+            response = client.put(
+                f"/api/docs/{document['id']}",
+                json={"base_version": 0, "ops": [{
+                    "op": "add",
+                    "feature": {"id": "c1", "type": "k_cylinder",
+                                "params": {"radius": 6.0, "height": 24.0}},
+                }]},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            document_id = document["id"]
+            side = client.post(
+                f"/api/docs/{document_id}/handles",
+                json={"feature_id": "c1", "point": [6.0, 0.0, 12.0],
+                      "normal": [1.0, 0.0, 0.0]},
+            ).json()["handle"]
+            self.assertEqual(side["param"], "radius")
+            cap = client.post(
+                f"/api/docs/{document_id}/handles",
+                json={"feature_id": "c1", "point": [0.0, 0.0, 24.0],
+                      "normal": [0.0, 0.0, 1.0]},
+            ).json()["handle"]
+            self.assertEqual(cap["param"], "height")
+
     def test_health_and_catalog(self) -> None:
         with self._client() as client:
             self.assertEqual(client.get("/api/health").json()["status"], "ok")

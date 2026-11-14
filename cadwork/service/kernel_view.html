@@ -157,6 +157,9 @@ let currentDoc = null
 let currentVersion = -1
 let hasFitted = false
 let highlightTimer = null
+let handleGroup = null
+let handleInfo = null
+let handleDrag = null
 let pointerStart = null
 const activePointers = new Set()
 
@@ -310,6 +313,7 @@ const showSimplified = async (documentId, version, options = {}) => {
     object.userData.simplified = true
     display = object
     scene.add(display)
+    clearHandle()
     previewActive = false
     currentVersion = version
     if (!hasFitted || options.fit) { fit(display); hasFitted = true }
@@ -529,6 +533,7 @@ const showVersion = async (documentId, version, options = {}) => {
     display = object
     scene.add(display)
     disposeObject(keep)
+    clearHandle()
     currentVersion = version
     if (!hasFitted || options.fit) { fit(display); hasFitted = true }
     const edgesStart = performance.now()
@@ -559,6 +564,7 @@ const showPreview = async (url, label) => {
     display = object
     scene.add(display)
     disposeObject(keep)
+    clearHandle()
     if (!hasFitted) { fit(display); hasFitted = true }
     applyWire()
     applySection()
@@ -610,6 +616,169 @@ const pickupIsClick = (event, start) => {
   const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y)
   return moved <= 4 && performance.now() - start.t <= 600
 }
+
+const HANDLE_COLOR = 0x5aa7ff
+const clearHandle = () => {
+  if (handleGroup) {
+    scene.remove(handleGroup)
+    disposeObject(handleGroup)
+    handleGroup = null
+  }
+  handleInfo = null
+  if (handleDrag) {
+    handleDrag = null
+    controls.enabled = true
+  }
+}
+
+const projectScreen = (vector) => {
+  const projected = vector.clone().project(camera)
+  const rect = renderer.domElement.getBoundingClientRect()
+  return {
+    x: rect.left + (projected.x + 1) * 0.5 * rect.width,
+    y: rect.top + (1 - projected.y) * 0.5 * rect.height,
+  }
+}
+
+const handleValueText = (value) => {
+  const unit = handleInfo?.unit ? ` ${handleInfo.unit}` : ''
+  return `${handleInfo?.label || handleInfo?.param || '尺寸'}：${value}${unit}`
+}
+
+const clampHandleValue = (value) => {
+  let next = Number(value)
+  if (!Number.isFinite(next)) return null
+  if (handleInfo?.integer) next = Math.round(next)
+  else next = Math.round(next * 1000) / 1000
+  if (handleInfo?.minimum != null) next = Math.max(handleInfo.minimum, next)
+  if (handleInfo?.maximum != null) next = Math.min(handleInfo.maximum, next)
+  return next
+}
+
+const setHandle = (payload) => {
+  clearHandle()
+  if (!payload?.point || !payload?.axis) return
+  const point = new THREE.Vector3(...payload.point)
+  const axis = new THREE.Vector3(...payload.axis)
+  if (axis.lengthSq() < 1e-12) axis.set(0, 0, 1)
+  axis.normalize()
+  const distance = camera.position.distanceTo(point)
+  const worldPerPixel = 2 * distance
+    * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
+    / Math.max(renderer.domElement.clientHeight, 1)
+  const length = Math.max(worldPerPixel * 90, 0.01)
+  const end = point.clone().addScaledVector(axis, length)
+  const group = new THREE.Group()
+  const material = new THREE.LineBasicMaterial({
+    color: HANDLE_COLOR, depthTest: false, transparent: true, opacity: 0.95,
+  })
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([point, end]), material)
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(length * 0.07, length * 0.18, 12),
+    new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true }),
+  )
+  cone.position.copy(end.clone().addScaledVector(axis, -length * 0.09))
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis)
+  const knob = new THREE.Mesh(
+    new THREE.SphereGeometry(length * 0.085, 12, 8),
+    new THREE.MeshBasicMaterial({ color: HANDLE_COLOR, depthTest: false, transparent: true }),
+  )
+  knob.position.copy(point)
+  group.add(line, cone, knob)
+  group.traverse((child) => { child.renderOrder = 30; child.frustumCulled = false })
+  scene.add(group)
+  handleGroup = group
+  handleInfo = { ...payload, point, axis, length, worldPerPixel }
+  say(`拖动 ${handleValueText(handleInfo.value)}`)
+}
+
+const handleHit = (event) => {
+  if (!handleInfo) return false
+  const start = projectScreen(handleInfo.point)
+  const end = projectScreen(handleInfo.point.clone().addScaledVector(handleInfo.axis, handleInfo.length))
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const length2 = dx * dx + dy * dy
+  const t = length2 > 0
+    ? Math.min(1, Math.max(0, ((event.clientX - start.x) * dx + (event.clientY - start.y) * dy) / length2))
+    : 0
+  const px = start.x + dx * t
+  const py = start.y + dy * t
+  return Math.hypot(event.clientX - px, event.clientY - py) <= 14
+}
+
+const beginHandleDrag = (event) => {
+  if (event.button !== 0 || !handleHit(event)) return false
+  const start = projectScreen(handleInfo.point)
+  const end = projectScreen(handleInfo.point.clone().addScaledVector(handleInfo.axis, handleInfo.length))
+  handleDrag = {
+    id: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    dirX: end.x - start.x,
+    dirY: end.y - start.y,
+    startValue: Number(handleInfo.value),
+    value: clampHandleValue(handleInfo.value),
+  }
+  controls.enabled = false
+  try { renderer.domElement.setPointerCapture(event.pointerId) } catch (error) { /* pointer capture is optional */ }
+  say(`拖动 ${handleValueText(handleDrag.value)}`)
+  return true
+}
+
+const moveHandleDrag = (event) => {
+  if (!handleDrag || event.pointerId !== handleDrag.id) return
+  const dx = event.clientX - handleDrag.startX
+  const dy = event.clientY - handleDrag.startY
+  const pixels = Math.hypot(handleDrag.dirX, handleDrag.dirY) > 0
+    ? (dx * handleDrag.dirX + dy * handleDrag.dirY) / Math.hypot(handleDrag.dirX, handleDrag.dirY)
+    : 0
+  const next = clampHandleValue(handleDrag.startValue + pixels * handleInfo.worldPerPixel)
+  if (next == null || next === handleDrag.value) return
+  handleDrag.value = next
+  say(`拖动 ${handleValueText(next)}`)
+  post('handleMove', { value: next, param: handleInfo.param, feature_id: handleInfo.feature_id })
+}
+
+const finishHandleDrag = (event, cancel = false) => {
+  if (!handleDrag) return
+  const value = handleDrag.value
+  const info = handleInfo
+  try { renderer.domElement.releasePointerCapture(handleDrag.id) } catch (error) { /* already released */ }
+  handleDrag = null
+  controls.enabled = true
+  if (cancel) {
+    post('handleCancel', { param: info?.param, feature_id: info?.feature_id })
+    say('已取消拖动')
+  } else if (info && value === Number(info.value)) {
+    post('handleCancel', { param: info?.param, feature_id: info?.feature_id })
+    say('尺寸未改变')
+  } else {
+    post('handleCommit', { value, param: info?.param, feature_id: info?.feature_id })
+    say(`应用 ${handleValueText(value)}`)
+  }
+}
+
+renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (!beginHandleDrag(event)) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}, true)
+addEventListener('pointermove', (event) => {
+  if (!handleDrag) return
+  event.preventDefault()
+  moveHandleDrag(event)
+}, true)
+addEventListener('pointerup', (event) => {
+  if (!handleDrag) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  finishHandleDrag(event)
+}, true)
+addEventListener('pointercancel', (event) => {
+  if (!handleDrag) return
+  finishHandleDrag(event, true)
+}, true)
 
 renderer.domElement.addEventListener('pointerdown', (event) => {
   activePointers.add(event.pointerId)
@@ -675,6 +844,11 @@ const viewKeys = { 1: 'iso', 2: 'front', 3: 'top', 4: 'right' }
 addEventListener('keydown', (event) => {
   const tag = event.target?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return
+  if (event.key === 'Escape' && handleDrag) {
+    event.preventDefault()
+    finishHandleDrag(event, true)
+    return
+  }
   if (event.ctrlKey || event.metaKey || event.altKey) return
   const name = viewKeys[event.key]
   if (name) {
@@ -732,6 +906,8 @@ addEventListener('message', (event) => {
   } else if (data.type === 'scope') {
     pickScope = ['body', 'face', 'edge', 'point'].includes(data.scope) ? data.scope : 'face'
     say(`选择范围：${{ body: '实体', face: '面', edge: '边', point: '点' }[pickScope]}`)
+  } else if (data.type === 'handle') {
+    setHandle(data.axis ? data : null)
   } else if (data.type === 'wire') {
     wire = typeof data.on === 'boolean' ? data.on : !wire
     applyWire()
