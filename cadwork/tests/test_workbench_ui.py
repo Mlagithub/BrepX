@@ -333,6 +333,134 @@ class WorkbenchBrowserTests(unittest.TestCase):
         self.assertGreater(target.stat().st_size, 10_000)
         self.assertIn("ISO-10303-21", target.read_text(errors="replace")[:200])
 
+    def test_header_is_one_band_with_one_tab_stop(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self._open(document_id)
+
+        bands = page.evaluate(
+            "() => [...document.querySelector('.bxw-header').children]"
+            ".filter(e => e.offsetParent)"
+            ".map(e => Math.round(e.getBoundingClientRect().height))"
+        )
+        # Brand, context and toolbar must sit on one row; a wrapped or mismatched
+        # header is what made the old bar read as four unrelated widgets.
+        self.assertEqual(len(bands), 3, bands)
+        self.assertLessEqual(max(bands) - min(bands), 8, bands)
+
+        toolbar = page.locator(".bxw-toolbar")
+        self.assertEqual(toolbar.get_attribute("role"), "toolbar")
+        self.assertTrue(toolbar.get_attribute("aria-label"))
+        self.assertEqual(
+            toolbar.locator('[role="separator"]').first.get_attribute("aria-orientation"),
+            "vertical",
+        )
+
+        # One tab stop for the whole toolbar: tabbing from the document picker lands on
+        # the first control and leaves the bar again in one press.
+        page.locator(".bxw-context select").focus()
+        page.keyboard.press("Tab")
+        first = page.evaluate("() => document.activeElement.getAttribute('aria-label')")
+        self.assertEqual(first, self._toolbar_items(page)[0])
+        page.keyboard.press("Tab")
+        inside = page.evaluate(
+            "() => document.activeElement.closest('.bxw-toolbar') !== null"
+        )
+        self.assertFalse(inside, "toolbar still exposes more than one tab stop")
+
+    def _toolbar_items(self, page) -> list[str]:
+        return page.evaluate(
+            "() => [...document.querySelectorAll('.bxw-toolbar button')]"
+            ".filter(e => e.offsetParent).map(e => e.getAttribute('aria-label') || e.innerText.trim())"
+        )
+
+    def test_narrow_width_keeps_inspector_stats_and_dock(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self.context.new_page()
+        self.addCleanup(page.close)
+        page.set_viewport_size({"width": 900, "height": 900})
+        page.goto(f"{self.service.base}/workbench?document={document_id}")
+        page.locator(".bxw-shell").wait_for(state="visible")
+        page.get_by_role("button", name="打开或收起检查器").click()
+        page.locator(".bxw-inspector .bxw-stat").first.wait_for(state="visible")
+
+        # The volume badge and the inspector cards used to share a class, so hiding the
+        # badge at this width hid every card too.
+        visible = page.evaluate(
+            "() => [...document.querySelectorAll('.bxw-inspector .bxw-stat')]"
+            ".filter(e => e.offsetParent !== null).length"
+        )
+        self.assertGreaterEqual(visible, 4)
+
+        page.set_viewport_size({"width": 320, "height": 800})
+        page.wait_for_timeout(600)
+        dock = page.evaluate(
+            "() => { const d = document.querySelector('.bxw-dock');"
+            " return { scroll: d.scrollWidth, client: d.clientWidth }; }"
+        )
+        self.assertLessEqual(dock["scroll"], dock["client"] + 1, dock)
+        small = page.evaluate(
+            "() => [...document.querySelectorAll('.bxw-header button')]"
+            ".filter(e => e.offsetParent)"
+            ".map(e => { const r = e.getBoundingClientRect();"
+            " return [Math.round(r.width), Math.round(r.height)]; })"
+            ".filter(([w, h]) => w < 24 || h < 24)"
+        )
+        self.assertEqual(small, [], f"controls below the 24px minimum: {small}")
+
+    def test_command_menu_lists_the_slash_commands(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self._open(document_id)
+
+        menu = page.locator(".bxw-command-menu")
+        self.assertTrue(menu.is_hidden())
+        page.get_by_role("button", name="命令列表").click()
+        menu.wait_for(state="visible")
+        names = menu.locator("code").all_inner_texts()
+        self.assertIn("/fit", names)
+        self.assertIn("/checks", names)
+        self.assertGreaterEqual(len(names), 10)
+
+        menu.locator("button").first.click()
+        command = page.get_by_label("命令或设计意图")
+        self.assertEqual(command.input_value(), "/fit")
+        self.assertTrue(menu.is_hidden())
+
+    def test_dock_does_not_cover_the_model(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self._open(document_id)
+        page.wait_for_timeout(2500)
+        page.get_by_role("button", name="适配视图").click()
+        page.wait_for_timeout(1500)
+
+        frame = page.locator(".bxw-frame").bounding_box()
+        dock = page.locator(".bxw-dock").bounding_box()
+        self.assertIsNotNone(frame)
+        self.assertIsNotNone(dock)
+        dock_top = dock["y"] - frame["y"]
+
+        # An element screenshot paints whatever overlaps it, so the dock is hidden for
+        # the measurement; otherwise its own border is counted as model geometry.
+        page.evaluate("() => { document.querySelector('.bxw-dock').style.visibility = 'hidden' }")
+        png = self._canvas(page).screenshot()
+
+        # The viewport draws its own status strip along the bottom edge, so the model
+        # band is measured above it.
+        image = Image.open(io.BytesIO(png)).convert("RGB")
+        width, height = image.size
+        crop = image.crop((0, 0, width, height - 70))
+        pixels = crop.load()
+        background = pixels[5, 5]
+        rows = [
+            y
+            for y in range(crop.height)
+            if any(
+                sum(abs(a - b) for a, b in zip(pixels[x, y], background)) > 40
+                for x in range(0, width, 3)
+            )
+        ]
+        self.assertTrue(rows, "viewport is blank")
+        self.assertLess(rows[-1], dock_top, "the model extends behind the command dock")
+
     def _documents(self) -> list[dict[str, Any]]:
         return self.context.request.get(f"{self.service.base}/api/docs").json()
 

@@ -608,6 +608,9 @@ let sectionT = 0.5
 let currentDoc = null
 let currentVersion = -1
 let hasFitted = false
+// Pixels covered by the host's floating command dock. The camera is shifted so the
+// model sits in the visible area instead of behind the dock.
+let bottomInset = 0
 let highlightTimer = null
 let handleGroup = null
 let handleInfo = null
@@ -676,14 +679,24 @@ const fit = (object) => {
   if (box.isEmpty()) return
   const sphere = box.getBoundingSphere(new THREE.Sphere())
   const radius = Math.max(sphere.radius, 1)
-  // The hub covers the lower part of the canvas, so frame the part slightly
-  // above the geometric centre and leave margin around it.
-  const lift = new THREE.Vector3(0, 0, -radius * 0.24)
   const direction = camera.position.clone().sub(controls.target)
   if (direction.lengthSq() < 1e-9) direction.set(1, -1, 0.78)
   direction.normalize()
-  controls.target.copy(sphere.center).add(lift)
-  camera.position.copy(controls.target).addScaledVector(direction, radius * 3.1)
+  const canvasHeight = Math.max(renderer.domElement.clientHeight, 1)
+  // Fit into the band the host leaves visible, not the whole canvas: the dock covers the
+  // bottom edge, so a fit computed for the full height puts the lower rim behind it.
+  const visibleHeight = Math.max(canvasHeight - bottomInset, canvasHeight * 0.4)
+  const distance = radius * 3.1 * (canvasHeight / visibleHeight)
+  // Shift the look-at target down the screen by half of the covered band, so the part is
+  // centred in the area above the dock. The camera moves with the target, which is what
+  // moves the part up in the frame.
+  const screenUp = camera.up.clone().projectOnPlane(direction.clone().negate()).normalize()
+  const verticalSpan = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)
+  const shift = bottomInset > 0
+    ? (bottomInset / 2) * (verticalSpan / canvasHeight)
+    : radius * 0.24
+  controls.target.copy(sphere.center).addScaledVector(screenUp, -shift)
+  camera.position.copy(controls.target).addScaledVector(direction, distance)
   camera.near = Math.max(radius / 3000, 0.01)
   camera.far = Math.max(radius * 300, 200)
   camera.updateProjectionMatrix()
@@ -2979,6 +2992,10 @@ addEventListener('message', (event) => {
     setView(data.name)
   } else if (data.type === 'fit') {
     if (display) fit(display)
+  } else if (data.type === 'inset') {
+    // Stored only. The host sends it before the first design, so the first fit already
+    // uses it; re-framing on every dock resize would reset a view the user just orbited.
+    bottomInset = Math.max(0, Number(data.bottom) || 0)
   } else if (data.type === 'scope') {
     pickScope = ['body', 'face', 'edge', 'point'].includes(data.scope) ? data.scope : 'face'
     say(`选择范围：${{ body: '实体', face: '面', edge: '边', point: '点' }[pickScope]}`)

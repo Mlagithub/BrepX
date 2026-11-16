@@ -24,6 +24,12 @@ const css = `
     --bxw-bad: var(--dsw-alias-state-error-primary, #f85149);
     --bxw-primary: var(--dsw-alias-label-primary, #e8edf5);
     --bxw-bg: var(--dsw-alias-bg-base, #101318);
+    /* One control height for every chrome row. Rows that mix button sizes read as
+       unrelated widgets, so the header, the dock bar and the composer share it. */
+    --bxw-control-h: 30px;
+    --bxw-badge-h: 24px;
+    /* Minimum hit area. WCAG 2.5.8 needs 24px; coarse pointers get 44px below. */
+    --bxw-target: 24px;
   }
   .bxw-shell *, .bxw-shell *::before, .bxw-shell *::after { box-sizing: border-box; }
   .bxw-shell [hidden] { display: none !important; }
@@ -43,6 +49,15 @@ const css = `
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0;
     min-block-size: 56px; padding: 6px 14px;
     border-bottom: 1px solid var(--bxw-line); background: var(--bxw-panel);
+  }
+  /* Context, toolbar and actions each own one row height, so the row reads as one band
+     instead of four widgets of different sizes. */
+  .bxw-context, .bxw-toolbar { min-block-size: var(--bxw-control-h); }
+  .bxw-toolbar { display: flex; align-items: center; gap: 2px; flex: none; }
+  .bxw-toolbar > [role="group"] { display: flex; align-items: center; gap: 2px; min-inline-size: 0; }
+  .bxw-toolbar > [role="separator"] {
+    flex: none; inline-size: 1px; block-size: 16px; margin: 0 6px;
+    border: 0; background: var(--bxw-line);
   }
   .bxw-brand { display: flex; align-items: center; gap: 8px; flex: none; font-weight: 650; letter-spacing: .2px; }
   .bxw-mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px;
@@ -129,7 +144,7 @@ const css = `
   .bxw-shell[data-theme="light"] .bxw-toast { box-shadow: 0 10px 28px rgb(20 26 34 / 15%); }
 
   .bxw-context select {
-    max-width: min(360px, 40vw); min-block-size: 30px; padding: 0 30px 0 10px; border: 1px solid var(--bxw-line);
+    max-width: min(360px, 40vw); min-block-size: var(--bxw-control-h); padding: 0 30px 0 10px; border: 1px solid var(--bxw-line);
     border-radius: 6px; background-color: var(--bxw-layer) !important; color: var(--bxw-primary) !important;
     appearance: none; -webkit-appearance: none;
     background-image: linear-gradient(45deg, transparent 50%, var(--bxw-soft) 50%), linear-gradient(135deg, var(--bxw-soft) 50%, transparent 50%);
@@ -138,8 +153,12 @@ const css = `
     background-repeat: no-repeat;
   }
   .bxw-version { font: .6875rem/1 var(--dsw-font-mono, ui-monospace, monospace); color: var(--bxw-muted); flex: none; }
-  .bxw-badge { display: inline-flex; align-items: center; gap: 5px; min-block-size: 22px; padding: 0 8px;
+  .bxw-badge { display: inline-flex; align-items: center; gap: 5px; min-block-size: var(--bxw-badge-h); padding: 0 8px;
     border-radius: 999px; border: 1px solid var(--bxw-line); color: var(--bxw-soft); font-size: .6875rem; flex: none; }
+  /* The header volume read-out is a badge, not one of the inspector stat cards; the two
+     used to share the bxw-metric class, so card padding leaked into the header and the
+     narrow breakpoint hid every card while trying to hide the badge. */
+  .bxw-badge-metric { font-variant-numeric: tabular-nums; }
   .bxw-badge[data-tone="ok"] { color: var(--bxw-ok); border-color: color-mix(in srgb, var(--bxw-ok) 42%, transparent); }
   .bxw-badge[data-tone="bad"] { color: var(--bxw-bad); border-color: color-mix(in srgb, var(--bxw-bad) 42%, transparent); }
   .bxw-badge-button { cursor: pointer; }
@@ -275,22 +294,20 @@ const css = `
     border-radius: 6px; background: color-mix(in srgb, var(--bxw-panel) 92%, transparent);
     color: var(--bxw-primary); font-size: .6875rem; pointer-events: none; z-index: 5; white-space: nowrap; }
   .bxw-handle-hint[hidden] { display: none; }
-  .bxw-tools { display: flex; align-items: center; gap: 2px; flex: none; padding-left: 10px;
-    border-left: 1px solid var(--bxw-line); }
-  .bxw-tools .bxw-sep { width: 1px; height: 16px; background: var(--bxw-line); margin: 0 4px; }
-  .bxw-tools button { min-block-size: 26px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); }
+  .bxw-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+  .bxw-tools button { min-block-size: var(--bxw-control-h); min-inline-size: var(--bxw-target); padding: 0 7px;
+    border-color: transparent; color: var(--bxw-soft); }
   .bxw-tools button:hover { color: var(--bxw-primary, #e8edf5); background: var(--bxw-layer); }
   .bxw-tools button[aria-pressed="true"] { color: var(--bxw-accent); background: color-mix(in srgb, var(--bxw-accent) 12%, transparent); }
   .bxw-scopes { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--bxw-layer); }
   .bxw-scopes[hidden] { display: none; }
-  .bxw-scopes button { min-block-size: 22px; min-width: 24px; padding: 0 6px; border: 0; background: transparent;
+  .bxw-scopes button { min-block-size: var(--bxw-target); min-inline-size: var(--bxw-target); padding: 0 6px; border: 0; background: transparent;
     color: var(--bxw-muted); font-size: .625rem; }
   .bxw-scopes button[aria-pressed="true"] { color: var(--bxw-accent);
     background: color-mix(in srgb, var(--bxw-accent) 15%, transparent); }
-  .bxw-caption { display: flex; align-items: center; gap: 0; white-space: nowrap;
+  .bxw-caption { display: flex; flex-wrap: wrap; align-items: center; gap: 0; margin-top: 8px; min-block-size: var(--bxw-target);
     color: var(--bxw-muted); font: .6875rem/1.3 var(--dsw-font-mono, ui-monospace, monospace); }
   .bxw-caption span + span::before { content: "·"; margin: 0 6px; color: var(--bxw-line); }
-  .bxw-dock-bar .bxw-caption { margin-left: auto; }
   .bxw-empty { position: absolute; inset: 0; display: none; place-items: center; padding: 24px;
     background: var(--bxw-bg); }
   .bxw-empty[data-on="true"] { display: grid; }
@@ -374,9 +391,9 @@ const css = `
   .bxw-section h3 { margin: 0; color: var(--bxw-muted); font-size: .6875rem; font-weight: 650;
     letter-spacing: .9px; text-transform: uppercase; }
   .bxw-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .bxw-metric { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
-  .bxw-metric span { display: block; color: var(--bxw-muted); font-size: .6875rem; }
-  .bxw-metric b { display: block; margin-top: 2px; font: .75rem/1.35 var(--dsw-font-mono, ui-monospace, monospace); font-weight: 500; }
+  .bxw-stat { padding: 8px 9px; border: 1px solid var(--bxw-line); border-radius: 6px; background: var(--bxw-layer); }
+  .bxw-stat span { display: block; color: var(--bxw-muted); font-size: .6875rem; }
+  .bxw-stat b { display: block; margin-top: 2px; font: .75rem/1.35 var(--dsw-font-mono, ui-monospace, monospace); font-weight: 500; }
   .bxw-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
   .bxw-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 7px; border-radius: 5px; }
   .bxw-row:hover { background: var(--bxw-layer); }
@@ -483,7 +500,7 @@ const css = `
   .bxw-candidate-reasons { color: var(--bxw-muted); font-size: .625rem; line-height: 1.45; }
   .bxw-candidate-status { color: var(--bxw-muted); font-size: .5625rem; line-height: 1.35; }
   .bxw-candidate-status[data-failed="true"] { color: var(--bxw-danger, #c94f4f); }
-  .bxw-dock-bar { min-block-size: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
+  .bxw-dock-bar { min-block-size: var(--bxw-control-h); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 18px; background: var(--bxw-panel);
     border-radius: 10px 10px 0 0; }
   .bxw-dock:has(.bxw-dock-active:not([hidden])) .bxw-dock-bar { border-radius: 0; }
   .bxw-dock-agent { min-block-size: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-soft); font-size: .6875rem; }
@@ -492,11 +509,25 @@ const css = `
   .bxw-dock-status { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--bxw-muted); font-size: .6875rem; }
   .bxw-dock-history-toggle { min-block-size: 24px; padding: 0 7px; border-color: transparent; color: var(--bxw-muted); font-size: .625rem; }
   .bxw-dock-history-toggle:hover { color: var(--bxw-primary); background: var(--bxw-layer); }
-  .bxw-composer { border-top: 0; background: var(--bxw-panel); padding: 0 10px 10px; border-radius: 0 0 10px 10px; }
+  .bxw-composer { position: relative; border-top: 0; background: var(--bxw-panel); padding: 0 10px 10px; border-radius: 0 0 10px 10px; }
   .bxw-composer[data-target="agent"] { border-top-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
-  .bxw-composer-target { flex: none; min-block-size: 30px; display: inline-flex; align-items: center; padding: 0 8px;
-    border: 1px solid var(--bxw-line); border-radius: 999px; color: var(--bxw-muted); font-size: .6875rem; user-select: none; }
-  .bxw-composer[data-target="agent"] .bxw-composer-target { color: var(--bxw-accent); border-color: color-mix(in srgb, var(--bxw-accent) 45%, var(--bxw-line)); }
+  .bxw-composer-command { flex: none; min-block-size: 34px; padding: 0 9px; gap: 4px; border-color: transparent;
+    color: var(--bxw-soft); font-size: .6875rem; }
+  .bxw-composer-command svg { width: 13px; height: 13px; transform: rotate(-90deg); }
+  .bxw-composer-command[aria-expanded="true"] { color: var(--bxw-accent);
+    background: color-mix(in srgb, var(--bxw-accent) 10%, transparent); }
+  .bxw-command-menu { position: absolute; left: 10px; bottom: calc(100% - 2px); z-index: 22;
+    width: min(340px, calc(100% - 20px)); max-height: min(300px, 46vh); overflow: auto; padding: 5px;
+    border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-panel);
+    box-shadow: 0 14px 34px rgb(0 0 0 / 24%); }
+  .bxw-command-menu[hidden] { display: none; }
+  .bxw-command-list { display: flex; flex-direction: column; }
+  .bxw-command-list button { justify-content: flex-start; gap: 10px; min-block-size: 30px; padding: 0 9px;
+    border-color: transparent; background: transparent; font-size: .75rem; }
+  .bxw-command-list button:hover, .bxw-command-list button:focus-visible { background: var(--bxw-layer); }
+  .bxw-command-list code { flex: none; min-inline-size: 84px; font: .75rem/1 var(--dsw-font-mono, ui-monospace, monospace);
+    color: var(--bxw-accent); }
+  .bxw-command-list small { color: var(--bxw-muted); font-size: .6875rem; }
   .bxw-composer-box { max-width: none; margin: 0; display: flex; align-items: flex-end; gap: 8px;
     padding: 7px; border: 1px solid var(--bxw-line); border-radius: 8px; background: var(--bxw-layer); }
   .bxw-composer-box:focus-within { border-color: color-mix(in srgb, var(--bxw-accent) 70%, var(--bxw-line)); }
@@ -559,10 +590,9 @@ const css = `
     .bxw-context select { max-width: min(300px, 34vw); }
   }
   @media (max-width: 60em) {
-    .bxw-metric { display: none; }
+    .bxw-badge-metric { display: none; }
     .bxw-tools button { padding: 0 5px; }
     .bxw-review-trigger span { display: none; }
-    .bxw-scopes button { min-width: 20px; padding: 0 4px; }
   }
   @media (max-width: 45em) {
     .bxw-resizer { display: none; }
@@ -572,11 +602,12 @@ const css = `
     }
     .bxw-models { left: 8px; }
     .bxw-inspector { right: 8px; }
-    .bxw-tools, .bxw-actions { flex: 1 1 auto; flex-wrap: wrap; }
+    .bxw-toolbar { flex: 1 1 auto; flex-wrap: wrap; }
     .bxw-brand span { display: none; }
     .bxw-context select { max-width: 32vw; }
   }
   @media (pointer: coarse) {
+    .bxw-shell { --bxw-control-h: 44px; --bxw-target: 44px; }
     .bxw-shell button, .bxw-shell select, .bxw-shell input[type="number"],
     .bxw-shell input[type="range"] { min-block-size: 44px; }
     .bxw-shell button { min-inline-size: 44px; }
@@ -803,10 +834,13 @@ export function mountWorkbench(host, options) {
   // The workbench is injected into the dsh client, which already owns the page's
   // banner/main landmarks; a div with the same layout classes keeps this chrome from
   // duplicating them.
-  const header = el('div', { className: 'bxw-header', role: 'group', 'aria-label': 'BrepX 工作台工具栏' })
+  const header = el('div', { className: 'bxw-header' })
   const brand = el('div', { className: 'bxw-brand' })
   brand.append(el('span', { className: 'bxw-mark', htmlUnsafe: ICONS.cube }), el('span', {}, 'BrepX'))
-  const context = el('div', { className: 'bxw-context' })
+  // Document context is not a toolbar action: it names what the canvas is showing.
+  // Keeping it outside role="toolbar" keeps the select out of the toolbar's arrow-key
+  // roving focus, where it would fight the select's own arrow handling.
+  const context = el('div', { className: 'bxw-context', role: 'group', 'aria-label': '文档上下文' })
   const contextLabel = el('span', { className: 'bxw-context-label' }, '模型')
   const docSearch = el('input', {
     type: 'search', className: 'bxw-doc-search', placeholder: '搜索模型', 'aria-label': '搜索模型',
@@ -817,7 +851,7 @@ export function mountWorkbench(host, options) {
   // The status text is separate from the inspector control: a count is not an action,
   // and naming the toggle after a changing number makes voice control unstable.
   const checkBadge = el('span', { className: 'bxw-badge' }, '检查 —')
-  const metricBadge = el('span', { className: 'bxw-badge bxw-metric' }, '—')
+  const metricBadge = el('span', { className: 'bxw-badge bxw-badge-metric' }, '—')
   context.append(contextLabel, docSearch, docSelect, version, checkBadge, metricBadge)
   const actions = el('div', { className: 'bxw-actions' })
   const importInput = el('input', {
@@ -975,12 +1009,22 @@ export function mountWorkbench(host, options) {
   actions.append(importButton, importInput, structureButton, viewButton, bomButton,
     inspectorToggle, themeButton, reviewButton, viewMenu, reviewMenu)
   const progressLine = el('div', { className: 'bxw-progress', 'aria-hidden': 'true' })
-  header.append(brand, context, actions, progressLine)
+  // One toolbar, two groups: what the viewport shows, and what acts on the document.
+  // `focusgroup` gives the whole bar a single tab stop and arrow-key movement so the
+  // keyboard no longer has to tab through every control to leave the header.
+  const toolbar = el('div', {
+    className: 'bxw-toolbar', role: 'toolbar', 'aria-label': '视图与操作',
+    focusgroup: 'toolbar wrap',
+  })
+  const toolbarSeparator = el('span', { role: 'separator', 'aria-orientation': 'vertical' })
+  actions.setAttribute('role', 'group')
+  actions.setAttribute('aria-label', '操作')
+  header.append(brand, context, toolbar, progressLine)
 
   const main = el('div', { className: 'bxw-main' })
   const stage = el('section', { className: 'bxw-stage' })
   const frame = el('iframe', { className: 'bxw-frame', title: '3D 模型', src: `${base}/api/kernel-view` })
-  const tools = el('div', { className: 'bxw-tools' })
+  const tools = el('div', { className: 'bxw-tools', role: 'group', 'aria-label': '视图' })
   const toolButtons = {}
   for (const [name, label] of [['iso', '等轴'], ['front', '前'], ['top', '顶'], ['right', '右']]) {
     const button = el('button', { type: 'button', title: `${label}视图`, 'aria-label': `${label}视图` }, label)
@@ -988,7 +1032,7 @@ export function mountWorkbench(host, options) {
     toolButtons[name] = button
     tools.append(button)
   }
-  tools.append(el('span', { className: 'bxw-sep' }))
+  tools.append(el('span', { role: 'separator', 'aria-orientation': 'vertical' }))
   const fitButton = el('button', { type: 'button', title: '适配视图', 'aria-label': '适配视图', htmlUnsafe: ICONS.fit })
   fitButton.addEventListener('click', () => post('fit', {}))
   const wireButton = el('button', { type: 'button', title: '线框模式', 'aria-label': '线框模式', htmlUnsafe: ICONS.wire })
@@ -1017,7 +1061,7 @@ export function mountWorkbench(host, options) {
     post('assembly-xray', { on: state.xray, paths: state.xray ? paths : [] })
   })
   tools.append(fitButton, wireButton, xrayButton)
-  tools.append(el('span', { className: 'bxw-sep' }))
+  tools.append(el('span', { role: 'separator', 'aria-orientation': 'vertical' }))
   const scopeGroup = el('div', { className: 'bxw-scopes', role: 'group', 'aria-label': '选择范围' })
   const scopeButtons = {}
   for (const [scope, label, title] of [
@@ -1032,12 +1076,7 @@ export function mountWorkbench(host, options) {
     scopeGroup.append(button)
   }
   tools.append(scopeGroup)
-  header.insertBefore(tools, actions)
-  const caption = el('div', { className: 'bxw-caption' })
-  const captionFaces = el('span', {}, '—')
-  const captionTight = el('span', {}, '—')
-  const captionTiming = el('span', {}, '')
-  caption.append(captionFaces, captionTight, captionTiming)
+  toolbar.append(tools, toolbarSeparator, actions)
   const empty = el('div', { className: 'bxw-empty' })
   const emptyCard = el('div', { className: 'bxw-empty-card' })
   const emptySpinner = el('div', { className: 'bxw-spinner', hidden: true })
@@ -1095,19 +1134,27 @@ export function mountWorkbench(host, options) {
   const metricsGrid = el('div', { className: 'bxw-metrics' })
   const metricNodes = {}
   for (const [key, label] of [['faces', '面'], ['volume', '体积 mm³'], ['area', '面积 mm²'], ['watertight', '水密']]) {
-    const card = el('div', { className: 'bxw-metric' })
+    const card = el('div', { className: 'bxw-stat' })
     card.append(el('span', {}, label), el('b', {}, '—'))
     metricNodes[key] = card.querySelector('b')
     metricsGrid.append(card)
   }
   metricsSection.append(metricsGrid)
+  // Viewport read-out belongs with the geometry it describes. It used to sit in the
+  // command bar, where render timing and face counts read as chat state.
+  const caption = el('div', { className: 'bxw-caption' })
+  const captionFaces = el('span', {}, '—')
+  const captionTight = el('span', {}, '—')
+  const captionTiming = el('span', {}, '')
+  caption.append(captionFaces, captionTight, captionTiming)
+  metricsSection.append(caption)
 
   const assemblySection = el('section', { className: 'bxw-section', hidden: true })
   assemblySection.append(el('h3', {}, '装配'))
   const assemblyGrid = el('div', { className: 'bxw-metrics' })
   const assemblyMetricNodes = {}
   for (const [key, label] of [['instances', '实例'], ['definitions', '定义'], ['parts', '零件'], ['failures', '失败']]) {
-    const card = el('div', { className: 'bxw-metric' })
+    const card = el('div', { className: 'bxw-stat' })
     card.append(el('span', {}, label), el('b', {}, '—'))
     assemblyMetricNodes[key] = card.querySelector('b')
     assemblyGrid.append(card)
@@ -1250,24 +1297,87 @@ export function mountWorkbench(host, options) {
   const dockAgent = el('button', { type: 'button', className: 'bxw-dock-agent', 'aria-label': '展开 Agent 历史', htmlUnsafe: ICONS.chat + '<span>Agent</span>' })
   const dockStatus = el('span', { className: 'bxw-dock-status' }, '等待指令')
   const historyToggle = el('button', { type: 'button', className: 'bxw-dock-history-toggle' }, '历史')
-  dockBar.append(dockAgent, dockStatus, caption, historyToggle)
+  dockBar.append(dockAgent, dockStatus, historyToggle)
   const historyPeek = el('div', { className: 'bxw-history-peek', hidden: true })
   dock.append(activeCard, dockBar, historyPanel, historyPeek)
 
   const composer = el('form', { className: 'bxw-composer' })
   const selectionBar = el('div', { className: 'bxw-selection', hidden: true })
   const composerBox = el('div', { className: 'bxw-composer-box' })
-  const composerTarget = el('span', { className: 'bxw-composer-target', 'aria-hidden': 'true' }, '命令')
+  // A real button, not a mode chip: the previous "命令" pill was aria-hidden and inert,
+  // so the only way to learn the command set was to read the hint line.
+  const commandButton = el('button', {
+    type: 'button', className: 'bxw-composer-command', title: '查看可用命令',
+    'aria-label': '命令列表', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    htmlUnsafe: ICONS.chevronRight + '<span>命令</span>',
+  })
   const input = el('textarea', {
     rows: 1,
     placeholder: '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40',
     'aria-label': '命令或设计意图',
   })
   const send = el('button', { type: 'submit', className: 'bxw-send', 'aria-label': '执行或发送给 Agent', htmlUnsafe: ICONS.send + '<span>执行</span>' })
-  composerBox.append(composerTarget, input, send)
+  composerBox.append(commandButton, input, send)
   composer.dataset.target = 'inspect'
-  const hint = el('div', { className: 'bxw-hint' }, '/fit /top /front /checks /find /agent /new   ·   Enter 执行 · Shift+Enter 换行')
-  composer.append(selectionBar, composerBox, hint)
+  const commandMenu = el('div', {
+    className: 'bxw-command-menu', role: 'dialog', 'aria-label': '命令列表', hidden: true,
+  })
+  const commandList = el('div', { className: 'bxw-command-list' })
+  commandMenu.append(commandList)
+  const COMMANDS = [
+    ['/fit', '适配视图'],
+    ['/iso', '等轴视图'],
+    ['/top', '顶视图'],
+    ['/front', '前视图'],
+    ['/right', '右视图'],
+    ['/wire', '线框模式'],
+    ['/checks', '打开检查器'],
+    ['/agent', '展开 Agent 历史'],
+    ['/models', '结构面板'],
+    ['/new', '新建模型'],
+    ['/refresh', '刷新模型状态'],
+    ['/export step', '导出当前版本'],
+    ['/find ', '按描述查找特征'],
+  ]
+  for (const [name, description] of COMMANDS) {
+    const item = el('button', { type: 'button' })
+    item.append(el('code', {}, name.trim()), el('small', {}, description))
+    item.addEventListener('click', () => {
+      input.value = name
+      closeCommands()
+      input.focus()
+      input.setSelectionRange(name.length, name.length)
+    })
+    commandList.append(item)
+  }
+  const closeCommands = () => {
+    if (commandMenu.hidden) return
+    commandMenu.hidden = true
+    commandButton.setAttribute('aria-expanded', 'false')
+  }
+  const openCommands = () => {
+    commandMenu.hidden = false
+    commandButton.setAttribute('aria-expanded', 'true')
+    commandList.querySelector('button')?.focus()
+  }
+  commandButton.addEventListener('click', () => {
+    if (commandMenu.hidden) openCommands()
+    else closeCommands()
+  })
+  commandMenu.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeCommands()
+      commandButton.focus()
+    }
+  })
+  document.addEventListener('pointerdown', (event) => {
+    if (commandMenu.hidden) return
+    if (commandMenu.contains(event.target) || commandButton.contains(event.target)) return
+    closeCommands()
+  })
+  const hint = el('div', { className: 'bxw-hint' }, 'Enter 执行 · Shift+Enter 换行 · 不以 / 开头时发送给 Agent')
+  composer.append(selectionBar, composerBox, commandMenu, hint)
 
   dock.append(composer)
   const variantPanel = el('div', {
@@ -1326,6 +1436,10 @@ export function mountWorkbench(host, options) {
   const rightResizer = el('div', { className: 'bxw-resizer bxw-resizer-right', role: 'separator', tabindex: '0', 'aria-label': '调整检查器宽度', 'aria-orientation': 'vertical' })
   main.append(leftResizer, rightResizer)
   host.append(shell)
+  // Chromium reads the focusgroup attribute when the element becomes connected, so the
+  // value set while the tree was still detached is not picked up; applying it again
+  // after insertion is what collapses the toolbar to a single tab stop.
+  toolbar.setAttribute('focusgroup', 'toolbar wrap')
 
   const viewportTheme = () => state.theme === 'light'
     ? { background: '#eef2f7', foreground: '#141a22', light: true }
@@ -1378,7 +1492,16 @@ export function mountWorkbench(host, options) {
   }
 
   const dockResize = new ResizeObserver(() => {
-    shell.style.setProperty('--bxw-dock-h', `${Math.ceil(dock.getBoundingClientRect().height)}px`)
+    const height = Math.ceil(dock.getBoundingClientRect().height)
+    shell.style.setProperty('--bxw-dock-h', `${height}px`)
+    // The dock floats over the canvas. Tell the viewport how much of its bottom edge is
+    // covered so `fit` frames the model in the visible area instead of centring it
+    // behind the command box.
+    try {
+      frame.contentWindow?.postMessage(
+        { from: 'brepx-workbench', type: 'inset', bottom: height + 12 }, frameOrigin,
+      )
+    } catch (error) { /* the frame may be between navigations */ }
   })
   dockResize.observe(dock)
   const inspectorResize = new ResizeObserver(() => {
@@ -1521,7 +1644,6 @@ export function mountWorkbench(host, options) {
 
   const setComposerTarget = (agent) => {
     composer.dataset.target = agent ? 'agent' : 'inspect'
-    composerTarget.textContent = agent ? 'Agent' : '命令'
     input.placeholder = agent
       ? '回复 Agent，或输入 /命令…'
       : '输入命令，或描述设计变更… 例如 /fit、/checks、把中心孔改为 Ø40'
@@ -6729,6 +6851,13 @@ export function mountWorkbench(host, options) {
       state.designRetries = 0
       state.lastFailureAt = 0
       post('theme', viewportTheme())
+      // Sent before the first design so `fit` already knows the dock's footprint;
+      // messages on the frame's channel are delivered in order.
+      post('inset', { bottom: Math.ceil(dock.getBoundingClientRect().height) + 12 })
+      // The frame was still loading when the dock measured itself, so the inset is
+      // repeated once it can receive messages.
+      dockResize.unobserve(dock)
+      dockResize.observe(dock)
       if (state.kind === 'assembly') {
         if (state.assembly && (state.pendingAssemblyPreview || state.assemblyGeometryShown)) {
           showAssemblyGeometry()
@@ -6927,6 +7056,32 @@ export function mountWorkbench(host, options) {
     questionScanFrame = requestAnimationFrame(scanDockQuestion)
   })
   dockObserver.observe(agentSlot, { childList: true, subtree: true })
+
+  // `focusgroup` narrows the toolbar to one tab stop natively (Chromium). Elsewhere the
+  // first control holds the stop and the arrow keys move between controls, so the
+  // header does not force a Tab through every button before reaching the canvas.
+  if (!('focusGroup' in HTMLElement.prototype)) {
+    const toolbarItems = () => [...toolbar.querySelectorAll('button, select, input, [tabindex="0"]')]
+      .filter((node) => node.offsetParent !== null)
+    const setStop = (active) => {
+      for (const node of toolbarItems()) node.tabIndex = node === active ? 0 : -1
+    }
+    setStop(toolbarItems()[0])
+    toolbar.addEventListener('focusin', (event) => {
+      if (!(event.target instanceof Element) || !toolbar.contains(event.target)) return
+      if (!event.target.matches('button, select, input, [tabindex="0"]')) return
+      setStop(event.target)
+    })
+    toolbar.addEventListener('keydown', (event) => {
+      const items = toolbarItems()
+      const index = items.indexOf(document.activeElement)
+      if (index < 0) return
+      const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+      if (!step) return
+      event.preventDefault()
+      items[(index + step + items.length) % items.length].focus()
+    })
+  }
 
   try {
     const savedLayout = JSON.parse(localStorage.getItem('cadview.layout') || '{}')
