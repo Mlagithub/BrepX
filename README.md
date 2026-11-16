@@ -108,6 +108,23 @@ python -m cadwork.service --port 8765
 浏览器实跑证据保存在 [artifacts/gen-tests/browser-mwdawbfs](artifacts/gen-tests/browser-mwdawbfs/)（本地目录，已加入 `.gitignore`，不随仓库提交）：
 152 份 JSON、78 份 STEP、152 张 PNG、4 张页面截图、`manifest.json` 与 `summary.json`。
 
+## 视口测试（Playwright，无需桌面）
+
+`cadwork/tests/test_workbench_ui.py` 启动一个临时服务，用无头 Chromium 打开工作台，
+断言视口画出真实几何（WebGL 上下文 + 非空白画布）、视图切换确实重绘、点选返回真实面与
+面积、`/checks` 结果进入检查器、主题切换生效、STEP 下载是 Part 21。无 DRI 设备时自动
+走 ANGLE SwiftShader 软件渲染。
+
+```bash
+python -m pip install -r requirements-ui.txt   # playwright
+python -m playwright install chromium          # 或用 BREPX_CHROMIUM 指向系统 chromium
+cd plugins/cadview && npm install && npm run build
+python -m unittest cadwork.tests.test_workbench_ui -v
+```
+
+缺 Playwright、缺 Chromium 或视口未构建时，该模块整体跳过，不会污染
+`unittest discover` 的结果。
+
 ## 内核清单
 
 `python scripts/kernel_inventory.py --check` 枚举 smlibpy 0.6.2 的全部公开 callable

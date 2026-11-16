@@ -1,0 +1,5 @@
+# Optional tooling for cadwork/tests/test_workbench_ui.py: real-browser checks of the
+# viewport. Install the browser once with `playwright install chromium`; set
+# BREPX_CHROMIUM to reuse a system Chromium instead.
+-r requirements.txt
+playwright>=1.45
