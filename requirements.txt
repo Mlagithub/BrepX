@@ -1,4 +1,7 @@
-smlibpy>=0.6,<0.7
+# The [mcp] extra brings websockets. smlibpy's MCP server starts its viewer link
+# server on every run_script that has a scene, even with SMLIBPY_VIEWER=off, so the
+# script backend fails with "Error executing tool run_script" without it.
+smlibpy[mcp]>=0.6,<0.7
 fastapi>=0.100.0
 uvicorn>=0.23.0
 pydantic>=2.0.0
