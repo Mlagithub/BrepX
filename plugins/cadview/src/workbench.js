@@ -751,6 +751,11 @@ export function mountWorkbench(host, options) {
     pickScope: 'face',
     inspector: true,
     busy: false,
+    // Server-sent state for the open document. Agent edits happen in another request,
+    // so without this stream the workbench shows a version that no longer exists.
+    events: null,
+    eventsDocId: null,
+    eventsTimer: null,
     selection: null,
     leftWidth: 260,
     rightWidth: 320,
@@ -1085,9 +1090,10 @@ export function mountWorkbench(host, options) {
   emptyCard.append(emptySpinner, emptyTitle, emptyBody)
   const emptyActions = el('div', { className: 'bxw-empty-actions' })
   const emptyButton = el('button', { type: 'button', htmlUnsafe: ICONS.plus + '<span>新建模型</span>' })
+  const emptyAssemblyButton = el('button', { type: 'button', title: '新建装配文档' }, '新建装配')
   const assemblyPreviewButton = el('button', { type: 'button', hidden: true }, '显示装配几何')
   const assemblyCancelButton = el('button', { type: 'button', className: 'bxw-preview-cancel', hidden: true }, '清除预览')
-  emptyActions.append(emptyButton, assemblyPreviewButton, assemblyCancelButton)
+  emptyActions.append(emptyButton, emptyAssemblyButton, assemblyPreviewButton, assemblyCancelButton)
   const emptyHint = el('p', { className: 'bxw-empty-hint', hidden: true })
   emptyCard.append(emptyActions, emptyHint)
   empty.append(emptyCard)
@@ -1260,7 +1266,16 @@ export function mountWorkbench(host, options) {
   planSection.append(planHead, planPicker, planActions, planJob, planDetails)
 
   const historySection = el('section', { className: 'bxw-section', hidden: true })
-  historySection.append(el('h3', {}, '版本历史'))
+  const historyHead = el('div', { className: 'bxw-section-head' })
+  historyHead.append(el('h3', {}, '版本历史'))
+  // Undo goes to the latest milestone's parent, which is not always version-1: after a
+  // revert the parent chain and the version numbers diverge, so this cannot be spelled
+  // with the per-row "回滚" control.
+  const historyUndo = el('button', {
+    type: 'button', title: '撤销最近一次提交，回到它之前的版本',
+  }, '撤销上一步')
+  historyHead.append(historyUndo)
+  historySection.append(historyHead)
   const historyList = el('div', {})
   historySection.append(historyList)
 
@@ -1275,8 +1290,9 @@ export function mountWorkbench(host, options) {
   docSection.append(el('h3', {}, '文档'))
   const docActions = el('div', { className: 'bxw-doc-actions' })
   const docNew = el('button', { type: 'button' }, '新建')
+  const docAssembly = el('button', { type: 'button', title: '新建装配文档' }, '新建装配')
   const docDelete = el('button', { type: 'button' }, '删除当前模型')
-  docActions.append(docNew, docDelete)
+  docActions.append(docNew, docAssembly, docDelete)
   docSection.append(docActions)
 
   inspectorBody.append(metricsSection, assemblySection, assemblyEditSection, selectionSection, focusSection, dimensionSection, planSection,
@@ -1371,11 +1387,12 @@ export function mountWorkbench(host, options) {
       commandButton.focus()
     }
   })
-  document.addEventListener('pointerdown', (event) => {
+  const onCommandPointerDown = (event) => {
     if (commandMenu.hidden) return
     if (commandMenu.contains(event.target) || commandButton.contains(event.target)) return
     closeCommands()
-  })
+  }
+  document.addEventListener('pointerdown', onCommandPointerDown)
   const hint = el('div', { className: 'bxw-hint' }, 'Enter 执行 · Shift+Enter 换行 · 不以 / 开头时发送给 Agent')
   composer.append(selectionBar, composerBox, commandMenu, hint)
 
@@ -2024,6 +2041,67 @@ export function mountWorkbench(host, options) {
     renderState()
   }
 
+  const closeEvents = () => {
+    if (state.eventsTimer) {
+      clearTimeout(state.eventsTimer)
+      state.eventsTimer = null
+    }
+    if (state.events) {
+      state.events.close()
+      state.events = null
+    }
+    state.eventsDocId = null
+  }
+
+  // An agent edit lands as a milestone on the server; everything the browser shows was
+  // fetched before it. The stream is the only signal that the open document moved, so a
+  // version that differs from the rendered one is reloaded once the burst settles.
+  const scheduleExternalRefresh = (docId, version) => {
+    if (!docId || docId !== state.docId) return
+    if (state.eventsTimer) clearTimeout(state.eventsTimer)
+    state.eventsTimer = setTimeout(() => {
+      state.eventsTimer = null
+      if (state.docId !== docId) return
+      // Our own writes refresh through their response; by now the version matches and
+      // there is nothing external to pull.
+      if (Number(version) === state.version) return
+      loadDocument(docId, true)
+        .then(() => toast('模型已在别处更新', 'info', 3))
+        .catch(() => {})
+    }, 350)
+  }
+
+  const watchEvents = (docId) => {
+    if (!docId) {
+      closeEvents()
+      return
+    }
+    if (state.events && state.eventsDocId === docId) return
+    closeEvents()
+    if (typeof EventSource !== 'function') return
+    const source = new EventSource(`${base}/api/docs/${docId}/events`)
+    state.events = source
+    state.eventsDocId = docId
+    const onVersion = (event, name) => {
+      if (state.events !== source || state.docId !== docId) return
+      let payload = null
+      try {
+        payload = event.data ? JSON.parse(event.data) : null
+      } catch (error) {
+        return
+      }
+      const raw = name === 'state' ? payload?.document?.version : payload?.version
+      const version = Number(raw)
+      if (!Number.isFinite(version) || version === state.version) return
+      scheduleExternalRefresh(docId, version)
+    }
+    for (const name of ['state', 'milestone', 'assembly']) {
+      source.addEventListener(name, (event) => onVersion(event, name))
+    }
+    // EventSource reconnects on its own; a dropped stream is reported by the next load.
+    source.addEventListener('error', () => {})
+  }
+
   const loadDimensions = async (featureId) => {
     const seq = ++dimensionSeq
     state.dimensionFeature = featureId || null
@@ -2488,6 +2566,35 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  // An assembly is its own document kind with its own route; without this the only way
+  // to start one was to ask the agent, and every assembly feature was unreachable.
+  const createAssembly = async () => {
+    if (!state.documents) state.documents = []
+    try {
+      const name = `Assembly ${new Date().toLocaleDateString('zh-CN')}`
+      const created = await api(`${base}/api/assemblies`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const id = created?.assembly?.id
+      if (!id) throw new Error('装配响应缺少 assembly.id')
+      // The list decides part-vs-assembly in loadDocument, so it has to be refreshed
+      // before the new id can be opened.
+      await refreshDocumentList()
+      await loadDocument(id, true, true)
+      toast('已创建空白装配')
+    } catch (error) {
+      toast(`新建装配失败：${error.message}`, 'error', 6)
+    }
+  }
+
+  const refreshDocumentList = async () => {
+    state.documents = await api(`${base}/api/docs`)
+    renderDocuments()
+    return state.documents
+  }
+
   // A 40 MB reference file becomes ~53 MB of base64. Building it in one task blocks
   // input for hundreds of milliseconds, so it is encoded in self-contained 3-byte
   // groups and the main thread is yielded every ~1 MB (scheduler.yield where present).
@@ -2706,6 +2813,8 @@ export function mountWorkbench(host, options) {
   })
   planJobCancel.addEventListener('click', () => cancelJob())
   docNew.addEventListener('click', () => { createModel().catch((error) => toast(error.message, 'error')) })
+  docAssembly.addEventListener('click', () => { createAssembly().catch((error) => toast(error.message, 'error')) })
+  historyUndo.addEventListener('click', () => { undoLast().catch((error) => toast(error.message, 'error')) })
   docDelete.addEventListener('click', async () => {
     const name = state.current?.document?.name || state.docId
     const ok = await confirmAction({
@@ -4316,7 +4425,7 @@ export function mountWorkbench(host, options) {
     if (!instances.length) {
       emptySpinner.hidden = true
       emptyTitle.textContent = '空装配'
-      emptyBody.textContent = '这个装配还没有实例；可通过装配编辑或计划添加实例。'
+      emptyBody.textContent = '这个装配还没有实例；添加实例目前由 Agent 完成，可让它在当前装配中放置零件。'
       assemblyPreviewButton.hidden = true
       assemblyCancelButton.hidden = true
       emptyHint.hidden = true
@@ -5764,6 +5873,29 @@ export function mountWorkbench(host, options) {
     }
   }
 
+  const undoLast = async () => {
+    if (!state.docId || state.kind === 'assembly') return
+    const latest = state.current?.milestones?.slice(-1)[0]
+    const target = latest?.parent_version
+    if (target == null) {
+      toast('已是初始版本，没有可撤销的提交', 'info', 3)
+      return
+    }
+    const ok = await confirmAction({
+      title: '撤销上一步',
+      body: `将回到 v${target}；被撤销的版本仍保留在历史中，可以再次回滚过去。`,
+      confirmLabel: '撤销',
+    })
+    if (!ok) return
+    try {
+      await api(`${base}/api/docs/${state.docId}/undo`, { method: 'POST' })
+      toast(`已撤销到 v${target}`, 'info', 3)
+      await loadDocument(state.docId, true)
+    } catch (error) {
+      toast(`撤销失败：${error.message}`, 'error', 6)
+    }
+  }
+
   const selectPlanNode = (nodeId) => {
     state.selectedNode = nodeId
     if (state.selectedBody) {
@@ -6030,6 +6162,9 @@ export function mountWorkbench(host, options) {
     if (signature === historySignature) return
     historySignature = signature
     historySection.hidden = !milestones.length
+    // Undo is the only control that follows the parent chain; it is offered whenever the
+    // newest milestone has one, which the version number alone cannot tell.
+    historyUndo.disabled = milestones.slice(-1)[0]?.parent_version == null
     const fragment = document.createDocumentFragment()
     for (const milestone of recent) {
       const row = el('div', { className: 'bxw-history-row' })
@@ -6391,6 +6526,7 @@ export function mountWorkbench(host, options) {
       if (!stateResult?.assembly) throw new Error('装配响应缺少 assembly')
       state.assembly = stateResult
       state.version = Number(stateResult.assembly.version) || 0
+      watchEvents(docId)
       state.assemblyReferences = referencesFromState(stateResult)
       state.stateBusy = false
       state.assemblyBusy = true
@@ -6454,6 +6590,7 @@ export function mountWorkbench(host, options) {
 
   const loadDocument = async (docId, force = false, manual = false) => {
     if (!docId) {
+      closeEvents()
       state.loadToken = ++loadSeq
       state.loadDocId = null
       state.backgroundStarted = false
@@ -6662,6 +6799,9 @@ export function mountWorkbench(host, options) {
       state.geometryLoading = !vacant && !alreadyShown
       if (!vacant && geometryDisplayed && !alreadyShown) startLoadOverlay()
       renderState({ chromeOnly: true })
+      // Subscribed only after the document is known to exist: a stream for a missing id
+      // would 404 and be retried on every reconnect.
+      watchEvents(docId)
       const sessionId = state.sessionId || options.getSessionId?.()
       if (sessionId) {
         state.sessionId = sessionId
@@ -6752,6 +6892,7 @@ export function mountWorkbench(host, options) {
     renderDocuments()
   })
   emptyButton.addEventListener('click', createModel)
+  emptyAssemblyButton.addEventListener('click', createAssembly)
 
   composer.addEventListener('submit', async (event) => {
     event.preventDefault()
@@ -7153,6 +7294,8 @@ export function mountWorkbench(host, options) {
       window.removeEventListener('message', onMessage)
       document.removeEventListener('keydown', onGlobalKey)
       document.removeEventListener('click', closeViewMenu)
+      document.removeEventListener('pointerdown', onCommandPointerDown)
+      closeEvents()
       shell.remove()
     },
     setSession(sessionId) {

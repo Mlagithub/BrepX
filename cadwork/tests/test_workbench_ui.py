@@ -461,6 +461,76 @@ class WorkbenchBrowserTests(unittest.TestCase):
         self.assertTrue(rows, "viewport is blank")
         self.assertLess(rows[-1], dock_top, "the model extends behind the command dock")
 
+    def test_undo_returns_to_the_parent_milestone(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self._open(document_id)
+        page.get_by_role("button", name="打开或收起检查器").click()
+        undo = page.get_by_role("button", name="撤销上一步")
+        undo.wait_for(state="visible", timeout=STARTUP_TIMEOUT * 1000)
+        before = page.locator(".bxw-badge-metric").inner_text().strip()
+
+        undo.click()
+        page.locator(".bxw-confirm").wait_for(state="visible")
+        self.assertIn("撤销上一步", page.locator(".bxw-confirm").inner_text())
+        page.locator(".bxw-confirm button[value=confirm]").click()
+
+        # Revert is a new commit, so the version moves forward; what must change back is
+        # the content, here to the blank milestone the flange was built from.
+        empty = page.locator(".bxw-empty")
+        empty.wait_for(state="visible", timeout=STARTUP_TIMEOUT * 1000)
+        self.assertIn("空白模型", empty.inner_text())
+        self.assertNotEqual(
+            page.locator(".bxw-badge-metric").inner_text().strip(), before
+        )
+
+    def test_new_assembly_opens_as_an_assembly_document(self) -> None:
+        before = {row["id"] for row in self._documents()}
+        page = self.context.new_page()
+        self.addCleanup(page.close)
+        page.goto(f"{self.service.base}/workbench")
+        page.locator(".bxw-shell").wait_for(state="visible")
+        page.wait_for_timeout(2000)
+        page.get_by_role("button", name="打开或收起检查器").click()
+        page.get_by_role("button", name="新建装配").first.click()
+
+        page.get_by_role("button", name="查看装配 BOM").wait_for(
+            state="visible", timeout=STARTUP_TIMEOUT * 1000
+        )
+        created = {row["id"] for row in self._documents()} - before
+        self.assertEqual(len(created), 1, created)
+        assembly_id = created.pop()
+        self.created.append(assembly_id)
+        self.assertTrue(assembly_id.startswith("a_"), assembly_id)
+        self.assertEqual(
+            page.evaluate("() => document.querySelector('.bxw-context select').value"),
+            assembly_id,
+        )
+        self.assertIn("空装配", page.locator(".bxw-empty").inner_text())
+
+    def test_external_edit_refreshes_the_open_document(self) -> None:
+        document_id = self._document("flange", "flange")
+        page = self._open(document_id)
+        before = page.locator(".bxw-badge-metric").inner_text()
+
+        # An agent edit is an ordinary HTTP write from outside this tab.
+        changed = self.context.request.post(
+            f"{self.service.base}/api/docs/{document_id}/tweak",
+            data={
+                "base_version": 1,
+                "changes": [{"feature_id": "plate", "params": {"radius": 70.0}}],
+                "title": "external edit",
+            },
+        )
+        self.assertEqual(changed.status, 200, changed.text())
+
+        page.wait_for_function(
+            "previous => { const el = document.querySelector('.bxw-badge-metric');"
+            " return el && el.textContent.trim() !== previous; }",
+            arg=before.strip(),
+            timeout=STARTUP_TIMEOUT * 1000,
+        )
+        self.assertEqual(page.locator(".bxw-version").inner_text().strip(), "v2")
+
     def _documents(self) -> list[dict[str, Any]]:
         return self.context.request.get(f"{self.service.base}/api/docs").json()
 
