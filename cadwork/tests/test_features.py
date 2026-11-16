@@ -29,8 +29,14 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("tag_boundary", names)
         # The registry must not contain part-macro names: the kernel generates
         # the steps.
-        for macro_name in ("hub_revolve", "blade_loft", "solid_box", "boolean",
-                           "pattern_circular", "solid_cylinder"):
+        for macro_name in (
+            "hub_revolve",
+            "blade_loft",
+            "solid_box",
+            "boolean",
+            "pattern_circular",
+            "solid_cylinder",
+        ):
             self.assertNotIn(macro_name, names)
         self.assertGreaterEqual(len(names), 90)
 
@@ -170,8 +176,9 @@ class RegistryParamTests(unittest.TestCase):
         with self.assertRaises(FeatureError) as caught:
             resolve_params(spec_for("k_polygon"), {})
         self.assertEqual(caught.exception.code, "INVALID_PARAM")
-        resolved = resolve_params(spec_for("k_polygon"),
-                                  {"points": [[0, 0], [10, 0], [10, 10]]})
+        resolved = resolve_params(
+            spec_for("k_polygon"), {"points": [[0, 0], [10, 0], [10, 10]]}
+        )
         self.assertEqual(resolved["points"][1], [10.0, 0.0])
 
 
@@ -198,21 +205,39 @@ class InputRoleTests(unittest.TestCase):
 
     def test_unexpected_role_is_rejected(self) -> None:
         with self.assertRaises(FeatureError) as caught:
-            validate_feature("pattern", {"target": Ref("f1", "self"),
-                                         "faces": Ref("f1", "faces")})
+            validate_feature(
+                "pattern", {"target": Ref("f1", "self"), "faces": Ref("f1", "faces")}
+            )
         self.assertEqual(caught.exception.code, "INVALID_REFS")
 
     def test_many_role_builds_from_two_bodies(self) -> None:
-        document = Document(id="t", name="t", features=(
-            Feature("c1", "k_cylinder", params={"radius": 5.0, "height": 20.0}),
-            Feature("c2", "k_cylinder", params={"radius": 5.0, "height": 20.0}),
-            Feature("c3", "k_translate", params={"x": 20.0},
-                    refs={"target": Ref("c2", "self")}),
-            Feature("b1", "k_box", params={"length": 20.0, "width": 20.0, "height": 20.0}),
-            Feature("b2", "k_cut",
-                    refs={"target": Ref("b1", "self"),
-                          "others": (Ref("c1", "self"), Ref("c3", "self"))}),
-        ))
+        document = Document(
+            id="t",
+            name="t",
+            features=(
+                Feature("c1", "k_cylinder", params={"radius": 5.0, "height": 20.0}),
+                Feature("c2", "k_cylinder", params={"radius": 5.0, "height": 20.0}),
+                Feature(
+                    "c3",
+                    "k_translate",
+                    params={"x": 20.0},
+                    refs={"target": Ref("c2", "self")},
+                ),
+                Feature(
+                    "b1",
+                    "k_box",
+                    params={"length": 20.0, "width": 20.0, "height": 20.0},
+                ),
+                Feature(
+                    "b2",
+                    "k_cut",
+                    refs={
+                        "target": Ref("b1", "self"),
+                        "others": (Ref("c1", "self"), Ref("c3", "self")),
+                    },
+                ),
+            ),
+        )
         result = build(document, BuildCache())
         self.assertLess(float(result.final.volume), 8000.0)
         self.assertEqual(result.features[-1].feature_id, "b2")
@@ -226,10 +251,17 @@ class FeatureValidationTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "UNKNOWN_FEATURE_TYPE")
 
     def test_unknown_param_fails_at_build(self) -> None:
-        document = Document(id="t", name="t", features=(
-            Feature("f1", "k_box",
-                    params={"length": 1.0, "width": 1.0, "height": 1.0, "nope": 2}),
-        ))
+        document = Document(
+            id="t",
+            name="t",
+            features=(
+                Feature(
+                    "f1",
+                    "k_box",
+                    params={"length": 1.0, "width": 1.0, "height": 1.0, "nope": 2},
+                ),
+            ),
+        )
         with self.assertRaises(BuildError) as caught:
             build(document, BuildCache())
         self.assertEqual(caught.exception.code, "UNKNOWN_PARAM")
@@ -242,12 +274,15 @@ class FeatureValidationTests(unittest.TestCase):
 
     def test_wrong_ref_kind_fails_at_build(self) -> None:
         document = Document(
-            id="t", name="t",
+            id="t",
+            name="t",
             features=(
-                Feature("f1", "k_box",
-                        params={"length": 10.0, "width": 10.0, "height": 10.0}),
-                Feature("f2", "pattern",
-                        refs={"target": Ref("f1", "faces")}),
+                Feature(
+                    "f1",
+                    "k_box",
+                    params={"length": 10.0, "width": 10.0, "height": 10.0},
+                ),
+                Feature("f2", "pattern", refs={"target": Ref("f1", "faces")}),
             ),
         )
         with self.assertRaises(BuildError) as caught:

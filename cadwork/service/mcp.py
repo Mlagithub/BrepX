@@ -109,11 +109,168 @@ def build_mcp_server(service: CADService) -> MCPServer:
         return service.list_documents()
 
     @server.tool()
+    def domain_list() -> list[dict[str, Any]]:
+        """List registered CAD domain packages and their active versions."""
+        from cadwork.domains import default_registry
+
+        return default_registry.list()
+
+    @server.tool()
+    def domain_brief(domain_id: str, version: str | None = None) -> dict[str, Any]:
+        """Return the design-brief fields and gates of one domain package."""
+        from cadwork.domains import DomainError, default_registry
+
+        try:
+            pack = default_registry.get(domain_id, version)
+        except DomainError as exc:
+            raise ToolError(f"{exc.code}: {exc.message}") from exc
+        return {
+            "id": pack.id,
+            "version": pack.version,
+            "brief": pack.brief_schema().to_json(),
+            "gates": [item.to_json() for item in pack.gates()],
+        }
+
+    @server.tool()
     def new_document(name: str = "Workbench") -> dict[str, Any]:
         """Create a blank CAD document and return its id for all following calls."""
         try:
             document = service.store.create(name)
             return service.document_json(document.id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def new_assembly(name: str = "Assembly") -> dict[str, Any]:
+        """Create an empty assembly document at version 1."""
+        try:
+            assembly = service.create_assembly(name)
+            return service.assembly_state(assembly.id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_plan(plan: dict[str, Any], name: str | None = None) -> dict[str, Any]:
+        """Create a version-1 assembly from a declarative instance plan; call
+        assembly_plan_schema for the exact plan, ref, placement and pattern shapes."""
+        try:
+            return service.create_assembly_from_plan(plan, name)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_plan_schema() -> dict[str, Any]:
+        """Return the exact plan, instance, ref, placement and pattern shapes."""
+        return {
+            "plan": {
+                "id": "a_engine (optional; generated when absent)",
+                "name": "Engine (optional)",
+                "version": 1,
+                "instances": ["<instance shape below>"],
+                "checks": [],
+            },
+            "instance": {
+                "id": "blade",
+                "ref": {
+                    "kind": "part",
+                    "document_id": "d_blade",
+                    "version": 3,
+                    "configuration": "default",
+                },
+                "placement": {
+                    "rotation": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                    "translation": [0.0, 0.0, 0.0],
+                },
+                "overrides": {},
+                "name": "Blade",
+                "suppressed": False,
+                "visible": True,
+                "pattern": {
+                    "kind": "polar",
+                    "count": 8,
+                    "radius": 100.0,
+                    "start_angle": 0.0,
+                    "axis": "Z",
+                    "dx": 0.0,
+                    "dy": 0.0,
+                    "dz": 0.0,
+                },
+            },
+            "assembly_ref": {
+                "kind": "assembly",
+                "document_id": "a_rotor",
+                "version": 2,
+            },
+            "pattern": {
+                "kind": "polar|linear",
+                "count": 1,
+                "radius": 0.0,
+                "start_angle": 0.0,
+                "axis": "X|Y|Z",
+                "dx": 0.0,
+                "dy": 0.0,
+                "dz": 0.0,
+            },
+            "notes": [
+                "Every ref pins an exact committed document version; nothing is updated implicitly.",
+                "A pattern expands to instances <id>_0 through <id>_<count-1>; the pattern "
+                "placement is composed after the instance placement.",
+                "Instance ids must stay unique after expansion; unknown fields are rejected.",
+                "The returned state carries assembly metadata, build summary and BOM only, never B-rep.",
+            ],
+        }
+
+    @server.tool()
+    def assembly_state(assembly_id: str) -> dict[str, Any]:
+        """Read assembly instances, build summary, BOM and reference status."""
+        try:
+            return service.assembly_state(assembly_id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_edit(
+        assembly_id: str, base_version: int, ops: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Atomically edit assembly instances; one new version per batch."""
+        try:
+            return service.edit_assembly(assembly_id, base_version, ops)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_scene(assembly_id: str, version: int | None = None) -> dict[str, Any]:
+        """Return shared definition meshes and placed instance paths."""
+        try:
+            return service.assembly_scene(assembly_id, version)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_bom(assembly_id: str, version: int | None = None) -> dict[str, Any]:
+        """Return recursive BOM rows and per-definition quantities."""
+        try:
+            return service.assembly_bom(assembly_id, version)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def assembly_references(assembly_id: str) -> dict[str, Any]:
+        """List pinned references and which instances are outdated."""
+        try:
+            return service.assembly_references(assembly_id)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
+    @server.tool()
+    def update_assembly_references(
+        assembly_id: str, base_version: int, instance_ids: list[str] | None = None
+    ) -> dict[str, Any]:
+        """Explicitly re-pin selected instances to current versions."""
+        try:
+            return service.update_assembly_references(
+                assembly_id, base_version, instance_ids
+            )
         except ServiceError as exc:
             raise _fail(exc) from exc
 
@@ -136,19 +293,23 @@ def build_mcp_server(service: CADService) -> MCPServer:
     ) -> dict[str, Any]:
         """Measure the real bounding box, dry-run a semantic selector, or resolve a picked point."""
         try:
-            return _json_safe(service.probe(
-                document_id,
-                feature_id=feature_id,
-                ref=ref,
-                picked_point=picked_point,
-                picked_normal=picked_normal,
-                picked_area=picked_area,
-            ))
+            return _json_safe(
+                service.probe(
+                    document_id,
+                    feature_id=feature_id,
+                    ref=ref,
+                    picked_point=picked_point,
+                    picked_normal=picked_normal,
+                    picked_area=picked_area,
+                )
+            )
         except ServiceError as exc:
             raise _fail(exc) from exc
 
     @server.tool()
-    def resolve(document_id: str, phrase: str, anchor: str | None = None) -> dict[str, Any]:
+    def resolve(
+        document_id: str, phrase: str, anchor: str | None = None
+    ) -> dict[str, Any]:
         """Map a spoken reference to feature ids and decide if a write is allowed.
 
         `can_write` is false unless the phrase is confident or a picked feature
@@ -171,8 +332,10 @@ def build_mcp_server(service: CADService) -> MCPServer:
             return entries
         needle = category.lower()
         return [
-            entry for entry in entries
-            if needle in entry["type"].lower() or needle in entry.get("summary", "").lower()
+            entry
+            for entry in entries
+            if needle in entry["type"].lower()
+            or needle in entry.get("summary", "").lower()
         ]
 
     @server.tool()
@@ -209,33 +372,61 @@ def build_mcp_server(service: CADService) -> MCPServer:
             },
             "expect_item": {"metric": "solids", "op": "eq", "value": 1},
             "blend_group": {
-                "id": "blend", "kind": "feature", "action": "blend_group",
-                "params": {"kind": "fillet", "size": 2.0, "propagate": True,
-                           "on_failure": "fail"},
-                "refs": {"target": {"source": "body", "select": "self"},
-                         "edges": {"source": "body", "select": "edges",
-                                   "filters": [{"method": "concave"}]}},
+                "id": "blend",
+                "kind": "feature",
+                "action": "blend_group",
+                "params": {
+                    "kind": "fillet",
+                    "size": 2.0,
+                    "propagate": True,
+                    "on_failure": "fail",
+                },
+                "refs": {
+                    "target": {"source": "body", "select": "self"},
+                    "edges": {
+                        "source": "body",
+                        "select": "edges",
+                        "filters": [{"method": "concave"}],
+                    },
+                },
                 "deps": ["body"],
             },
             "thread": {
-                "id": "thread", "kind": "feature", "action": "thread",
-                "params": {"diameter": 12.0, "pitch": 1.75, "length": 30.0,
-                           "depth": 1.2, "center": [0.0, 0.0, 0.0],
-                           "left_handed": False},
+                "id": "thread",
+                "kind": "feature",
+                "action": "thread",
+                "params": {
+                    "diameter": 12.0,
+                    "pitch": 1.75,
+                    "length": 30.0,
+                    "depth": 1.2,
+                    "center": [0.0, 0.0, 0.0],
+                    "left_handed": False,
+                },
                 "refs": {"target": {"source": "body", "select": "self"}},
                 "deps": ["body"],
             },
             "stepped_bore": {
-                "id": "bearing", "kind": "feature", "action": "stepped_bore",
-                "params": {"diameter_1": 40.0, "depth_1": 8.0, "diameter_2": 30.0,
-                           "through": True, "center": [0.0, 0.0, 0.0], "axis": "X"},
+                "id": "bearing",
+                "kind": "feature",
+                "action": "stepped_bore",
+                "params": {
+                    "diameter_1": 40.0,
+                    "depth_1": 8.0,
+                    "diameter_2": 30.0,
+                    "through": True,
+                    "center": [0.0, 0.0, 0.0],
+                    "axis": "X",
+                },
                 "refs": {"target": {"source": "body", "select": "self"}},
                 "deps": ["body"],
             },
             "ops": {
                 "add_node": {"op": "add_node", "node": "<node shape above>"},
-                "update_node": {"op": "update_node",
-                                "node": {"id": "plate", "params": {"length": 100.0}}},
+                "update_node": {
+                    "op": "update_node",
+                    "node": {"id": "plate", "params": {"length": 100.0}},
+                },
                 "remove_node": {"op": "remove_node", "id": "plate"},
                 "set_goal": {"op": "set_goal", "goal": "plate with a bore"},
             },
@@ -247,8 +438,9 @@ def build_mcp_server(service: CADService) -> MCPServer:
         }
 
     @server.tool()
-    def preview(document_id: str, ops: list[dict[str, Any]],
-                base_version: int | None = None) -> dict[str, Any]:
+    def preview(
+        document_id: str, ops: list[dict[str, Any]], base_version: int | None = None
+    ) -> dict[str, Any]:
         """Compile a candidate edit without writing it; returns checks, metrics and changed faces."""
         try:
             return service.preview(document_id, ops, base_version)
@@ -301,8 +493,9 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def revert(document_id: str, target_version: int,
-               title: str | None = None) -> dict[str, Any]:
+    def revert(
+        document_id: str, target_version: int, title: str | None = None
+    ) -> dict[str, Any]:
         """Republish an earlier version's features as a new milestone instead of rewriting history."""
         try:
             return service.revert(document_id, target_version, title)
@@ -310,14 +503,17 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def render(document_id: str, views: list[str] | None = None,
-               feature: str | None = None) -> Image:
+    def render(
+        document_id: str, views: list[str] | None = None, feature: str | None = None
+    ) -> Image:
         """Compose a qualitative multi-view picture for shape and orientation self-checking."""
         wanted = views or ["iso", "front", "top"]
         frames: list[tuple[str, bytes]] = []
         try:
             for view in wanted:
-                frames.append((view, service.render(document_id, feature=feature, view=view)))
+                frames.append(
+                    (view, service.render(document_id, feature=feature, view=view))
+                )
         except ServiceError as exc:
             raise _fail(exc) from exc
         try:
@@ -344,7 +540,9 @@ def build_mcp_server(service: CADService) -> MCPServer:
         """Edit the plan. Each op has op=add_node|update_node|remove_node|set_goal.
         Call plan_schema for the exact shapes; add_node needs a full node with kind."""
         try:
-            return service.plan_edit(document_id, ops, base_revision=base_revision, goal=goal)
+            return service.plan_edit(
+                document_id, ops, base_revision=base_revision, goal=goal
+            )
         except ServiceError as exc:
             raise _fail(exc) from exc
         except Exception as exc:
@@ -364,8 +562,10 @@ def build_mcp_server(service: CADService) -> MCPServer:
         carries one small JSON object instead of a multi-node ops array."""
         try:
             return service.plan_edit(
-                document_id, [{"op": "add_node", "node": node}],
-                base_revision=base_revision, goal=goal,
+                document_id,
+                [{"op": "add_node", "node": node}],
+                base_revision=base_revision,
+                goal=goal,
             )
         except ServiceError as exc:
             raise _fail(exc) from exc
@@ -384,13 +584,17 @@ def build_mcp_server(service: CADService) -> MCPServer:
             raise _fail(exc) from exc
 
     @server.tool()
-    def plan_run(document_id: str, node_id: str,
-                 base_version: int | None = None,
-                 executor: str | None = None) -> dict[str, Any]:
+    def plan_run(
+        document_id: str,
+        node_id: str,
+        base_version: int | None = None,
+        executor: str | None = None,
+    ) -> dict[str, Any]:
         """Execute one ready node, commit its milestone, evaluate its checks and return the plan."""
         try:
-            return service.plan_run(document_id, node_id, base_version=base_version,
-                                    executor=executor)
+            return service.plan_run(
+                document_id, node_id, base_version=base_version, executor=executor
+            )
         except ServiceError as exc:
             raise _fail(exc) from exc
 
@@ -401,13 +605,25 @@ def build_mcp_server(service: CADService) -> MCPServer:
             if action == "clear":
                 return {"cleared": service.store.clear_intents(document_id)}
             if action != "list":
-                raise ServiceError("INVALID_ACTION", "action must be list or clear", status=400)
+                raise ServiceError(
+                    "INVALID_ACTION", "action must be list or clear", status=400
+                )
             return {"intents": service.store.list_intents(document_id)}
         except ServiceError as exc:
             raise _fail(exc) from exc
 
+    @server.tool()
+    def import_step_assembly(path: str, name_prefix: str = "step") -> dict[str, Any]:
+        """Materialize a nested STEP file into part and assembly documents."""
+        try:
+            return service.import_step_documents(path, name_prefix)
+        except ServiceError as exc:
+            raise _fail(exc) from exc
+
     @server.tool(name="import")
-    def import_file(document_id: str, path: str, format: str = "step") -> dict[str, Any]:
+    def import_file(
+        document_id: str, path: str, format: str = "step"
+    ) -> dict[str, Any]:
         """Freeze a local STEP/IGES/B-Rep file into the document as a base body."""
         try:
             return service.import_file(document_id, path, format=format)

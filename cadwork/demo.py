@@ -1,7 +1,7 @@
 """Build the impeller from the command line.
 
-    python -m cadwork.demo
-    python -m cadwork.demo --count 11 --export .tmp/demo
+python -m cadwork.demo
+python -m cadwork.demo --count 11 --export .tmp/demo
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import os
 import sys
 
 from cadwork.design import BuildError, build
-from cadwork.samples.impeller import impeller_document
 from cadwork.samples.registry import SAMPLES
 from cadwork.samples.registry import build as make_sample
 
@@ -51,7 +50,8 @@ def _export(result, directory: str) -> list[str]:
         S.export_step(fluid, path)
         written.append(path)
     boundaries = [
-        {"feature": feature_id, **tag} for feature_id, tag in sorted(result.tags.items())
+        {"feature": feature_id, **tag}
+        for feature_id, tag in sorted(result.tags.items())
     ]
     path = os.path.join(directory, "cfd.json")
     with open(path, "w", encoding="utf-8") as handle:
@@ -62,18 +62,34 @@ def _export(result, directory: str) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a sample document.")
-    parser.add_argument("--sample", default="impeller", choices=tuple(sorted(SAMPLES)),
-                        help="which sample document to build")
-    parser.add_argument("--count", type=int, default=9, help="number of blades (impeller)")
-    parser.add_argument("--wrap", type=float, default=30.0, help="wrap angle in degrees (impeller)")
-    parser.add_argument("--fillet", type=float, default=0.3, help="fillet radius in mm (impeller)")
-    parser.add_argument("--export", default=None, help="directory for STEP/STL/CFD output")
-    parser.add_argument("--json", action="store_true", help="print the build summary as JSON")
+    parser.add_argument(
+        "--sample",
+        default="impeller",
+        choices=tuple(sorted(SAMPLES)),
+        help="which sample document to build",
+    )
+    parser.add_argument(
+        "--count", type=int, default=9, help="number of blades (impeller)"
+    )
+    parser.add_argument(
+        "--wrap", type=float, default=30.0, help="wrap angle in degrees (impeller)"
+    )
+    parser.add_argument(
+        "--fillet", type=float, default=0.3, help="fillet radius in mm (impeller)"
+    )
+    parser.add_argument(
+        "--export", default=None, help="directory for STEP/STL/CFD output"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="print the build summary as JSON"
+    )
     args = parser.parse_args(argv)
 
     if args.sample == "impeller":
-        document = make_sample("impeller", {"count": args.count, "wrap": args.wrap,
-                                           "fillet_radius": args.fillet})
+        document = make_sample(
+            "impeller",
+            {"count": args.count, "wrap": args.wrap, "fillet_radius": args.fillet},
+        )
     else:
         document = make_sample(args.sample)
     try:
@@ -87,15 +103,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
     else:
-        print(f"built {len(result.features)} features in {result.seconds:.2f}s "
-              f"({result.cache_hits} cache hits)")
+        print(
+            f"built {len(result.features)} features in {result.seconds:.2f}s "
+            f"({result.cache_hits} cache hits)"
+        )
         for item in result.features:
             status = "ok" if all(check.ok for check in item.checks) else "FAILED"
-            print(f"  {item.feature_id:>3}  {item.seconds:6.3f}s  {status}  "
-                  f"cached={item.cached}")
+            print(
+                f"  {item.feature_id:>3}  {item.seconds:6.3f}s  {status}  "
+                f"cached={item.cached}"
+            )
         for feature_id, tag in sorted(result.tags.items()):
-            print(f"  tag {feature_id}: {tag['kind']}/{tag['name']} "
-                  f"({tag['faces']} face(s))")
+            print(
+                f"  tag {feature_id}: {tag['kind']}/{tag['name']} "
+                f"({tag['faces']} face(s))"
+            )
 
     if args.export:
         if args.sample == "impeller":

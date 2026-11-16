@@ -26,8 +26,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from cadwork.design import BuildError, build  # noqa: E402
-from cadwork.samples.registry import SAMPLES, build as make_sample  # noqa: E402
+from cadwork.design import BuildError, build
+from cadwork.samples.registry import SAMPLES
+from cadwork.samples.registry import build as make_sample
 
 
 def _check_sample(name: str, out_dir: str, render: bool) -> dict:
@@ -40,12 +41,21 @@ def _check_sample(name: str, out_dir: str, render: bool) -> dict:
 
     final = result.final
     if final is None:
-        return {"sample": name, "ok": False, "error": {"code": "EMPTY", "message": "no output"}}
+        return {
+            "sample": name,
+            "ok": False,
+            "error": {"code": "EMPTY", "message": "no output"},
+        }
 
     checks = [
-        {"feature": item.feature_id, "name": check.name, "ok": check.ok,
-         "hint": check.hint}
-        for item in result.features for check in item.checks
+        {
+            "feature": item.feature_id,
+            "name": check.name,
+            "ok": check.ok,
+            "hint": check.hint,
+        }
+        for item in result.features
+        for check in item.checks
     ]
     failed = [check for check in checks if not check["ok"]]
     report: dict = {
@@ -59,12 +69,17 @@ def _check_sample(name: str, out_dir: str, render: bool) -> dict:
         "seconds": round(result.seconds, 2),
     }
     if failed:
-        report["error"] = {"code": "CHECK_FAILED", "message": f"{len(failed)} check(s) failed",
-                          "checks": failed}
+        report["error"] = {
+            "code": "CHECK_FAILED",
+            "message": f"{len(failed)} check(s) failed",
+            "checks": failed,
+        }
         return report
     if not report["closed"] or report["volume"] <= 0:
-        report["error"] = {"code": "NOT_A_SOLID",
-                           "message": f"closed={report['closed']} volume={report['volume']}"}
+        report["error"] = {
+            "code": "NOT_A_SOLID",
+            "message": f"closed={report['closed']} volume={report['volume']}",
+        }
         return report
 
     from cadwork.service.export import export_bytes
@@ -79,8 +94,10 @@ def _check_sample(name: str, out_dir: str, render: bool) -> dict:
             handle.write(payload)
         written.append(path)
         if len(payload) < 1024:
-            report["error"] = {"code": "EXPORT_TOO_SMALL",
-                               "message": f"{fmt} is only {len(payload)} bytes"}
+            report["error"] = {
+                "code": "EXPORT_TOO_SMALL",
+                "message": f"{fmt} is only {len(payload)} bytes",
+            }
             return report
 
     if render:
@@ -92,8 +109,10 @@ def _check_sample(name: str, out_dir: str, render: bool) -> dict:
             handle.write(png)
         written.append(path)
         if len(png) < 1024:
-            report["error"] = {"code": "RENDER_TOO_SMALL",
-                               "message": f"png is only {len(png)} bytes"}
+            report["error"] = {
+                "code": "RENDER_TOO_SMALL",
+                "message": f"png is only {len(png)} bytes",
+            }
             return report
 
     report["files"] = written
@@ -103,9 +122,13 @@ def _check_sample(name: str, out_dir: str, render: bool) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Build and prove one or more sample parts.")
+    parser = argparse.ArgumentParser(
+        description="Build and prove one or more sample parts."
+    )
     parser.add_argument("--sample", default="volute", choices=sorted(SAMPLES))
-    parser.add_argument("--all", action="store_true", help="check every registered sample")
+    parser.add_argument(
+        "--all", action="store_true", help="check every registered sample"
+    )
     parser.add_argument("--out", default=os.path.join(".tmp", "accept"))
     parser.add_argument("--no-render", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -120,16 +143,22 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for item in reports:
             if item["ok"]:
-                print(f"ok   {item['sample']:9} {item['features']} features | "
-                      f"{item['faces']} faces | {item['volume']} mm3 | "
-                      f"{item['seconds']}s | {len(item['checks'])} checks")
+                print(
+                    f"ok   {item['sample']:9} {item['features']} features | "
+                    f"{item['faces']} faces | {item['volume']} mm3 | "
+                    f"{item['seconds']}s | {len(item['checks'])} checks"
+                )
                 for path in item.get("files", []):
                     print(f"     wrote {path}")
             else:
                 error = item.get("error", {})
-                print(f"FAIL {item['sample']:9} {error.get('code')}: {error.get('message')}")
+                print(
+                    f"FAIL {item['sample']:9} {error.get('code')}: {error.get('message')}"
+                )
                 for check in error.get("checks", []):
-                    print(f"     {check['feature']}.{check['name']}: {check.get('hint')}")
+                    print(
+                        f"     {check['feature']}.{check['name']}: {check.get('hint')}"
+                    )
     return 0 if ok else 1
 
 

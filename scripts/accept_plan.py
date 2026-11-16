@@ -17,12 +17,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from cadwork.design.plan import Expect, PlanNode, plan_node_to_json  # noqa: E402
-from cadwork.samples.impeller import impeller_document  # noqa: E402
-from cadwork.service.service import CADService, ServiceError  # noqa: E402
-from cadwork.service.store import Store  # noqa: E402
-
-from cadwork.design.document import Ref  # noqa: E402
+from cadwork.design.document import Ref
+from cadwork.design.plan import Expect, PlanNode, plan_node_to_json
+from cadwork.samples.impeller import impeller_document
+from cadwork.service.service import CADService, ServiceError
+from cadwork.service.store import Store
 
 
 def _deps(feature) -> tuple[str, ...]:
@@ -58,20 +57,26 @@ def main() -> int:
         )
         for feature in source.features
     ]
-    nodes.append(PlanNode(
-        id="fluid_check", kind="check", title="fluid is one closed solid",
-        deps=("fluid_cavity",),
-        expect=(
-            Expect("solids", "eq", 1),
-            Expect("watertight", "true"),
-        ),
-    ))
+    nodes.append(
+        PlanNode(
+            id="fluid_check",
+            kind="check",
+            title="fluid is one closed solid",
+            deps=("fluid_cavity",),
+            expect=(
+                Expect("solids", "eq", 1),
+                Expect("watertight", "true"),
+            ),
+        )
+    )
     plan = service.plan_edit(
         document.id,
         [{"op": "add_node", "node": plan_node_to_json(node)} for node in nodes],
         goal="impeller with a fluid domain",
     )
-    print(f"plan nodes {len(plan['plan']['nodes'])} revision {plan['plan']['revision']}")
+    print(
+        f"plan nodes {len(plan['plan']['nodes'])} revision {plan['plan']['revision']}"
+    )
 
     issues = service.plan_compile(document.id)
     if issues.get("issues"):
@@ -91,14 +96,21 @@ def main() -> int:
 
     # Failure isolation: a 3 mm fillet must fail without writing a version.
     version = current.version
-    service.plan_edit(document.id, [{
-        "op": "update_node",
-        "node": {"id": "b_fillet", "params": {"radius": 3.0}},
-    }])
+    service.plan_edit(
+        document.id,
+        [
+            {
+                "op": "update_node",
+                "node": {"id": "b_fillet", "params": {"radius": 3.0}},
+            }
+        ],
+    )
     view = service.plan(document.id)
     downstream = {node["id"]: node["status"] for node in view["plan"]["nodes"]}
     if downstream.get("fluid_cavity") != "pending":
-        print(f"FAIL: downstream fluid_cavity was not invalidated: {downstream.get('fluid_cavity')}")
+        print(
+            f"FAIL: downstream fluid_cavity was not invalidated: {downstream.get('fluid_cavity')}"
+        )
         return 1
     try:
         service.plan_run(document.id, "fluid_check")
@@ -118,15 +130,22 @@ def main() -> int:
             print(f"FAIL: version changed after {exc.code}")
             return 1
         print(f"failure isolated: {exc.code}; document still v{version}")
-    service.plan_edit(document.id, [{
-        "op": "update_node",
-        "node": {"id": "b_fillet", "params": {"radius": 0.3}},
-    }])
+    service.plan_edit(
+        document.id,
+        [
+            {
+                "op": "update_node",
+                "node": {"id": "b_fillet", "params": {"radius": 0.3}},
+            }
+        ],
+    )
     service.plan_run(document.id, "b_fillet")
     service.plan_run(document.id, "fluid_cavity")
     service.plan_run(document.id, "fluid_check")
     final = store.get(document.id)
-    print(f"recovered at v{final.version}; timeline {len(service.timeline(document.id))}")
+    print(
+        f"recovered at v{final.version}; timeline {len(service.timeline(document.id))}"
+    )
 
     payload, media = service.export(document.id, "step", feature="b_fillet")
     target = os.path.join(folder, "impeller.step")

@@ -29,8 +29,9 @@ import json
 import re
 import time
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from . import document as _document
 from .document import Filter, Ref
@@ -73,7 +74,7 @@ class Expect:
         return expect_to_json(self)
 
     @classmethod
-    def from_json(cls, payload: Mapping[str, Any] | str) -> "Expect":
+    def from_json(cls, payload: Mapping[str, Any] | str) -> Expect:
         return expect_from_json(payload)
 
 
@@ -113,7 +114,7 @@ class PlanNode:
         return plan_node_to_json(self)
 
     @classmethod
-    def from_json(cls, payload: Mapping[str, Any] | str) -> "PlanNode":
+    def from_json(cls, payload: Mapping[str, Any] | str) -> PlanNode:
         return plan_node_from_json(payload)
 
 
@@ -137,17 +138,18 @@ class ModelingPlan:
         return plan_to_json(self)
 
     @classmethod
-    def from_json(cls, payload: Mapping[str, Any] | str, *,
-                  validate: bool = False) -> "ModelingPlan":
+    def from_json(
+        cls, payload: Mapping[str, Any] | str, *, validate: bool = False
+    ) -> ModelingPlan:
         plan = plan_from_json(payload)
         if validate:
             validate_plan(plan)
         return plan
 
-    def with_node(self, node: PlanNode) -> "ModelingPlan":
+    def with_node(self, node: PlanNode) -> ModelingPlan:
         return with_node(self, node)
 
-    def with_revision(self, revision: int | None = None) -> "ModelingPlan":
+    def with_revision(self, revision: int | None = None) -> ModelingPlan:
         return with_revision(self, revision)
 
     def next_node_id(self, prefix: str = "n") -> str:
@@ -157,8 +159,9 @@ class ModelingPlan:
         validate_plan(self, document)
 
 
-def new_plan(document_id: str, goal: str, base_version: int,
-             nodes: Iterable[PlanNode] = ()) -> ModelingPlan:
+def new_plan(
+    document_id: str, goal: str, base_version: int, nodes: Iterable[PlanNode] = ()
+) -> ModelingPlan:
     """Create a fresh draft revision of a plan."""
     return ModelingPlan(
         id=f"p_{uuid.uuid4().hex[:10]}",
@@ -186,11 +189,14 @@ def with_node(plan: ModelingPlan, node: PlanNode) -> ModelingPlan:
 
 def with_revision(plan: ModelingPlan, revision: int | None = None) -> ModelingPlan:
     """Return the plan at an explicit revision, or the next revision."""
-    return replace(plan, revision=plan.revision + 1 if revision is None else int(revision))
+    return replace(
+        plan, revision=plan.revision + 1 if revision is None else int(revision)
+    )
 
 
-def next_node_id(plan: ModelingPlan | Iterable[PlanNode] | None = None,
-                 prefix: str = "n") -> str:
+def next_node_id(
+    plan: ModelingPlan | Iterable[PlanNode] | None = None, prefix: str = "n"
+) -> str:
     """Return the first unused ``<prefix><number>`` id."""
     if plan is None:
         nodes: Iterable[Any] = ()
@@ -201,8 +207,7 @@ def next_node_id(plan: ModelingPlan | Iterable[PlanNode] | None = None,
     used = {getattr(node, "id", node) for node in nodes}
     if isinstance(plan, ModelingPlan):
         used.update(
-            node.feature_id for node in plan.nodes
-            if node.feature_id is not None
+            node.feature_id for node in plan.nodes if node.feature_id is not None
         )
     index = 1
     while f"{prefix}{index}" in used:
@@ -220,7 +225,10 @@ def validate_expect(expect: Expect) -> None:
     from .verify import METRICS, OPS
 
     if not isinstance(expect, Expect):
-        raise PlanError("PLAN_INVALID", f"expectation must be an Expect, got {type(expect).__name__}")
+        raise PlanError(
+            "PLAN_INVALID",
+            f"expectation must be an Expect, got {type(expect).__name__}",
+        )
     if not isinstance(expect.metric, str) or expect.metric not in METRICS:
         raise PlanError(
             "PLAN_INVALID",
@@ -233,7 +241,9 @@ def validate_expect(expect: Expect) -> None:
             f"unknown expectation op {expect.op!r}",
             hint=f"known ops: {', '.join(sorted(OPS))}",
         )
-    if isinstance(expect.tolerance, bool) or not isinstance(expect.tolerance, (int, float)):
+    if isinstance(expect.tolerance, bool) or not isinstance(
+        expect.tolerance, (int, float)
+    ):
         raise PlanError("PLAN_INVALID", "expectation tolerance must be a number")
     if float(expect.tolerance) < 0.0:
         raise PlanError("PLAN_INVALID", "expectation tolerance cannot be negative")
@@ -279,7 +289,9 @@ def _check_acyclic(nodes: tuple[PlanNode, ...]) -> None:
             return
         if status == 1:
             cycle = " -> ".join(trail + [node_id])
-            raise PlanError("PLAN_INVALID", f"plan contains a dependency cycle: {cycle}")
+            raise PlanError(
+                "PLAN_INVALID", f"plan contains a dependency cycle: {cycle}"
+            )
         state[node_id] = 1
         for dep in graph.get(node_id, ()):
             if dep in graph:
@@ -298,10 +310,14 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
     reference sources must be feature nodes in this plan even when a document
     is supplied.  This makes a submitted plan checkable before any replay.
     """
-    del document  # self-contained: reference sources are validated against plan features only
+    del (
+        document
+    )  # self-contained: reference sources are validated against plan features only
 
     if not isinstance(plan, ModelingPlan):
-        raise PlanError("PLAN_INVALID", f"expected a ModelingPlan, got {type(plan).__name__}")
+        raise PlanError(
+            "PLAN_INVALID", f"expected a ModelingPlan, got {type(plan).__name__}"
+        )
     if not isinstance(plan.id, str) or not plan.id.strip():
         raise PlanError("PLAN_INVALID", "plan id must be a non-empty string")
     if not isinstance(plan.document_id, str) or not plan.document_id.strip():
@@ -316,7 +332,10 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
 
     for node in plan.nodes:
         if not isinstance(node, PlanNode):
-            raise PlanError("PLAN_INVALID", f"plan node must be a PlanNode, got {type(node).__name__}")
+            raise PlanError(
+                "PLAN_INVALID",
+                f"plan node must be a PlanNode, got {type(node).__name__}",
+            )
         if not isinstance(node.id, str) or not _ID.fullmatch(node.id):
             raise PlanError(
                 "PLAN_INVALID",
@@ -356,12 +375,18 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
 
         if node.kind == "goal":
             if node.action:
-                raise PlanError("PLAN_INVALID", f"goal node {node.id!r} cannot have an action")
+                raise PlanError(
+                    "PLAN_INVALID", f"goal node {node.id!r} cannot have an action"
+                )
             if node.expect:
-                raise PlanError("PLAN_INVALID", f"goal node {node.id!r} cannot have expectations")
+                raise PlanError(
+                    "PLAN_INVALID", f"goal node {node.id!r} cannot have expectations"
+                )
         elif node.kind == "feature":
             if not isinstance(node.action, str) or not node.action.strip():
-                raise PlanError("PLAN_INVALID", f"feature node {node.id!r} requires an action")
+                raise PlanError(
+                    "PLAN_INVALID", f"feature node {node.id!r} requires an action"
+                )
         elif node.kind == "check":
             if len(node.deps) != 1:
                 raise PlanError(
@@ -369,7 +394,9 @@ def validate_plan(plan: ModelingPlan, document: Any | None = None) -> None:
                     f"check node {node.id!r} requires exactly 1 dependency, got {len(node.deps)}",
                 )
             if node.action:
-                raise PlanError("PLAN_INVALID", f"check node {node.id!r} cannot have an action")
+                raise PlanError(
+                    "PLAN_INVALID", f"check node {node.id!r} cannot have an action"
+                )
             if not node.expect:
                 raise PlanError(
                     "PLAN_INVALID",
@@ -430,7 +457,9 @@ def ref_from_json(payload: Mapping[str, Any] | None) -> Ref:
     kwargs: dict[str, Any] = {
         "source": str(payload.get("source", "")),
         "select": str(payload.get("select", "faces")),
-        "filters": tuple(_filter_from_json(item) for item in payload.get("filters") or ()),
+        "filters": tuple(
+            _filter_from_json(item) for item in payload.get("filters") or ()
+        ),
     }
     for name in ("since", "extra"):
         if name in payload:
@@ -490,7 +519,9 @@ def _refs_to_json(refs: Mapping[str, Ref | tuple[Ref, ...]]) -> dict[str, Any]:
     return output
 
 
-def _refs_from_json(payload: Mapping[str, Any] | None) -> dict[str, Ref | tuple[Ref, ...]]:
+def _refs_from_json(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, Ref | tuple[Ref, ...]]:
     output: dict[str, Ref | tuple[Ref, ...]] = {}
     for role, value in dict(payload or {}).items():
         if isinstance(value, list):

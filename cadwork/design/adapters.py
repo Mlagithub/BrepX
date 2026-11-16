@@ -35,7 +35,9 @@ def _face_signature(face: Any) -> dict[str, Any]:
         "center": [round(float(center[i]), 4) for i in range(3)],
         "normal": [round(float(normal[i]), 4) for i in range(3)],
         "area": round(float(face.area), 4),
-        "surface": str(getattr(face, "surface_type", None) or getattr(face, "geom_type", "face")),
+        "surface": str(
+            getattr(face, "surface_type", None) or getattr(face, "geom_type", "face")
+        ),
     }
 
 
@@ -45,7 +47,8 @@ def _build_pattern(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOut
     count = int(params["count"])
     if kind == "circular":
         locations = S.PolarLocations(
-            params["radius"], count,
+            params["radius"],
+            count,
             start_angle=params["start_angle"],
             angular_range=params["angular_range"],
         )
@@ -57,8 +60,10 @@ def _build_pattern(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOut
         locations = S.Locations(*points)
     elif kind == "grid":
         locations = S.GridLocations(
-            params["x_spacing"], params["y_spacing"],
-            int(params["x_count"]), int(params["y_count"]),
+            params["x_spacing"],
+            params["y_spacing"],
+            int(params["x_count"]),
+            int(params["y_count"]),
         )
         count = int(params["x_count"]) * int(params["y_count"])
     else:
@@ -71,7 +76,9 @@ def _build_pattern(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOut
     )
 
 
-def _check_pattern(value: Any, params: dict[str, Any], inputs: dict[str, Any]) -> list[CheckResult]:
+def _check_pattern(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
     count = int(params["count"])
     if params["kind"] == "grid":
         count = int(params["x_count"]) * int(params["y_count"])
@@ -91,7 +98,14 @@ PATTERN = FeatureSpec(
     params={
         "kind": Param("enum", "circular", choices=("circular", "linear", "grid")),
         "count": Param("int", 9, 1, 1000, unit="copies"),
-        "radius": Param("float", 0.0, 0.0, 1e5, unit="mm", description="bolt-circle radius; 0 turns the copies"),
+        "radius": Param(
+            "float",
+            0.0,
+            0.0,
+            1e5,
+            unit="mm",
+            description="bolt-circle radius; 0 turns the copies",
+        ),
         "start_angle": Param("float", 0.0, -360.0, 360.0, unit="deg"),
         "angular_range": Param("float", 360.0, -360.0, 360.0, unit="deg"),
         "dx": Param("float", 0.0, -1e5, 1e5, unit="mm"),
@@ -131,7 +145,9 @@ def _build_tag(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     )
 
 
-def _check_tag(value: Any, params: dict[str, Any], inputs: dict[str, Any]) -> list[CheckResult]:
+def _check_tag(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
     return [checks.items(inputs["faces"])]
 
 
@@ -141,7 +157,9 @@ TAG = FeatureSpec(
     inputs=(InputRole("target", "part"), InputRole("faces", "faces")),
     params={
         "name": Param("str", "wall", description="boundary name used by the exporter"),
-        "kind": Param("enum", "wall", choices=("inlet", "outlet", "wall", "symmetry", "other")),
+        "kind": Param(
+            "enum", "wall", choices=("inlet", "outlet", "wall", "symmetry", "other")
+        ),
     },
     build=_build_tag,
     check=_check_tag,
@@ -162,14 +180,25 @@ _IMPORTERS = {
 def _build_import(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     importer = _IMPORTERS.get(params["format"])
     if importer is None:
-        raise FeatureError("INVALID_PARAM", f"unsupported import format {params['format']!r}")
+        raise FeatureError(
+            "INVALID_PARAM", f"unsupported import format {params['format']!r}"
+        )
     part = importer(params["ref"])
+    # STEP/IGES importers return a ShapeList even for a single body; every
+    # downstream check expects a Part. Multi-body files are merged into one
+    # multi-cell Part so a reference assembly can still be frozen as one body.
+    if isinstance(part, S.ShapeList):
+        part = part.one() if len(part) == 1 else S.merge(part)
     if params["heal"]:
         part = part.heal()
-    return FeatureOutput(part, {"import": {"format": params["format"], "sha256": params["sha256"]}})
+    return FeatureOutput(
+        part, {"import": {"format": params["format"], "sha256": params["sha256"]}}
+    )
 
 
-def _check_import(value: Any, params: dict[str, Any], inputs: dict[str, Any]) -> list[CheckResult]:
+def _check_import(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
     return [checks.valid(value), checks.solid(value)]
 
 
@@ -178,10 +207,19 @@ IMPORT_BASE = FeatureSpec(
     summary="Freeze an external STEP/IGES/B-Rep file as a base body in the document.",
     inputs=(),
     params={
-        "ref": Param("str", "", description="store-relative path of the frozen copy", required=True),
+        "ref": Param(
+            "str",
+            "",
+            description="store-relative path of the frozen copy",
+            required=True,
+        ),
         "format": Param("enum", "step", choices=("step", "iges", "brep", "stl")),
-        "sha256": Param("str", "", description="digest of the frozen bytes", required=True),
-        "heal": Param("bool", False, description="run the kernel repair pass after import"),
+        "sha256": Param(
+            "str", "", description="digest of the frozen bytes", required=True
+        ),
+        "heal": Param(
+            "bool", False, description="run the kernel repair pass after import"
+        ),
     },
     build=_build_import,
     check=_check_import,
@@ -208,7 +246,9 @@ def _build_place(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutpu
     return FeatureOutput(shape.on(target))
 
 
-def _check_place(value: Any, params: dict[str, Any], inputs: dict[str, Any]) -> list[CheckResult]:
+def _check_place(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
     if hasattr(value, "is_valid"):
         return [checks.valid(value)]
     return [checks.extent(value, 0.0)]
@@ -222,8 +262,12 @@ PLACE_ON = FeatureSpec(
         InputRole("face", "face", optional=True),
     ),
     params={
-        "plane": Param("enum", None, choices=("XY", "XZ", "YZ"),
-                       description="world plane when no face is given"),
+        "plane": Param(
+            "enum",
+            None,
+            choices=("XY", "XZ", "YZ"),
+            description="world plane when no face is given",
+        ),
         "offset": Param("float", 0.0, -1e5, 1e5, unit="mm"),
     },
     build=_build_place,
@@ -239,11 +283,18 @@ ADAPTERS = (PATTERN, TAG, IMPORT_BASE, PLACE_ON)
 
 def _edge_signature(edge: Any) -> tuple[float, float, float, float, str]:
     center = edge.center()
-    return (float(center[0]), float(center[1]), float(center[2]),
-            float(edge.length), str(getattr(edge, "geom_type", "edge")))
+    return (
+        float(center[0]),
+        float(center[1]),
+        float(center[2]),
+        float(edge.length),
+        str(getattr(edge, "geom_type", "edge")),
+    )
 
 
-def _find_edge(part: Any, signature: tuple[float, float, float, float, str]) -> Any | None:
+def _find_edge(
+    part: Any, signature: tuple[float, float, float, float, str]
+) -> Any | None:
     """Find the current edge that corresponds to a pre-blend edge.
 
     A blend changes the edge list, so an edge object from the input cannot be
@@ -260,8 +311,11 @@ def _find_edge(part: Any, signature: tuple[float, float, float, float, str]) -> 
             current_geom = str(getattr(edge, "geom_type", "edge"))
         except Exception:
             continue
-        distance = ((float(center[0]) - cx) ** 2 + (float(center[1]) - cy) ** 2
-                    + (float(center[2]) - cz) ** 2) ** 0.5
+        distance = (
+            (float(center[0]) - cx) ** 2
+            + (float(center[1]) - cy) ** 2
+            + (float(center[2]) - cz) ** 2
+        ) ** 0.5
         length_delta = abs(current_length - length) / max(length, 1.0)
         score = distance + 20.0 * length_delta + (0.0 if current_geom == geom else 0.5)
         if score < best_score:
@@ -270,8 +324,7 @@ def _find_edge(part: Any, signature: tuple[float, float, float, float, str]) -> 
     return best
 
 
-def _blend_one(part: Any, edge: Any, kind: str, size: float,
-               propagate: bool) -> Any:
+def _blend_one(part: Any, edge: Any, kind: str, size: float, propagate: bool) -> Any:
     if kind == "fillet":
         return part.fillet([edge], size, propagate=propagate)
     return part.chamfer([edge], size, propagate=propagate)
@@ -290,7 +343,9 @@ def _build_blend_group(inputs: dict[str, Any], params: dict[str, Any]) -> Featur
             result = target.fillet(edges, size, propagate=propagate)
         else:
             result = target.chamfer(edges, size, propagate=propagate)
-        return FeatureOutput(result, {"blend": {"kind": kind, "applied": len(edges), "skipped": 0}})
+        return FeatureOutput(
+            result, {"blend": {"kind": kind, "applied": len(edges), "skipped": 0}}
+        )
     except Exception as group_error:
         if params["on_failure"] == "fail":
             raise FeatureError(
@@ -306,41 +361,64 @@ def _build_blend_group(inputs: dict[str, Any], params: dict[str, Any]) -> Featur
     for signature in signatures:
         current_edge = _find_edge(current, signature)
         if current_edge is None:
-            skipped.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+            skipped.append(
+                f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})"
+            )
             continue
         try:
             current = _blend_one(current, current_edge, kind, size, propagate)
-            applied.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+            applied.append(
+                f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})"
+            )
         except Exception:
-            skipped.append(f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})")
+            skipped.append(
+                f"edge@({signature[0]:.2f},{signature[1]:.2f},{signature[2]:.2f})"
+            )
     if not applied:
         raise FeatureError(
             "BLEND_FAILED",
             f"{kind} failed for every selected edge",
             hint="inspect the edge geometry and reduce the radius/length",
         )
-    return FeatureOutput(current, {"blend": {
-        "kind": kind, "applied": len(applied), "skipped": len(skipped),
-        "skipped_edges": skipped,
-    }})
+    return FeatureOutput(
+        current,
+        {
+            "blend": {
+                "kind": kind,
+                "applied": len(applied),
+                "skipped": len(skipped),
+                "skipped_edges": skipped,
+            }
+        },
+    )
 
 
-def _check_blend_group(value: Any, params: dict[str, Any],
-                       inputs: dict[str, Any]) -> list[CheckResult]:
-    return [checks.valid(value), checks.solid(value), checks.watertight(value),
-            checks.volume_gt(value, 0.0)]
+def _check_blend_group(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
+    return [
+        checks.valid(value),
+        checks.solid(value),
+        checks.watertight(value),
+        checks.volume_gt(value, 0.0),
+    ]
 
 
 BLEND_GROUP = FeatureSpec(
     type="blend_group",
     summary="Round or bevel a set of edges; a failed group is retried per edge "
-            "with independent topology reselection, so one bad edge cannot "
-            "abort the whole set.",
+    "with independent topology reselection, so one bad edge cannot "
+    "abort the whole set.",
     inputs=(InputRole("target", "part"), InputRole("edges", "edges")),
     params={
         "kind": Param("enum", "fillet", choices=("fillet", "chamfer")),
-        "size": Param("float", None, required=True, unit="mm",
-                      description="fillet radius or chamfer setback"),
+        "size": Param(
+            "float",
+            None,
+            required=True,
+            unit="mm",
+            description="fillet radius or chamfer setback",
+        ),
         "propagate": Param("bool", True),
         "on_failure": Param("enum", "fail", choices=("fail", "skip")),
     },
@@ -363,9 +441,15 @@ def _build_cavity(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutp
     return FeatureOutput(envelope.cut(target))
 
 
-def _check_cavity(value: Any, params: dict[str, Any], inputs: dict[str, Any]) -> list[CheckResult]:
-    return [checks.valid(value), checks.solid(value), checks.watertight(value),
-            checks.volume_gt(value, 0.0)]
+def _check_cavity(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
+    return [
+        checks.valid(value),
+        checks.solid(value),
+        checks.watertight(value),
+        checks.volume_gt(value, 0.0),
+    ]
 
 
 CAVITY = FeatureSpec(
@@ -373,8 +457,12 @@ CAVITY = FeatureSpec(
     summary="The fluid domain around a body: a padded cylindrical envelope minus the body.",
     inputs=(InputRole("target", "part"),),
     params={
-        "r_env": Param("float", 2.0, 0.0, 1e5, unit="mm", description="radial pad around the body"),
-        "z_pad": Param("float", 2.0, 0.0, 1e5, unit="mm", description="axial pad above and below"),
+        "r_env": Param(
+            "float", 2.0, 0.0, 1e5, unit="mm", description="radial pad around the body"
+        ),
+        "z_pad": Param(
+            "float", 2.0, 0.0, 1e5, unit="mm", description="axial pad above and below"
+        ),
     },
     build=_build_cavity,
     check=_check_cavity,
@@ -382,6 +470,7 @@ CAVITY = FeatureSpec(
     origin="adapter:cavity",
     return_kind="part",
 )
+
 
 def _build_thread(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
     target = inputs.get("target")
@@ -397,33 +486,51 @@ def _build_thread(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutp
     # Putting the helix one half tooth below the major radius makes the tool
     # cut a helical groove; without a target the same body is a reusable tool.
     tooth = S.Polygon((0.0, -pitch / 3.0), (0.0, pitch / 3.0), (depth, 0.0))
-    helix = S.Helix(pitch=pitch, height=length, radius=diameter / 2.0 - depth / 2.0,
-                    center=center, left_handed=bool(params["left_handed"]))
+    helix = S.Helix(
+        pitch=pitch,
+        height=length,
+        radius=diameter / 2.0 - depth / 2.0,
+        center=center,
+        left_handed=bool(params["left_handed"]),
+    )
     tool = S.sweep(tooth, helix)
     if target is not None:
         tool = target.cut(tool)
-    return FeatureOutput(tool, {"thread": {
-        "pitch": pitch, "length": length, "diameter": diameter, "depth": depth,
-        "cut": target is not None,
-    }})
+    return FeatureOutput(
+        tool,
+        {
+            "thread": {
+                "pitch": pitch,
+                "length": length,
+                "diameter": diameter,
+                "depth": depth,
+                "cut": target is not None,
+            }
+        },
+    )
 
 
-def _check_thread(value: Any, params: dict[str, Any],
-                  inputs: dict[str, Any]) -> list[CheckResult]:
+def _check_thread(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
     return [checks.valid(value), checks.watertight(value), checks.volume_gt(value, 0.0)]
 
 
 THREAD = FeatureSpec(
     type="thread",
     summary="Cut a helical external thread groove into a target, or produce the "
-            "thread tool when no target is given. The axis is the target's Z axis.",
+    "thread tool when no target is given. The axis is the target's Z axis.",
     inputs=(InputRole("target", "part", optional=True),),
     params={
         "diameter": Param("float", None, required=True, unit="mm"),
         "pitch": Param("float", None, required=True, unit="mm"),
         "length": Param("float", None, required=True, unit="mm"),
-        "depth": Param("float", None, unit="mm",
-                       description="radial thread depth; default 0.6 × pitch"),
+        "depth": Param(
+            "float",
+            None,
+            unit="mm",
+            description="radial thread depth; default 0.6 × pitch",
+        ),
         "center": Param("vector", [0.0, 0.0, 0.0], unit="mm"),
         "left_handed": Param("bool", False),
     },
@@ -436,11 +543,12 @@ THREAD = FeatureSpec(
 
 
 def _axis_vector(axis: str) -> tuple[float, float, float]:
-    return {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0),
-            "Z": (0.0, 0.0, 1.0)}[axis]
+    return {"X": (1.0, 0.0, 0.0), "Y": (0.0, 1.0, 0.0), "Z": (0.0, 0.0, 1.0)}[axis]
 
 
-def _build_stepped_bore(inputs: dict[str, Any], params: dict[str, Any]) -> FeatureOutput:
+def _build_stepped_bore(
+    inputs: dict[str, Any], params: dict[str, Any]
+) -> FeatureOutput:
     target = inputs["target"]
     center = tuple(float(value) for value in params["center"])
     axis = params["axis"]
@@ -461,8 +569,10 @@ def _build_stepped_bore(inputs: dict[str, Any], params: dict[str, Any]) -> Featu
         elif depth is None:
             depth = diagonal + 20.0
         depth = float(depth)
-        center_i = tuple(center[axis_index] + directions[axis_index] * (start + depth / 2.0)
-                         for axis_index in range(3))
+        center_i = tuple(
+            center[axis_index] + directions[axis_index] * (start + depth / 2.0)
+            for axis_index in range(3)
+        )
         tool = S.Cylinder(float(diameter) / 2.0, depth)
         if axis == "X":
             tool = tool.rotate(S.Y, 90.0)
@@ -474,21 +584,33 @@ def _build_stepped_bore(inputs: dict[str, Any], params: dict[str, Any]) -> Featu
     if not tools:
         raise FeatureError("BORE_EMPTY", "stepped_bore needs diameter_1")
     result = target.cut(tools)
-    return FeatureOutput(result, {"bore": {
-        "axis": axis, "stages": len(tools), "through": bool(params.get("through")),
-    }})
+    return FeatureOutput(
+        result,
+        {
+            "bore": {
+                "axis": axis,
+                "stages": len(tools),
+                "through": bool(params.get("through")),
+            }
+        },
+    )
 
 
-def _check_stepped_bore(value: Any, params: dict[str, Any],
-                        inputs: dict[str, Any]) -> list[CheckResult]:
-    return [checks.valid(value), checks.solid(value), checks.watertight(value),
-            checks.volume_gt(value, 0.0)]
+def _check_stepped_bore(
+    value: Any, params: dict[str, Any], inputs: dict[str, Any]
+) -> list[CheckResult]:
+    return [
+        checks.valid(value),
+        checks.solid(value),
+        checks.watertight(value),
+        checks.volume_gt(value, 0.0),
+    ]
 
 
 STEPPED_BORE = FeatureSpec(
     type="stepped_bore",
     summary="Cut one or two coaxial bores along X, Y or Z, with independent "
-            "diameters and depths; the second stage can be through.",
+    "diameters and depths; the second stage can be through.",
     inputs=(InputRole("target", "part"),),
     params={
         "diameter_1": Param("float", None, required=True, unit="mm"),

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from .document import (
     Document,
@@ -24,7 +25,9 @@ class HistoryStack:
     def push(self, document: Document) -> None:
         payload = document_to_json(document)
         self.snapshots = [
-            item for item in self.snapshots if int(item.get("version", 0)) != document.version
+            item
+            for item in self.snapshots
+            if int(item.get("version", 0)) != document.version
         ]
         self.snapshots.append(payload)
         if len(self.snapshots) > _MAX_SNAPSHOTS:
@@ -41,7 +44,9 @@ class HistoryStack:
             return current
         target = self.get_version(target_version)
         self.snapshots = [
-            item for item in self.snapshots if int(item.get("version", 0)) < target_version
+            item
+            for item in self.snapshots
+            if int(item.get("version", 0)) < target_version
         ]
         return target
 
@@ -52,7 +57,7 @@ class HistoryStack:
         return list(self.snapshots)
 
     @classmethod
-    def from_json(cls, payload: list[Mapping[str, Any]] | None) -> "HistoryStack":
+    def from_json(cls, payload: list[Mapping[str, Any]] | None) -> HistoryStack:
         if not payload:
             return cls()
         return cls([dict(item) for item in payload])

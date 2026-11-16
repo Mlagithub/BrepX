@@ -15,10 +15,16 @@ def _box_service(length: float = 40.0) -> tuple[CADService, str]:
     applied = service.commit(
         document.id,
         0,
-        [{"op": "add", "feature": {
-            "id": "b1", "type": "k_box",
-            "params": {"length": length, "width": 20.0, "height": 10.0},
-        }}],
+        [
+            {
+                "op": "add",
+                "feature": {
+                    "id": "b1",
+                    "type": "k_box",
+                    "params": {"length": length, "width": 20.0, "height": 10.0},
+                },
+            }
+        ],
         title="创建方块",
         actor="human",
     )
@@ -44,7 +50,9 @@ class ReviewLoopTests(unittest.TestCase):
 
     def test_tweak_writes_a_milestone_with_focus(self) -> None:
         service, document_id = _box_service()
-        result = service.tweak(document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1)
+        result = service.tweak(
+            document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1
+        )
         document = service.read(document_id)
         self.assertEqual(document.version, 2)
         self.assertEqual(result["milestone"]["title"], "微调 length=60.0")
@@ -60,7 +68,9 @@ class ReviewLoopTests(unittest.TestCase):
 
     def test_revert_republishes_an_earlier_snapshot(self) -> None:
         service, document_id = _box_service()
-        service.tweak(document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1)
+        service.tweak(
+            document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1
+        )
         reverted = service.revert(document_id, 1, title="回到初始版本")
         document = service.read(document_id)
         self.assertEqual(document.version, 3)
@@ -71,7 +81,9 @@ class ReviewLoopTests(unittest.TestCase):
 
     def test_undo_returns_to_the_previous_geometry(self) -> None:
         service, document_id = _box_service()
-        service.tweak(document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1)
+        service.tweak(
+            document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1
+        )
         undone = service.undo(document_id)
         self.assertEqual(undone["document"]["version"], 3)
         self.assertEqual(undone["document"]["features"][0]["params"]["length"], 40.0)
@@ -84,7 +96,9 @@ class ReviewLoopTests(unittest.TestCase):
 
     def test_compare_reports_changed_faces_between_versions(self) -> None:
         service, document_id = _box_service()
-        service.tweak(document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1)
+        service.tweak(
+            document_id, [{"feature_id": "b1", "params": {"length": 60.0}}], 1
+        )
         report = service.compare_versions(document_id, 1)
         self.assertEqual(report["doc_diff"]["version_after"], 2)
         self.assertGreater(report["metrics_delta"]["volume_delta"], 0.0)
@@ -118,9 +132,14 @@ class ReviewLoopTests(unittest.TestCase):
         self.assertEqual(payload["ref_probe"]["count"], 1)
         self.assertTrue(payload["pick_probe"]["ok"])
 
-        anchor = service.pick(document_id, {
-            "point": [0.0, 0.0, 5.0], "normal": [0.0, 0.0, 1.0], "area": 800.0,
-        })
+        anchor = service.pick(
+            document_id,
+            {
+                "point": [0.0, 0.0, 5.0],
+                "normal": [0.0, 0.0, 1.0],
+                "area": 800.0,
+            },
+        )
         self.assertTrue(anchor["label"].startswith("@b1 top"))
         self.assertIn("surface_type", anchor)
         self.assertIn("suggested_ref", anchor)

@@ -15,13 +15,46 @@ from pathlib import Path
 from cadwork.design import kernel_inventory as inventory
 
 EXPECTED_CLASSES = {
-    "Align", "Axis", "Bend", "BoundBox", "ClosestPoints", "Continuity",
-    "Curvature", "DrawingView", "Edge", "Face", "FitReport", "FlatPattern",
-    "FontError", "Hit", "KernelError", "Lattice", "Location", "Locations",
-    "MassProperties", "Mesh", "ModelingError", "Nurbs", "NurbsSurface",
-    "Part", "Plane", "Problem", "Profile", "RepairReport",
-    "SectionProperties", "Shape", "ShapeList", "Shell", "Sketch", "StepCurve",
-    "StepFrame", "StepModel", "StepPoint", "StitchReport", "Vector", "Vertex",
+    "Align",
+    "Axis",
+    "Bend",
+    "BoundBox",
+    "ClosestPoints",
+    "Continuity",
+    "Curvature",
+    "DrawingView",
+    "Edge",
+    "Face",
+    "FitReport",
+    "FlatPattern",
+    "FontError",
+    "Hit",
+    "KernelError",
+    "Lattice",
+    "Location",
+    "Locations",
+    "MassProperties",
+    "Mesh",
+    "ModelingError",
+    "Nurbs",
+    "NurbsSurface",
+    "Part",
+    "Plane",
+    "Problem",
+    "Profile",
+    "RepairReport",
+    "SectionProperties",
+    "Shape",
+    "ShapeList",
+    "Shell",
+    "Sketch",
+    "StepCurve",
+    "StepFrame",
+    "StepModel",
+    "StepPoint",
+    "StitchReport",
+    "Vector",
+    "Vertex",
     "Wire",
 }
 
@@ -40,18 +73,66 @@ EXPECTED_CLASSES_COUNT = 41
 # relationship helpers are REF; callable criteria and BoundBox filters are
 # DEFER; container/mutation/metadata helpers are N/A.
 SHAPELIST_REF = {
-    "at", "back", "bottom", "circles", "concave", "convex", "count",
-    "cylinders", "derived_from", "edges", "facing", "faces", "fillets",
-    "front", "g1", "g2", "group_by", "hit_by", "joining", "largest", "left",
-    "lines", "max_by", "min_by", "nearest", "new", "of_type", "one",
-    "parallel_to", "perpendicular_to", "planar", "right", "shared",
-    "smallest", "smooth", "sort_by", "sort_by_distance", "tangent_chain",
-    "top", "vertices", "wires",
+    "at",
+    "back",
+    "bottom",
+    "circles",
+    "concave",
+    "convex",
+    "count",
+    "cylinders",
+    "derived_from",
+    "edges",
+    "facing",
+    "faces",
+    "fillets",
+    "front",
+    "g1",
+    "g2",
+    "group_by",
+    "hit_by",
+    "joining",
+    "largest",
+    "left",
+    "lines",
+    "max_by",
+    "min_by",
+    "nearest",
+    "new",
+    "of_type",
+    "one",
+    "parallel_to",
+    "perpendicular_to",
+    "planar",
+    "right",
+    "shared",
+    "smallest",
+    "smooth",
+    "sort_by",
+    "sort_by_distance",
+    "tangent_chain",
+    "top",
+    "vertices",
+    "wires",
 }
 SHAPELIST_DEFER = {"filter", "filter_by", "within"}
 SHAPELIST_NA = {
-    "append", "bbox", "center", "clear", "copy", "extend", "index", "insert",
-    "moved", "on", "pop", "remove", "reverse", "rotate", "sort", "translate",
+    "append",
+    "bbox",
+    "center",
+    "clear",
+    "copy",
+    "extend",
+    "index",
+    "insert",
+    "moved",
+    "on",
+    "pop",
+    "remove",
+    "reverse",
+    "rotate",
+    "sort",
+    "translate",
 }
 
 
@@ -85,7 +166,8 @@ class InventoryTests(unittest.TestCase):
             with self.subTest(owner=owner):
                 self.assertEqual(len(inventory.public_methods(owner)), expected)
                 classified = [
-                    r for r in self.records
+                    r
+                    for r in self.records
                     if r["owner"] == owner and r["destination"] is not None
                 ]
                 self.assertEqual(len(classified), expected)
@@ -111,7 +193,7 @@ class InventoryTests(unittest.TestCase):
     def test_shape_list_property_selectors(self) -> None:
         # ``count`` is an ordinary method; ``first``/``last`` are properties,
         # so they are not enumerated as callables but are still REF in refs.py.
-        cls = getattr(inventory.smlibpy, "ShapeList")
+        cls = inventory.smlibpy.ShapeList
         for name in ("first", "last"):
             self.assertFalse(callable(getattr(cls, name)))
             self.assertNotIn(
@@ -119,7 +201,8 @@ class InventoryTests(unittest.TestCase):
                 {(record["owner"], record["name"]) for record in self.records},
             )
         count = [
-            record for record in self.records
+            record
+            for record in self.records
             if record["owner"] == "ShapeList" and record["name"] == "count"
         ]
         self.assertEqual(count[0]["destination"], "REF")
@@ -167,14 +250,18 @@ class InventoryTests(unittest.TestCase):
             docs = tmpdir / "kernel-inventory.md"
             baseline = tmpdir / "kernel_actions.baseline.json"
             docs.write_text(inventory.render_markdown(), encoding="utf-8", newline="\n")
-            baseline.write_text(inventory.baseline_json(), encoding="utf-8", newline="\n")
+            baseline.write_text(
+                inventory.baseline_json(), encoding="utf-8", newline="\n"
+            )
 
             markdown = docs.read_text(encoding="utf-8")
             self.assertIn("| Owner | Name | Destination | Reason |", markdown)
             callables = markdown.split("## Callables", 1)[1]
             row_count = sum(
-                1 for line in callables.splitlines()
-                if line.startswith("| ") and not line.startswith("| Owner")
+                1
+                for line in callables.splitlines()
+                if line.startswith("| ")
+                and not line.startswith("| Owner")
                 and not line.startswith("|---")
             )
             self.assertEqual(row_count, len(self.records))

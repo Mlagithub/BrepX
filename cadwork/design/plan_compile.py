@@ -21,8 +21,9 @@ feature ids.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any, Mapping
+from typing import Any
 
 from . import features as _features
 from .document import Ref
@@ -41,8 +42,13 @@ _VARIABLE_BAD = re.compile(r"[^A-Za-z0-9_]")
 class CompileError(Exception):
     """A plan node cannot be lowered to a document op or a step."""
 
-    def __init__(self, code: str, message: str, node_id: str | None = None,
-                 hint: str | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        node_id: str | None = None,
+        hint: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -282,7 +288,9 @@ def _translate_ref(ref: Any, id_map: Mapping[str, str], node_id: str) -> Ref:
         if hasattr(ref, name):
             values = tuple(getattr(ref, name) or ())
             if values:
-                kwargs[name] = tuple(id_map.get(str(item), str(item)) for item in values)
+                kwargs[name] = tuple(
+                    id_map.get(str(item), str(item)) for item in values
+                )
     try:
         return replace(ref, **kwargs)
     except TypeError as exc:
@@ -300,7 +308,9 @@ def _translate_ref(ref: Any, id_map: Mapping[str, str], node_id: str) -> Ref:
             ) from exc
 
 
-def _translate_refs(plan: ModelingPlan, node: PlanNode) -> dict[str, Ref | tuple[Ref, ...]]:
+def _translate_refs(
+    plan: ModelingPlan, node: PlanNode
+) -> dict[str, Ref | tuple[Ref, ...]]:
     id_map = _feature_map(plan)
     output: dict[str, Ref | tuple[Ref, ...]] = {}
     for role, value in dict(node.refs).items():
@@ -323,8 +333,12 @@ def _refs_json(refs: Mapping[str, Ref | tuple[Ref, ...]]) -> dict[str, Any]:
     return output
 
 
-def _feature_payload(node: PlanNode, feature_id: str, params: Mapping[str, Any],
-                     refs: Mapping[str, Ref | tuple[Ref, ...]]) -> dict[str, Any]:
+def _feature_payload(
+    node: PlanNode,
+    feature_id: str,
+    params: Mapping[str, Any],
+    refs: Mapping[str, Ref | tuple[Ref, ...]],
+) -> dict[str, Any]:
     return {
         "id": feature_id,
         "type": node.action,
@@ -359,8 +373,9 @@ class _Parts:
     refs: dict[str, Ref | tuple[Ref, ...]]
 
 
-def _compile_feature_parts(plan: ModelingPlan, node: PlanNode,
-                           document: Any | None) -> _Parts:
+def _compile_feature_parts(
+    plan: ModelingPlan, node: PlanNode, document: Any | None
+) -> _Parts:
     del document  # node lowering is independent of the current document
     action = node.action
     if not isinstance(action, str) or not action.strip():
@@ -384,7 +399,9 @@ def _compile_feature_parts(plan: ModelingPlan, node: PlanNode,
     except Exception as exc:
         code = getattr(exc, "code", None)
         raise CompileError(
-            "ACTION_UNKNOWN" if code in {"UNKNOWN_FEATURE_TYPE", "ACTION_UNKNOWN"} else "PLAN_INVALID",
+            "ACTION_UNKNOWN"
+            if code in {"UNKNOWN_FEATURE_TYPE", "ACTION_UNKNOWN"}
+            else "PLAN_INVALID",
             str(exc),
             node_id=node.id,
             hint=getattr(exc, "hint", None),
@@ -402,7 +419,9 @@ def _compile_feature_parts(plan: ModelingPlan, node: PlanNode,
     except Exception as exc:
         code = getattr(exc, "code", None)
         raise CompileError(
-            "ACTION_UNKNOWN" if code in {"UNKNOWN_FEATURE_TYPE", "ACTION_UNKNOWN"} else "PLAN_INVALID",
+            "ACTION_UNKNOWN"
+            if code in {"UNKNOWN_FEATURE_TYPE", "ACTION_UNKNOWN"}
+            else "PLAN_INVALID",
             str(exc),
             node_id=node.id,
             hint=getattr(exc, "hint", None),
@@ -411,8 +430,9 @@ def _compile_feature_parts(plan: ModelingPlan, node: PlanNode,
     return _Parts(spec=spec, feature_id=_feature_id(node), params=params, refs=refs)
 
 
-def compile_node(plan: ModelingPlan, node: PlanNode,
-                 document: Any | None) -> list[dict[str, Any]]:
+def compile_node(
+    plan: ModelingPlan, node: PlanNode, document: Any | None
+) -> list[dict[str, Any]]:
     """Lower one feature node to document ops (``add`` or ``update``)."""
     if getattr(node, "kind", None) != "feature":
         return []
@@ -429,17 +449,23 @@ def compile_node(plan: ModelingPlan, node: PlanNode,
                 node_id=node.id,
                 hint="use a new feature id or remove the existing feature first",
             )
-        return [{
-            "op": "update",
-            "id": parts.feature_id,
-            "params": dict(parts.params),
-            "refs": _refs_json(parts.refs),
-        }]
+        return [
+            {
+                "op": "update",
+                "id": parts.feature_id,
+                "params": dict(parts.params),
+                "refs": _refs_json(parts.refs),
+            }
+        ]
 
-    return [{
-        "op": "add",
-        "feature": _feature_payload(node, parts.feature_id, parts.params, parts.refs),
-    }]
+    return [
+        {
+            "op": "add",
+            "feature": _feature_payload(
+                node, parts.feature_id, parts.params, parts.refs
+            ),
+        }
+    ]
 
 
 def _input_variable(ref: Any, feature_vars: Mapping[str, str], node_id: str) -> str:
@@ -485,14 +511,16 @@ def compile_program(plan: ModelingPlan, document: Any | None = None) -> BuildPro
             else:
                 inputs[str(role)] = _input_variable(value, feature_vars, node.id)
 
-        steps.append(Step(
-            node_id=node.id,
-            action=str(node.action),
-            variable=feature_vars[node.id],
-            inputs=inputs,
-            params=dict(parts.params),
-            expect=tuple(node.expect),
-        ))
+        steps.append(
+            Step(
+                node_id=node.id,
+                action=str(node.action),
+                variable=feature_vars[node.id],
+                inputs=inputs,
+                params=dict(parts.params),
+                expect=tuple(node.expect),
+            )
+        )
 
     return BuildProgram(
         steps=tuple(steps),
@@ -508,7 +536,9 @@ def _coverage(plan: ModelingPlan) -> dict[str, Any]:
     for node in getattr(plan, "nodes", ()) or ():
         if getattr(node, "kind", None) != "feature":
             continue
-        action = node.action if isinstance(node.action, str) and node.action.strip() else ""
+        action = (
+            node.action if isinstance(node.action, str) and node.action.strip() else ""
+        )
         label = action or "<missing>"
         actions[label] = actions.get(label, 0) + 1
         if action and spec_for(action) is not None:
@@ -519,16 +549,18 @@ def _coverage(plan: ModelingPlan) -> dict[str, Any]:
 
     found.sort()
     unknown.sort()
-    return Coverage({
-        "actions": dict(sorted(actions.items())),
-        "found": found,
-        "known": found,
-        "known_actions": found,
-        "unknown": unknown,
-        "unknown_actions": unknown,
-        "feature_nodes": sum(actions.values()),
-        "total_actions": len(actions),
-    })
+    return Coverage(
+        {
+            "actions": dict(sorted(actions.items())),
+            "found": found,
+            "known": found,
+            "known_actions": found,
+            "unknown": unknown,
+            "unknown_actions": unknown,
+            "feature_nodes": sum(actions.values()),
+            "total_actions": len(actions),
+        }
+    )
 
 
 def compile_plan(plan: ModelingPlan, document: Any | None = None) -> CompileReport:
@@ -556,12 +588,14 @@ def compile_plan(plan: ModelingPlan, document: Any | None = None) -> CompileRepo
             continue
         feature_id = _feature_id(node)
         if feature_id in seen_features:
-            issues.append(CompileIssue(
-                "NODE_ID_CONFLICT",
-                f"document feature id {feature_id!r} is used by both "
-                f"{seen_features[feature_id]!r} and {node.id!r}",
-                node_id=node.id,
-            ))
+            issues.append(
+                CompileIssue(
+                    "NODE_ID_CONFLICT",
+                    f"document feature id {feature_id!r} is used by both "
+                    f"{seen_features[feature_id]!r} and {node.id!r}",
+                    node_id=node.id,
+                )
+            )
             continue
         try:
             node_ops = compile_node(plan, node, document)

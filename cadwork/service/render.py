@@ -13,7 +13,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 _TIMEOUT_S = 180
 
 
-def render_png(part: Any, view: str = "iso", size: tuple[int, int] = (900, 700)) -> bytes:
+def render_png(
+    part: Any, view: str = "iso", size: tuple[int, int] = (900, 700)
+) -> bytes:
     from cadwork import smlib as S
 
     with tempfile.TemporaryDirectory() as folder:
@@ -21,12 +23,27 @@ def render_png(part: Any, view: str = "iso", size: tuple[int, int] = (900, 700))
         out_path = os.path.join(folder, "view.png")
         S.export_step(part, step_path)
         command = [
-            sys.executable, "-m", "cadwork.service.render_worker",
-            "--step", step_path, "--out", out_path, "--view", view,
-            "--width", str(size[0]), "--height", str(size[1]),
+            sys.executable,
+            "-m",
+            "cadwork.service.render_worker",
+            "--step",
+            step_path,
+            "--out",
+            out_path,
+            "--view",
+            view,
+            "--width",
+            str(size[0]),
+            "--height",
+            str(size[1]),
         ]
         completed = subprocess.run(
-            command, cwd=str(_ROOT), capture_output=True, text=True, timeout=_TIMEOUT_S,
+            command,
+            cwd=str(_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=_TIMEOUT_S,
+            check=False,
         )
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout or "").strip()[-400:]

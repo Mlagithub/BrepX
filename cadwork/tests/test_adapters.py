@@ -2,10 +2,30 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from cadwork import smlib as S
 from cadwork.design.features import FEATURES
+
+
+class ImportTests(unittest.TestCase):
+    def test_step_import_unwraps_single_body_shape_list(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "box.step"
+            S.export_step(S.Box(30.0, 20.0, 10.0), str(path))
+            output = FEATURES["import_base"].build(
+                {},
+                {
+                    "ref": str(path),
+                    "format": "step",
+                    "sha256": "test",
+                    "heal": False,
+                },
+            )
+        self.assertTrue(output.value.is_valid())
+        self.assertEqual(len(output.value.solids()), 1)
 
 
 class BlendGroupTests(unittest.TestCase):
@@ -34,8 +54,14 @@ class BlendGroupTests(unittest.TestCase):
 
 class ThreadTests(unittest.TestCase):
     def test_thread_tool_and_cut(self) -> None:
-        params = {"diameter": 12.0, "pitch": 1.75, "length": 20.0,
-                  "depth": 1.0, "center": [0.0, 0.0, 0.0], "left_handed": False}
+        params = {
+            "diameter": 12.0,
+            "pitch": 1.75,
+            "length": 20.0,
+            "depth": 1.0,
+            "center": [0.0, 0.0, 0.0],
+            "left_handed": False,
+        }
         tool = FEATURES["thread"].build({}, params)
         self.assertTrue(tool.value.is_valid())
         self.assertGreater(tool.value.volume, 0.0)
@@ -48,15 +74,22 @@ class ThreadTests(unittest.TestCase):
 
 class SteppedBoreTests(unittest.TestCase):
     def test_three_axis_stepped_bores(self) -> None:
-        for axis, center in (("Z", [0.0, 0.0, 10.0]),
-                             ("X", [0.0, 0.0, 0.0]),
-                             ("Y", [0.0, 0.0, 0.0])):
+        for axis, center in (
+            ("Z", [0.0, 0.0, 10.0]),
+            ("X", [0.0, 0.0, 0.0]),
+            ("Y", [0.0, 0.0, 0.0]),
+        ):
             block = S.Box(60.0, 50.0, 30.0)
             output = FEATURES["stepped_bore"].build(
                 {"target": block},
-                {"diameter_1": 18.0, "depth_1": 6.0,
-                 "diameter_2": 10.0, "through": True,
-                 "center": center, "axis": axis},
+                {
+                    "diameter_1": 18.0,
+                    "depth_1": 6.0,
+                    "diameter_2": 10.0,
+                    "through": True,
+                    "center": center,
+                    "axis": axis,
+                },
             )
             with self.subTest(axis=axis):
                 self.assertTrue(output.value.is_valid())

@@ -9,7 +9,7 @@
   #host { position: absolute; inset: 0 }
   canvas { display: block; width: 100%; height: 100% }
   #empty { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-    flex-direction: column; gap: 10px; color: #5b6b80; text-align: center; pointer-events: none }
+    flex-direction: column; gap: 10px; color: #8a99ad; text-align: center; pointer-events: none }
   #empty.on { display: flex }
   #empty b { font-size: 15px; color: #8fa3bd; font-weight: 600 }
   #status { position: absolute; left: 10px; bottom: 8px; right: 10px; color: #8fa3bd;
@@ -17,6 +17,7 @@
 </style>
 <!-- The kernel locates its wasm and worker through import.meta.url, so it must
      load as its own modules rather than a bundle. -->
+<link rel="preload" as="fetch" href="/api/kernel/smlibwasm.wasm" crossorigin="anonymous">
 <script type="importmap">
 {"imports": {
   "three": "/pkg/three/build/three.module.js",
@@ -32,10 +33,396 @@
 <div id="host"></div>
 <div id="empty"><b>空白文档</b><span>描述你要的零件，Agent 会生成第一个里程碑</span></div>
 <div id="status">starting…</div>
+<script id="assembly-preview-worker-source" type="text/plain">
+"use strict";
+
+/*
+ * Decode one derived assembly-preview bundle off the main thread.
+ *
+ * The bundle is untrusted display data: every structural check runs before a
+ * prototype array is exposed. A malformed bundle must produce one stable error
+ * code instead of a partially decoded preview, because a partially accepted
+ * mesh would render a wrong model as if it were authoritative.
+ *
+ * The manifest is parsed here, never in the viewport. Prototype arrays are
+ * copied out of the bundle so every returned typed array owns its buffer and
+ * can be transferred to the main thread.
+ */
+
+const MAGIC_0 = 0x42;
+const MAGIC_1 = 0x50;
+const MAGIC_2 = 0x58;
+const MAGIC_3 = 0x56;
+const FORMAT_VERSION = 1;
+const HEADER_SIZE = 16;
+const ALIGNMENT = 8;
+const MANIFEST_SCHEMA = "brepx-assembly-preview";
+const SCHEMA_VERSION = 1;
+const MANIFEST_UNITS = "mm";
+const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+const MAX_BUNDLE_BYTES = 512 * 1024 * 1024;
+const MAX_PROTOTYPES = 1024;
+const MAX_INSTANCES = 65536;
+const MAX_LEAVES = 65536;
+const KEY_PATTERN = /^[0-9a-f]{64}$/;
+const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+const fail = (code, message) => {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+};
+
+const align8 = (value) => (value + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
+
+const isCount = (value) => typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+const readCount = (value, field, limit) => {
+  if (!isCount(value)) fail("BAD_MANIFEST_FIELD", field + " must be a non-negative integer");
+  if (limit != null && value > limit) fail("COUNT_LIMIT", field + " exceeds " + limit);
+  return value;
+};
+
+const readText = (value, field, allowEmpty = false) => {
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
+    fail("BAD_MANIFEST_FIELD", field + " must be a " + (allowEmpty ? "" : "non-empty ") + "string");
+  }
+  return value;
+};
+
+const readKey = (value, field) => {
+  if (typeof value !== "string" || !KEY_PATTERN.test(value)) {
+    fail("BAD_KEY", field + " must be 64 lowercase hexadecimal characters");
+  }
+  return value;
+};
+
+const readObject = (value, field) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    fail("BAD_MANIFEST_FIELD", field + " must be an object");
+  }
+  return value;
+};
+
+const readArray = (value, field) => {
+  if (!Array.isArray(value)) fail("BAD_MANIFEST_FIELD", field + " must be an array");
+  return value;
+};
+
+const readFinite = (value, field) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    fail("BAD_MANIFEST_FIELD", field + " must be a finite number");
+  }
+  return value;
+};
+
+const readVector3 = (value, field) => {
+  if (!Array.isArray(value) || value.length !== 3) {
+    fail("BAD_MANIFEST_FIELD", field + " must have 3 components");
+  }
+  return [readFinite(value[0], field + "[0]"), readFinite(value[1], field + "[1]"), readFinite(value[2], field + "[2]")];
+};
+
+const prototypeBlobSize = (positionCount, indexCount, edgePointCount) => {
+  readCount(positionCount, "positionCount");
+  readCount(indexCount, "indexCount");
+  readCount(edgePointCount, "edgePointCount");
+  if (indexCount % 3 !== 0) fail("BAD_INDEX_COUNT", "indexCount is not divisible by 3");
+  if (edgePointCount % 2 !== 0) fail("BAD_EDGE_COUNT", "edgePointCount is odd");
+  return positionCount * 3 * 4 + indexCount * 4 + (indexCount / 3) * 4 + edgePointCount * 3 * 4;
+};
+
+const validatePrototypeRecord = (record, index, seenKeys) => {
+  const path = "prototypes[" + index + "]";
+  readObject(record, path);
+  const prototypeKey = readKey(record.prototypeKey, path + ".prototypeKey");
+  if (seenKeys.has(prototypeKey)) {
+    fail("DUPLICATE_PROTOTYPE_KEY", "duplicate prototype key " + prototypeKey);
+  }
+  seenKeys.add(prototypeKey);
+  readText(record.sourceDocumentId, path + ".sourceDocumentId");
+  readCount(record.sourceVersion, path + ".sourceVersion");
+  readText(record.sourceIdentity, path + ".sourceIdentity");
+  readText(record.faceKeySource, path + ".faceKeySource");
+  const faceKeys = readArray(record.faceKeys, path + ".faceKeys");
+  const seenFaceKeys = new Set();
+  for (let faceIndex = 0; faceIndex < faceKeys.length; faceIndex += 1) {
+    const faceKey = readText(faceKeys[faceIndex], path + ".faceKeys[" + faceIndex + "]");
+    if (seenFaceKeys.has(faceKey)) {
+      fail("DUPLICATE_FACE_KEY", "prototype " + prototypeKey + " repeats a face key");
+    }
+    seenFaceKeys.add(faceKey);
+  }
+  const bounds = record.bounds;
+  if (!Array.isArray(bounds) || bounds.length !== 2) {
+    fail("BAD_BOUNDS", path + ".bounds must be [min, max]");
+  }
+  const minimum = readVector3(bounds[0], path + ".bounds[0]");
+  const maximum = readVector3(bounds[1], path + ".bounds[1]");
+  for (let axis = 0; axis < 3; axis += 1) {
+    if (minimum[axis] > maximum[axis]) fail("BAD_BOUNDS", "prototype " + prototypeKey + " bounds min exceeds max");
+  }
+  readObject(record.metrics, path + ".metrics");
+  const mesh = readObject(record.mesh, path + ".mesh");
+  const positionCount = readCount(mesh.positionCount, path + ".mesh.positionCount");
+  const indexCount = readCount(mesh.indexCount, path + ".mesh.indexCount");
+  const faceCount = readCount(mesh.faceCount, path + ".mesh.faceCount");
+  const edgePointCount = readCount(mesh.edgePointCount, path + ".mesh.edgePointCount");
+  if (indexCount % 3 !== 0) fail("BAD_INDEX_COUNT", "prototype " + prototypeKey + " indexCount is not divisible by 3");
+  if (edgePointCount % 2 !== 0) fail("BAD_EDGE_COUNT", "prototype " + prototypeKey + " edgePointCount is odd");
+  if (faceCount !== faceKeys.length) {
+    fail("BAD_FACE_COUNT", "prototype " + prototypeKey + " faceCount does not match its face keys");
+  }
+  const offset = readCount(mesh.offset, path + ".mesh.offset");
+  if (offset % ALIGNMENT !== 0) {
+    fail("BAD_BLOB_ALIGNMENT", "prototype " + prototypeKey + " offset is not 8-byte aligned");
+  }
+  const blobLength = readCount(mesh.blobLength, path + ".mesh.blobLength");
+  const exact = prototypeBlobSize(positionCount, indexCount, edgePointCount);
+  if (blobLength !== align8(exact)) {
+    fail("BAD_BLOB_LENGTH", "prototype " + prototypeKey + " blobLength does not match its counts");
+  }
+};
+
+const validateInstanceRecord = (record, index, prototypeKeys, seenPaths) => {
+  const path = "instances[" + index + "]";
+  readObject(record, path);
+  const instancePath = readText(record.path, path + ".path");
+  if (seenPaths.has(instancePath)) {
+    fail("DUPLICATE_INSTANCE_PATH", "duplicate instance path " + instancePath);
+  }
+  seenPaths.add(instancePath);
+  const parentPath = readText(record.parentPath, path + ".parentPath", true);
+  const expectedParent = instancePath.includes("/") ? instancePath.slice(0, instancePath.lastIndexOf("/")) : "";
+  if (parentPath !== expectedParent) {
+    fail("BAD_INSTANCE_FIELD", "instance " + instancePath + " parentPath does not match its path");
+  }
+  readText(record.instanceId, path + ".instanceId");
+  const prototypeKey = readKey(record.prototypeKey, path + ".prototypeKey");
+  if (!prototypeKeys.has(prototypeKey)) {
+    fail("MISSING_PROTOTYPE", "instance " + instancePath + " references an unknown prototype");
+  }
+  const matrix = record.matrix;
+  if (!Array.isArray(matrix) || matrix.length !== 16) {
+    fail("BAD_MATRIX", path + ".matrix must have 16 entries");
+  }
+  for (let entry = 0; entry < 16; entry += 1) readFinite(matrix[entry], path + ".matrix[" + entry + "]");
+  if (typeof record.color !== "string" || !COLOR_PATTERN.test(record.color)) {
+    fail("BAD_COLOR", path + ".color must be #rrggbb");
+  }
+  if (typeof record.opacity !== "number" || record.opacity < 0 || record.opacity > 1) {
+    fail("BAD_OPACITY", path + ".opacity must be within 0..1");
+  }
+  if (typeof record.visible !== "boolean") fail("BAD_INSTANCE_FIELD", path + ".visible must be a boolean");
+  if (typeof record.suppressed !== "boolean") fail("BAD_INSTANCE_FIELD", path + ".suppressed must be a boolean");
+  readText(record.module, path + ".module", true);
+};
+
+const validateManifest = (manifest) => {
+  if (manifest.schema !== MANIFEST_SCHEMA) {
+    fail("UNKNOWN_SCHEMA", "unsupported manifest schema " + String(manifest.schema));
+  }
+  readCount(manifest.schemaVersion, "schemaVersion");
+  if (manifest.schemaVersion !== SCHEMA_VERSION) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", "unsupported schema version " + manifest.schemaVersion);
+  }
+  readKey(manifest.previewKey, "previewKey");
+  const assembly = readObject(manifest.assembly, "assembly");
+  readText(assembly.id, "assembly.id");
+  readCount(assembly.version, "assembly.version");
+  readText(assembly.configuration, "assembly.configuration");
+  readText(assembly.name, "assembly.name", true);
+  const generator = readObject(manifest.generator, "generator");
+  readText(generator.version, "generator.version");
+  readText(generator.kernel, "generator.kernel");
+  readText(generator.tessellationProfile, "generator.tessellationProfile");
+  if (manifest.units !== MANIFEST_UNITS) {
+    fail("BAD_MANIFEST_FIELD", "units must be " + MANIFEST_UNITS);
+  }
+  readVector3(manifest.rootOffset, "rootOffset");
+  const prototypes = readArray(manifest.prototypes, "prototypes");
+  const prototypeCount = readCount(manifest.prototypeCount, "prototypeCount", MAX_PROTOTYPES);
+  if (prototypeCount !== prototypes.length) {
+    fail("BAD_MANIFEST_FIELD", "prototypeCount does not match prototypes");
+  }
+  const instances = readArray(manifest.instances, "instances");
+  const instanceCount = readCount(manifest.instanceCount, "instanceCount", MAX_INSTANCES);
+  if (instanceCount !== instances.length) {
+    fail("BAD_MANIFEST_FIELD", "instanceCount does not match instances");
+  }
+  readCount(manifest.leafCount, "leafCount", MAX_LEAVES);
+  const bom = readObject(manifest.bom, "bom");
+  for (const field of ["rows", "quantity", "definitions"]) {
+    readCount(bom[field], "bom." + field);
+  }
+  const prototypeKeys = new Set();
+  for (let index = 0; index < prototypes.length; index += 1) {
+    validatePrototypeRecord(prototypes[index], index, prototypeKeys);
+  }
+  const seenPaths = new Set();
+  for (let index = 0; index < instances.length; index += 1) {
+    validateInstanceRecord(instances[index], index, prototypeKeys, seenPaths);
+  }
+  return { prototypes, instances, prototypeKeys };
+};
+
+const validateArrayContents = (record, arrays) => {
+  const mesh = record.mesh;
+  const positionCount = mesh.positionCount;
+  const faceCount = mesh.faceCount;
+  for (let index = 0; index < arrays.positions.length; index += 1) {
+    if (!Number.isFinite(arrays.positions[index])) {
+      fail("BAD_COORDINATE", "prototype " + record.prototypeKey + " has a non-finite position");
+    }
+  }
+  for (let index = 0; index < arrays.edges.length; index += 1) {
+    if (!Number.isFinite(arrays.edges[index])) {
+      fail("BAD_COORDINATE", "prototype " + record.prototypeKey + " has a non-finite edge point");
+    }
+  }
+  for (let index = 0; index < arrays.indices.length; index += 1) {
+    if (arrays.indices[index] >= positionCount) {
+      fail("BAD_INDEX", "prototype " + record.prototypeKey + " has an out-of-range index");
+    }
+  }
+  for (let index = 0; index < arrays.faceIds.length; index += 1) {
+    if (arrays.faceIds[index] >= faceCount) {
+      fail("BAD_FACE_ID", "prototype " + record.prototypeKey + " has an out-of-range face id");
+    }
+  }
+};
+
+const decodeBundle = (buffer) => {
+  if (!(buffer instanceof ArrayBuffer)) fail("BUNDLE_NOT_BUFFER", "bundle payload is not an ArrayBuffer");
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  if (bytes.length < HEADER_SIZE) fail("HEADER_TRUNCATED", "need 16 header bytes");
+  if (bytes[0] !== MAGIC_0 || bytes[1] !== MAGIC_1 || bytes[2] !== MAGIC_2 || bytes[3] !== MAGIC_3) {
+    fail("BAD_MAGIC", "expected BPXV magic");
+  }
+  const formatVersion = view.getUint16(4, true);
+  if (formatVersion !== FORMAT_VERSION) {
+    fail("UNSUPPORTED_FORMAT_VERSION", "unsupported format version " + formatVersion);
+  }
+  const flags = view.getUint16(6, true);
+  if (flags !== 0) fail("UNKNOWN_FLAGS", "unknown header flags 0x" + flags.toString(16));
+  const manifestLength = view.getUint32(8, true);
+  if (view.getUint32(12, true) !== 0) fail("RESERVED_NONZERO", "reserved header word must be zero");
+  if (manifestLength === 0 || manifestLength > MAX_MANIFEST_BYTES) {
+    fail("MANIFEST_LENGTH_INVALID", "manifest length is outside 1.." + MAX_MANIFEST_BYTES);
+  }
+  if (bytes.length > MAX_BUNDLE_BYTES) fail("BUNDLE_TOO_LARGE", "bundle exceeds the byte limit");
+  const manifestEnd = HEADER_SIZE + manifestLength;
+  if (manifestEnd > bytes.length) fail("BUNDLE_TRUNCATED", "manifest ends past the bundle");
+  const dataBase = align8(manifestEnd);
+  if (dataBase > bytes.length) fail("BUNDLE_TRUNCATED", "prototype data starts past the bundle");
+  for (let index = manifestEnd; index < dataBase; index += 1) {
+    if (bytes[index] !== 0) fail("PADDING_NONZERO", "header padding must be zero");
+  }
+  if (bytes[16] === 0xef && bytes[17] === 0xbb && bytes[18] === 0xbf) {
+    fail("MANIFEST_BOM", "manifest must not start with a byte-order mark");
+  }
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(HEADER_SIZE, manifestEnd));
+  } catch (error) {
+    fail("MANIFEST_NOT_UTF8", "manifest is not valid UTF-8");
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(text);
+  } catch (error) {
+    fail("MANIFEST_NOT_JSON", "manifest is not valid JSON");
+  }
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    fail("MANIFEST_NOT_OBJECT", "manifest must be a JSON object");
+  }
+  const { prototypes: records } = validateManifest(manifest);
+
+  const layout = [];
+  for (const record of records) {
+    const mesh = record.mesh;
+    const start = dataBase + mesh.offset;
+    const end = start + mesh.blobLength;
+    const exact = prototypeBlobSize(mesh.positionCount, mesh.indexCount, mesh.edgePointCount);
+    if (start < dataBase || end > bytes.length) {
+      fail("BAD_BLOB_RANGE", "prototype " + record.prototypeKey + " lies outside the bundle");
+    }
+    layout.push({ record, start, exactEnd: start + exact, end });
+  }
+  layout.sort((left, right) => left.start - right.start);
+  let cursor = dataBase;
+  for (const range of layout) {
+    if (range.start < cursor) fail("BAD_BLOB_OVERLAP", "prototype ranges overlap");
+    for (let index = cursor; index < range.start; index += 1) {
+      if (bytes[index] !== 0) fail("PADDING_NONZERO", "gap between prototypes must be zero");
+    }
+    cursor = range.end;
+  }
+  if (cursor < bytes.length) fail("BUNDLE_TRAILING_BYTES", "bytes follow the last prototype");
+
+  const prototypes = [];
+  for (const range of layout) {
+    const record = range.record;
+    const mesh = record.mesh;
+    for (let index = range.exactEnd; index < range.end; index += 1) {
+      if (bytes[index] !== 0) fail("PADDING_NONZERO", "prototype padding must be zero");
+    }
+    const positionLength = mesh.positionCount * 3;
+    const indexLength = mesh.indexCount;
+    const faceLength = mesh.indexCount / 3;
+    const edgeLength = mesh.edgePointCount * 3;
+    const positions = new Float32Array(positionLength);
+    positions.set(new Float32Array(buffer, range.start, positionLength));
+    const indexStart = range.start + positionLength * 4;
+    const indices = new Uint32Array(indexLength);
+    indices.set(new Uint32Array(buffer, indexStart, indexLength));
+    const faceStart = indexStart + indexLength * 4;
+    const faceIds = new Uint32Array(faceLength);
+    faceIds.set(new Uint32Array(buffer, faceStart, faceLength));
+    const edgeStart = faceStart + faceLength * 4;
+    const edges = new Float32Array(edgeLength);
+    edges.set(new Float32Array(buffer, edgeStart, edgeLength));
+    const arrays = { positions, indices, faceIds, edges };
+    validateArrayContents(record, arrays);
+    prototypes.push({ prototypeKey: record.prototypeKey, ...arrays });
+  }
+  return { manifest, prototypes, dataBase, byteLength: bytes.length };
+};
+
+self.addEventListener("message", (event) => {
+  const data = event.data;
+  if (!data || data.type !== "assembly-preview-decode") return;
+  const id = data.id;
+  const started = performance.now();
+  try {
+    const decoded = decodeBundle(data.buffer);
+    const transfers = [];
+    for (const prototype of decoded.prototypes) {
+      transfers.push(prototype.positions.buffer, prototype.indices.buffer, prototype.faceIds.buffer, prototype.edges.buffer);
+    }
+    self.postMessage({
+      type: "assembly-preview-decoded",
+      id,
+      manifest: decoded.manifest,
+      prototypes: decoded.prototypes,
+      dataBase: decoded.dataBase,
+      byteLength: decoded.byteLength,
+      decodeMs: performance.now() - started,
+    }, transfers);
+  } catch (error) {
+    self.postMessage({
+      type: "assembly-preview-error",
+      id,
+      code: error && error.code ? error.code : "BUNDLE_DECODE_FAILED",
+      message: error && error.message ? error.message : "bundle decode failed",
+    });
+  }
+});
+</script>
 <script type="module">
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { init } from '@classcad/smlibpy-three/init'
 
 const host = document.getElementById('host')
@@ -54,6 +441,18 @@ const say = (text) => {
 }
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
+// A small read-only frame counter is enough to prove batch counts without
+// exposing the renderer object or adding a diagnostics panel.
+window.__viewportFrameStats = () => ({
+  calls: renderer.info.render.calls,
+  triangles: renderer.info.render.triangles,
+  lines: renderer.info.render.lines,
+  points: renderer.info.render.points,
+})
+window.__viewportSnapshot = () => {
+  renderer.render(scene, camera)
+  return renderer.domElement.toDataURL('image/png')
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 host.append(renderer.domElement)
 const scene = new THREE.Scene()
@@ -86,6 +485,53 @@ const palette = {
   light: 1.6,
   key: 2.2,
   fill: 0.9,
+}
+
+// One material set per palette version, shared by every drawn object: switching
+// documents and toggling wire/section only swap references, so no material or
+// shader program is allocated after the first frame of a palette.
+let paletteVersion = 0
+const materials = {
+  version: -1, solid: null, solidOpen: null, wireFill: null, edge: null, edgeWire: null, ghostFill: null, ghostEdge: null,
+}
+
+const sharedMaterials = () => {
+  if (materials.version === paletteVersion) return materials
+  for (const value of Object.values(materials)) {
+    if (value && typeof value.dispose === 'function') value.dispose()
+  }
+  materials.version = paletteVersion
+  materials.solid = new THREE.MeshStandardMaterial({ color: palette.solid.clone(), metalness: 0.1, roughness: 0.62 })
+  // Open shells have no back faces of their own: they must draw from both sides.
+  materials.solidOpen = new THREE.MeshStandardMaterial({
+    color: palette.solid.clone(), metalness: 0.1, roughness: 0.62, side: THREE.DoubleSide,
+  })
+  materials.wireFill = new THREE.MeshBasicMaterial({
+    color: palette.edge.clone(), transparent: true, opacity: 0.12, depthWrite: false,
+  })
+  materials.edge = new THREE.LineBasicMaterial({
+    color: palette.edge.clone(), transparent: true, opacity: 0.5, depthWrite: false,
+  })
+  materials.edgeWire = new THREE.LineBasicMaterial({ color: palette.edge.clone() })
+  materials.ghostFill = new THREE.MeshBasicMaterial({
+    color: palette.ghost.clone(), transparent: true, opacity: palette.ghostOpacity, depthWrite: false,
+  })
+  materials.ghostEdge = new THREE.LineBasicMaterial({
+    color: palette.ghostEdge.clone(), transparent: true, opacity: 0.32,
+  })
+  return materials
+}
+
+const isSharedMaterial = (material) => {
+  for (const value of Object.values(materials)) {
+    if (value === material) return true
+  }
+  return false
+}
+
+const solidMaterial = (child) => {
+  const mats = sharedMaterials()
+  return child.userData.openSurface ? mats.solidOpen : mats.solid
 }
 
 const applyPalette = (theme) => {
@@ -121,32 +567,38 @@ const applyPalette = (theme) => {
   keyLight.intensity = palette.key
   fillLight.intensity = palette.fill
   rebuildGrid(!isLight)
+  paletteVersion += 1
+  const mats = sharedMaterials()
   if (display) {
     display.traverse((child) => {
       if (!child.isMesh) return
-      const solid = child.userData.solidMaterial
-      if (solid) solid.color.copy(palette.solid)
+      const solid = solidMaterial(child)
+      child.userData.solidMaterial = solid
+      child.material = wire ? mats.wireFill : solid
       const edges = child.userData.edges
-      if (edges?.material) edges.material.color.copy(palette.edge)
+      if (edges) edges.material = wire ? mats.edgeWire : mats.edge
     })
   }
   if (ghost) {
     ghost.traverse((child) => {
-      if (child.isMesh && child.material) {
-        child.material.color.copy(palette.ghost)
-        child.material.opacity = palette.ghostOpacity
-      }
-      if (child.isLineSegments && child.material) child.material.color.copy(palette.ghostEdge)
+      if (!child.isMesh) return
+      child.material = mats.ghostFill
+      if (child.userData.edges) child.userData.edges.material = mats.ghostEdge
     })
   }
+  applySection()
+  requestRender()
 }
 
 let kernel = null
+let kernelTask = null
+let kernelError = null
 let display = null
 let ghost = null
 let highlightGroup = null
 let previewActive = false
 let wire = false
+let showEdges = true
 let measureMode = false
 let measureA = null
 let pickScope = 'face'
@@ -236,6 +688,7 @@ const fit = (object) => {
   camera.far = Math.max(radius * 300, 200)
   camera.updateProjectionMatrix()
   controls.update()
+  requestRender()
 }
 
 const setView = (name) => {
@@ -247,66 +700,220 @@ const setView = (name) => {
     .addScaledVector(direction, Math.max(sphere.radius, 1) * 2.55)
   camera.updateProjectionMatrix()
   controls.update()
+  requestRender()
 }
 
 const disposeObject = (object) => {
   if (!object) return
   scene.remove(object)
   object.traverse((child) => {
-    if (child.userData?.edges) {
-      child.remove(child.userData.edges)
-      child.userData.edges.geometry?.dispose?.()
-      child.userData.edges.material?.dispose?.()
+    const edges = child.userData?.edges
+    if (edges) {
+      child.remove(edges)
+      edges.geometry?.dispose?.()
     }
     child.geometry?.dispose?.()
     const material = child.material
-    if (Array.isArray(material)) material.forEach((item) => item.dispose?.())
-    else material?.dispose?.()
+    if (Array.isArray(material)) material.forEach((item) => { if (!isSharedMaterial(item)) item.dispose?.() })
+    else if (material && !isSharedMaterial(material)) material.dispose?.()
   })
 }
 
 const dressSolid = (object) => {
   object.traverse((child) => {
     if (!child.isMesh) return
-    child.material = new THREE.MeshStandardMaterial({
-      color: palette.solid.clone(), metalness: 0.1, roughness: 0.62,
-    })
-    child.userData.solidMaterial = child.material
+    const solid = solidMaterial(child)
+    child.material = wire ? sharedMaterials().wireFill : solid
+    child.userData.solidMaterial = solid
   })
   return object
 }
 
-// The loader also attaches its own helper lines, whose materials belong to the
-// kernel's copy of the renderer. Drop them so every drawn object is ours.
-const stripHelpers = (object) => {
-  const drop = []
-  object.traverse((child) => {
-    if (child === object) return
-    if (child.isMesh) return
-    if (child.isLine || child.isLineSegments || child.isPoints) drop.push(child)
-  })
-  for (const child of drop) {
-    child.parent?.remove(child)
-    child.geometry?.dispose?.()
-    const material = child.material
-    if (Array.isArray(material)) material.forEach((item) => item.dispose?.())
-    else material?.dispose?.()
+// Edge lines belong to the object, not to the current wire state: the geometry
+// is made once and cached on the mesh, so toggling wire or switching documents
+// only swaps the line material.
+const ensureEdges = (child) => {
+  const mats = sharedMaterials()
+  if (!child.userData.edges) {
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 16), mats.edge)
+    child.userData.edges = edges
+    child.add(edges)
   }
-  return object
+  return child.userData.edges
 }
 
-const parseBytes = (payload) => {
-  const object = stripHelpers(new kernel.STEPLoader().parse(payload))
-  dressSolid(object)
-  return object
+// The loader's edge lines are the body's exact edges, but reading them tessellates
+// the whole body: per-edge sampling runs at a fixed 5 degree turn angle and takes
+// minutes on a large part, while the faces alone tessellate in seconds. The display
+// mesh is therefore built face by face from the kernel meshes, which also yields the
+// triangle to face map that picking and highlighting need.
+const DISPLAY_TOLERANCE = 1e-3
+const DISPLAY_ANGLE = (15 * Math.PI) / 180
+// Kernel meshing cannot be interrupted, so the build yields between faces once a
+// slice has run this long; one face stays one block, which keeps the longest
+// interruption at the slowest face rather than the whole part.
+const FRAME_BUDGET_MS = 24
+
+const yieldToPage = () => new Promise((resolve) => { setTimeout(resolve, 0) })
+
+const faceStats = (position, index, matrix) => {
+  const a = new THREE.Vector3()
+  const b = new THREE.Vector3()
+  const c = new THREE.Vector3()
+  const edge = new THREE.Vector3()
+  const triNormal = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  const sum = new THREE.Vector3()
+  const normalSum = new THREE.Vector3()
+  let area = 0
+  for (let i = 0; i + 2 < index.length; i += 3) {
+    a.fromArray(position, index[i] * 3)
+    b.fromArray(position, index[i + 1] * 3)
+    c.fromArray(position, index[i + 2] * 3)
+    triNormal.subVectors(b, a).cross(edge.subVectors(c, a))
+    const triArea = triNormal.length() / 2
+    if (!(triArea > 0)) continue
+    area += triArea
+    center.copy(a).add(b).add(c).divideScalar(3)
+    sum.addScaledVector(center, triArea)
+    normalSum.addScaledVector(triNormal.normalize(), triArea)
+  }
+  if (area > 0) {
+    sum.divideScalar(area)
+    normalSum.normalize()
+  } else {
+    normalSum.set(0, 0, 1)
+  }
+  sum.applyMatrix4(matrix)
+  normalSum.transformDirection(matrix)
+  return { area, center: sum.toArray(), normal: normalSum.toArray() }
+}
+
+const bodyDisplayPlan = (body) => {
+  // A chord height of 0.1 % of the body diagonal matches the kernel's own display
+  // default; bbox() is three's Box3, so the diagonal comes from its size.
+  const diagonal = body.bbox().getSize(new THREE.Vector3()).length()
+  return {
+    body,
+    faces: [...body.faces()],
+    matrix: body.matrixWorld.clone(),
+    tolerance: Math.max(diagonal * DISPLAY_TOLERANCE, 1e-6),
+  }
+}
+
+const buildBodyMesh = async (plan, onProgress) => {
+  const parts = []
+  let budget = performance.now()
+  for (let i = 0; i < plan.faces.length; i++) {
+    const face = plan.faces[i]
+    const kernelMesh = face.toMesh({ tolerance: plan.tolerance, angle: DISPLAY_ANGLE })
+    const geometry = kernelMesh.geometry
+    const position = geometry.getAttribute('position').array
+    const normal = geometry.getAttribute('normal').array
+    const index = geometry.getIndex().array
+    parts.push({
+      position,
+      normal,
+      index,
+      faceIndex: face.index,
+      stats: faceStats(position, index, plan.matrix),
+    })
+    geometry.dispose()
+    kernelMesh.dispose()
+    if (performance.now() - budget > FRAME_BUDGET_MS && i + 1 < plan.faces.length) {
+      onProgress?.(i + 1, plan.faces.length)
+      await yieldToPage()
+      budget = performance.now()
+    }
+  }
+  let vertexTotal = 0
+  let indexTotal = 0
+  for (const part of parts) {
+    vertexTotal += part.position.length
+    indexTotal += part.index.length
+  }
+  const positions = new Float32Array(vertexTotal)
+  const normals = new Float32Array(vertexTotal)
+  const indices = new Uint32Array(indexTotal)
+  const triangleFaces = new Uint32Array(indexTotal / 3)
+  const faceData = new Map()
+  let vertexOffset = 0
+  let indexOffset = 0
+  for (const part of parts) {
+    positions.set(part.position, vertexOffset)
+    normals.set(part.normal, vertexOffset)
+    const base = vertexOffset / 3
+    for (let i = 0; i < part.index.length; i++) indices[indexOffset + i] = part.index[i] + base
+    const triangleStart = indexOffset / 3
+    for (let i = 0; i < part.index.length / 3; i++) triangleFaces[triangleStart + i] = part.faceIndex
+    faceData.set(part.faceIndex, { index: part.faceIndex, ...part.stats })
+    vertexOffset += part.position.length
+    indexOffset += part.index.length
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+  geometry.computeBoundingSphere()
+  const mesh = new THREE.Mesh(geometry, sharedMaterials().solid)
+  mesh.userData.solidMaterial = sharedMaterials().solid
+  mesh.userData.faceData = faceData
+  mesh.userData.faceCount = parts.length
+  mesh.userData.triangleFaceIndex = triangleFaces
+  return mesh
+}
+
+const buildStepObject = async (payload, onProgress) => {
+  const api = await ensureKernel()
+  const source = new api.STEPLoader().parse(payload)
+  source.updateMatrixWorld(true)
+  const bodies = []
+  source.traverse((child) => {
+    if (child.isMesh && typeof child.faces === 'function') bodies.push(child)
+  })
+  if (!bodies.length) throw new Error('STEP 中没有可显示的实体')
+  const plans = bodies.map((body) => bodyDisplayPlan(body))
+  const faceTotal = plans.reduce((sum, plan) => sum + plan.faces.length, 0)
+  const group = new THREE.Group()
+  let done = 0
+  for (const plan of plans) {
+    const mesh = await buildBodyMesh(plan, (count) => onProgress?.(done + count, faceTotal))
+    mesh.userData.openSurface = !(plan.body instanceof api.Part)
+    mesh.material = solidMaterial(mesh)
+    mesh.userData.solidMaterial = mesh.material
+    done += plan.faces.length
+    group.add(mesh)
+    plan.body.dispose()
+    onProgress?.(done, faceTotal)
+  }
+  group.userData.faceCount = faceTotal
+  return group
+}
+
+const fetches = new Map()
+
+const fetchOnce = (url, consume) => {
+  const pending = fetches.get(url)
+  if (pending) return pending
+  const task = (async () => {
+    try {
+      const response = await fetch(url)
+      return await consume(response)
+    } finally {
+      fetches.delete(url)
+    }
+  })()
+  fetches.set(url, task)
+  return task
 }
 
 const fetchBytes = async (documentId, version) => {
   const key = `${documentId}:${version}`
   if (bytes.has(key)) return bytes.get(key)
-  const response = await fetch(`/api/docs/${documentId}/step?version=${version}`)
-  if (!response.ok) throw new Error(`STEP ${response.status}`)
-  const payload = new Uint8Array(await response.arrayBuffer())
+  const payload = await fetchOnce(`/api/docs/${documentId}/step?version=${version}`, async (response) => {
+    if (!response.ok) throw new Error(`STEP ${response.status}`)
+    return new Uint8Array(await response.arrayBuffer())
+  })
   remember(bytes, key, payload)
   return payload
 }
@@ -314,15 +921,27 @@ const fetchBytes = async (documentId, version) => {
 const fetchScene = async (documentId, version) => {
   const key = `${documentId}:${version}`
   if (scenes.has(key)) return scenes.get(key)
-  const response = await fetch(`/api/docs/${documentId}/scene?version=${version}&cached=1`)
-  if (!response.ok) throw new Error(`SCENE ${response.status}`)
-  const payload = await response.json()
+  // edges are for the workbench's edge picking; the viewport only draws faces.
+  const payload = await fetchOnce(
+    `/api/docs/${documentId}/scene?version=${version}&cached=1&edges=0`,
+    async (response) => {
+      if (!response.ok) throw new Error(`SCENE ${response.status}`)
+      return response.json()
+    },
+  )
   remember(scenes, key, payload)
   return payload
 }
 
 const objectFromScene = (payload) => {
   const faces = payload.faces || []
+  // A document whose features make no solid still has a valid scene payload with
+  // no faces; that is a displayed empty model, not a failed load.
+  if (!faces.length) {
+    const empty = new THREE.Group()
+    empty.userData.faceCount = 0
+    return empty
+  }
   let vertexTotal = 0
   let indexTotal = 0
   for (const face of faces) {
@@ -368,11 +987,8 @@ const objectFromScene = (payload) => {
   geometry.setIndex(new THREE.BufferAttribute(indices, 1))
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
-  const material = new THREE.MeshStandardMaterial({
-    color: palette.solid.clone(), metalness: 0.1, roughness: 0.62,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.userData.solidMaterial = material
+  const mesh = new THREE.Mesh(geometry, sharedMaterials().solid)
+  mesh.userData.solidMaterial = sharedMaterials().solid
   mesh.userData.faceData = faceData
   mesh.userData.faceCount = faces.length
   mesh.userData.triangleFaceIndex = triangleFaces
@@ -389,43 +1005,7 @@ const objectFor = async (documentId, version) => {
   } catch (error) {
     /* fall back to the exact STEP path when a scene payload is unavailable */
   }
-  return parseBytes(await fetchBytes(documentId, version))
-}
-
-const showSimplified = async (documentId, version, options = {}) => {
-  const requestId = Number(options.requestId) || 0
-  if (requestId) latestDesignRequest = Math.max(latestDesignRequest, requestId)
-  const requestToken = latestDesignRequest
-  const parseStart = performance.now()
-  try {
-    const response = await fetch(`/api/docs/${documentId}/export/stl?version=${version}`)
-    if (!response.ok) throw new Error(`STL ${response.status}`)
-    const geometry = new STLLoader().parse(await response.arrayBuffer())
-    if (requestToken !== latestDesignRequest) {
-      geometry.dispose()
-      return
-    }
-    const material = new THREE.MeshStandardMaterial({ color: palette.solid.clone(), metalness: 0.1, roughness: 0.62 })
-    const object = new THREE.Mesh(geometry, material)
-    object.userData.simplified = true
-    display = object
-    scene.add(display)
-    clearHandle()
-    previewActive = false
-    currentVersion = version
-    if (!hasFitted || options.fit) { fit(display); hasFitted = true }
-    applySection()
-    say(`v${version} · 简化显示`)
-    post('shown', {
-      version,
-      documentId,
-      faces: 1,
-      simplified: true,
-      timings: { parseMs: performance.now() - parseStart, edgesMs: 0, totalMs: performance.now() - parseStart },
-    })
-  } catch (error) {
-    say(`简化模型加载失败 ${error.message}`)
-  }
+  return buildStepObject(await fetchBytes(documentId, version))
 }
 
 const sectionPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)
@@ -444,58 +1024,43 @@ const applySection = () => {
     sectionPlane.constant = low + (high - low) * sectionT
   }
   const planes = sectionOn ? [sectionPlane] : null
+  // Moving the plane only changes uniforms; a material recompiles only when the
+  // clipping or side state itself changes.
   const paint = (root) => {
     if (!root) return
+    const side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
     root.traverse((child) => {
-      if (!child.material) return
-      const isMesh = child.isMesh
-      if (!isMesh && !child.isLineSegments && !child.isLine) return
-      child.material.clippingPlanes = planes
-      if (isMesh) child.material.side = sectionOn ? THREE.DoubleSide : THREE.FrontSide
-      child.material.needsUpdate = true
-      if (isMesh && child.userData.edges) {
-        child.userData.edges.material.clippingPlanes = planes
-        child.userData.edges.material.needsUpdate = true
-      }
+      if (!child.isMesh && !child.isLineSegments && !child.isLine) return
+      const material = child.material
+      if (!material) return
+      material.clippingPlanes = planes
+      const paintKey = `${sectionOn ? 'clip' : 'plain'}:${child.isMesh ? side : 'line'}`
+      if (material.userData.paintKey === paintKey) return
+      material.userData.paintKey = paintKey
+      if (child.isMesh) material.side = side
+      material.needsUpdate = true
     })
   }
   paint(display)
   paint(ghost)
+  requestRender()
 }
 
+// Wire mode swaps the materials of an object that keeps its edge geometry: the
+// lines are built once per object and reused for every document switch.
 const applyWire = () => {
-  if (!display || display.userData?.simplified) return
+  if (!display) return
+  const mats = sharedMaterials()
   display.traverse((child) => {
     if (!child.isMesh) return
-    if (child.userData.edges) {
-      child.remove(child.userData.edges)
-      child.userData.edges.geometry.dispose()
-      child.userData.edges.material.dispose()
-      child.userData.edges = null
-    }
-    if (wire) {
-      child.material = new THREE.MeshBasicMaterial({
-        color: palette.edge.clone(), transparent: true, opacity: 0.12, depthWrite: false,
-      })
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(child.geometry, 16),
-        new THREE.LineBasicMaterial({ color: palette.edge.clone() }),
-      )
-      child.userData.edges = edges
-      child.add(edges)
-    } else {
-      child.material = child.userData.solidMaterial || child.material
-      const edges = new THREE.LineSegments(
-        new THREE.EdgesGeometry(child.geometry, 16),
-        new THREE.LineBasicMaterial({
-          color: palette.edge.clone(), transparent: true, opacity: 0.5, depthWrite: false,
-        }),
-      )
-      child.userData.edges = edges
-      child.add(edges)
-    }
+    const edges = ensureEdges(child)
+    edges.material = wire ? mats.edgeWire : mats.edge
+    const solid = solidMaterial(child)
+    child.userData.solidMaterial = solid
+    child.material = wire ? mats.wireFill : solid
   })
   applySection()
+  requestRender()
 }
 
 const clearHighlight = () => {
@@ -503,7 +1068,96 @@ const clearHighlight = () => {
   if (highlightGroup) {
     disposeObject(highlightGroup)
     highlightGroup = null
+    requestRender()
   }
+}
+
+const MATCH_RADIUS = 0.6
+
+// The face whose stored centre is nearest the anchor, then (for an anchor no
+// centre covers) the face of the nearest triangle. Both display paths carry
+// faceData and triangleFaceIndex, so the same selection works whether the
+// geometry came from a scene payload or from a STEP tessellation.
+const matchedFaces = (mesh, anchors) => {
+  const faceData = mesh.userData.faceData
+  const matched = new Set()
+  if (!faceData) return matched
+  const loose = []
+  for (const anchor of anchors) {
+    let best = MATCH_RADIUS
+    let faceIndex = null
+    for (const face of faceData.values()) {
+      if (!Array.isArray(face.center)) continue
+      const distance = Math.hypot(
+        face.center[0] - anchor.x, face.center[1] - anchor.y, face.center[2] - anchor.z,
+      )
+      if (distance <= best) { best = distance; faceIndex = face.index }
+    }
+    if (faceIndex === null) loose.push(anchor)
+    else matched.add(faceIndex)
+  }
+  if (!loose.length) return matched
+  const triangleFaces = mesh.userData.triangleFaceIndex
+  const position = mesh.geometry.getAttribute('position').array
+  const index = mesh.geometry.getIndex().array
+  const center = new THREE.Vector3()
+  for (const anchor of loose) {
+    let best = Infinity
+    let faceIndex = null
+    for (let triangle = 0; triangle < triangleFaces.length; triangle++) {
+      center.set(0, 0, 0)
+      for (let corner = 0; corner < 3; corner++) {
+        const at = index[triangle * 3 + corner] * 3
+        center.x += position[at]
+        center.y += position[at + 1]
+        center.z += position[at + 2]
+      }
+      center.divideScalar(3).applyMatrix4(mesh.matrixWorld)
+      const distance = center.distanceToSquared(anchor)
+      if (distance < best) { best = distance; faceIndex = triangleFaces[triangle] }
+    }
+    if (faceIndex !== null) matched.add(faceIndex)
+  }
+  return matched
+}
+
+const overlayFor = (mesh, faces) => {
+  const triangleFaces = mesh.userData.triangleFaceIndex
+  const geometry = mesh.geometry
+  const position = geometry.getAttribute('position').array
+  const normal = geometry.getAttribute('normal')?.array ?? null
+  const index = geometry.getIndex().array
+  const triangles = []
+  for (let triangle = 0; triangle < triangleFaces.length; triangle++) {
+    if (faces.has(triangleFaces[triangle])) triangles.push(triangle)
+  }
+  if (!triangles.length) return null
+  const positions = new Float32Array(triangles.length * 9)
+  const normals = normal ? new Float32Array(triangles.length * 9) : null
+  const vector = new THREE.Vector3()
+  const matrix = mesh.matrixWorld
+  let at = 0
+  for (const triangle of triangles) {
+    for (let corner = 0; corner < 3; corner++) {
+      const source = index[triangle * 3 + corner]
+      vector.fromArray(position, source * 3).applyMatrix4(matrix)
+      positions[at * 3] = vector.x
+      positions[at * 3 + 1] = vector.y
+      positions[at * 3 + 2] = vector.z
+      if (normals) {
+        vector.fromArray(normal, source * 3).transformDirection(matrix)
+        normals[at * 3] = vector.x
+        normals[at * 3 + 1] = vector.y
+        normals[at * 3 + 2] = vector.z
+      }
+      at += 1
+    }
+  }
+  const overlay = new THREE.BufferGeometry()
+  overlay.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  if (normals) overlay.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  overlay.computeBoundingSphere()
+  return overlay
 }
 
 const highlightFaces = (centers, seconds = 3.2, tone = 'change') => {
@@ -528,20 +1182,13 @@ const highlightFaces = (centers, seconds = 3.2, tone = 'change') => {
   display.updateMatrixWorld(true)
   let matched = 0
   display.traverse((child) => {
-    if (!child.isMesh || typeof child.faces !== 'function') return
-    for (const face of child.faces()) {
-      const center = face.getCenter()
-      center.applyMatrix4(child.matrixWorld)
-      let hit = false
-      for (const anchor of anchors) {
-        if (center.distanceTo(anchor) <= 0.6) { hit = true; break }
-      }
-      if (!hit) continue
-      const overlay = new THREE.Mesh(face.geometry, mat)
-      overlay.applyMatrix4(child.matrixWorld)
-      group.add(overlay)
-      matched += 1
-    }
+    if (!child.isMesh || !child.userData.faceData || !child.userData.triangleFaceIndex) return
+    const faces = matchedFaces(child, anchors)
+    if (!faces.size) return
+    const geometry = overlayFor(child, faces)
+    if (!geometry) return
+    group.add(new THREE.Mesh(geometry, mat))
+    matched += faces.size
   })
   if (!matched) {
     mat.dispose()
@@ -549,6 +1196,7 @@ const highlightFaces = (centers, seconds = 3.2, tone = 'change') => {
   }
   highlightGroup = group
   scene.add(highlightGroup)
+  requestRender()
   if (seconds > 0) highlightTimer = setTimeout(clearHighlight, seconds * 1000)
 }
 
@@ -556,28 +1204,28 @@ const clearGhost = () => {
   if (!ghost) return
   disposeObject(ghost)
   ghost = null
+  requestRender()
 }
 
 const showGhost = async (documentId, version) => {
   clearGhost()
   try {
-    const parseStart = performance.now()
     const object = await objectFor(documentId, version)
-    const parseMs = performance.now() - parseStart
+    const mats = sharedMaterials()
     object.traverse((child) => {
       if (!child.isMesh) return
-      child.material = new THREE.MeshBasicMaterial({
-        color: palette.ghost.clone(), transparent: true, opacity: palette.ghostOpacity, depthWrite: false,
-      })
-      child.add(new THREE.LineSegments(
-        new THREE.EdgesGeometry(child.geometry, 16),
-        new THREE.LineBasicMaterial({ color: palette.ghostEdge.clone(), transparent: true, opacity: 0.32 }),
-      ))
+      child.material = mats.ghostFill
+      child.userData.solidMaterial = mats.ghostFill
+      if (!child.userData.edges) {
+        child.userData.edges = new THREE.LineSegments(new THREE.EdgesGeometry(child.geometry, 16), mats.ghostEdge)
+        child.add(child.userData.edges)
+      }
     })
     ghost = object
     scene.add(ghost)
     applySection()
     say(`残影 v${version} 叠加中`)
+    requestRender()
   } catch (error) {
     say(`残影加载失败 ${error.message}`)
   }
@@ -586,8 +1234,8 @@ const showGhost = async (documentId, version) => {
 let latestDesignRequest = 0
 
 const showVersion = async (documentId, version, options = {}) => {
+  const previousDoc = currentDoc
   currentDoc = documentId
-  if (!kernel) return
   const requestId = Number(options.requestId) || 0
   if (requestId) latestDesignRequest = Math.max(latestDesignRequest, requestId)
   const requestToken = latestDesignRequest
@@ -605,21 +1253,30 @@ const showVersion = async (documentId, version, options = {}) => {
     empty.classList.add('on')
     currentVersion = version || 0
     say('空白文档')
+    requestRender()
     return
   }
   vacantGroup.visible = false
   empty.classList.remove('on')
-  if (!previewActive && currentVersion === version && display && !options.force) return
-  previewActive = false
-  clearHighlight()
-  if (options.simplified) {
-    disposeObject(display)
-    display = null
-    await showSimplified(documentId, version, options)
+  if (!previewActive && previousDoc === documentId && currentVersion === version && display && !options.force) {
+    // A repeated design for what is already on screen (HUD refresh, watchdog) still
+    // owes the HUD a shown message, or its loading overlay never closes.
+    if (options.fit) { fit(display); hasFitted = true }
+    if (options.highlight?.length) highlightFaces(options.highlight)
+    const meshes = display.userData.faceCount || countFaces(display)
+    post('shown', {
+      version,
+      documentId,
+      faces: meshes,
+      timings: { fetchMs: 0, parseMs: 0, edgesMs: 0, totalMs: 0, reused: true },
+    })
     return
   }
+  previewActive = false
+  clearHighlight()
   const keep = display
   const cacheKey = `${documentId}:${version}`
+  let sceneFailure = null
   try {
     const parseStart = performance.now()
     let object = takeObject(cacheKey)
@@ -628,16 +1285,33 @@ const showVersion = async (documentId, version, options = {}) => {
       dressSolid(object)
       say(`复用已解析几何 · ${object.userData.faceCount || countFaces(object)} 个面`)
     } else {
-      const scenePayload = await fetchScene(documentId, version)
-      fetchMs = performance.now() - parseStart
-      if (scenePayload?.faces?.length) {
-        say(`场景 ${scenePayload.faces.length} 面 · 读取 ${fetchMs.toFixed(0)}ms · 构建中`)
-        object = objectFromScene(scenePayload)
-      } else {
+      try {
+        const scenePayload = await fetchScene(documentId, version)
+        if (scenePayload && Array.isArray(scenePayload.faces)) {
+          fetchMs = performance.now() - parseStart
+          say(`场景 ${scenePayload.faces.length} 面 · 读取 ${fetchMs.toFixed(0)}ms · 构建中`)
+          object = objectFromScene(scenePayload)
+        } else {
+          sceneFailure = new Error('SCENE 载荷格式不正确')
+        }
+      } catch (error) {
+        sceneFailure = error
+      }
+      if (!object) {
+        // A scene payload that is missing is the normal state for documents nobody
+        // has sampled yet: fall back to the exact STEP bytes instead of showing nothing.
         const stepBytes = await fetchBytes(documentId, version)
         fetchMs = performance.now() - parseStart
-        say(`STEP ${(stepBytes.byteLength / 1024).toFixed(0)} KB · 读取 ${fetchMs.toFixed(0)}ms · 正在三角化`)
-        object = parseBytes(stepBytes)
+        const kilobytes = (stepBytes.byteLength / 1024).toFixed(0)
+        say(`场景不可用（${sceneFailure.message}）· STEP ${kilobytes} KB · 三角化中`)
+        let lastStatus = 0
+        object = await buildStepObject(stepBytes, (done, total) => {
+          const now = performance.now()
+          if (done < total && now - lastStatus < 150) return
+          lastStatus = now
+          say(`STEP ${kilobytes} KB · 三角化 ${done}/${total}`)
+        })
+        object.userData.sceneFallback = sceneFailure.message
       }
       object.userData.cacheKey = cacheKey
     }
@@ -663,24 +1337,40 @@ const showVersion = async (documentId, version, options = {}) => {
     const edgesMs = performance.now() - edgesStart
     if (options.highlight?.length) highlightFaces(options.highlight)
     const meshes = object.userData.faceCount || countFaces(display)
-    say(`v${version} · ${meshes} 个面 · 解析 ${parseMs.toFixed(0)}ms · 边 ${edgesMs.toFixed(0)}ms`)
+    const fallback = object.userData.sceneFallback ? ` · STEP 兜底（${object.userData.sceneFallback}）` : ''
+    say(`v${version} · ${meshes} 个面 · 解析 ${parseMs.toFixed(0)}ms · 边 ${edgesMs.toFixed(0)}ms${fallback}`)
     post('shown', { version, documentId, faces: meshes, timings: { parseMs, edgesMs, fetchMs, totalMs: performance.now() - parseStart } })
   } catch (error) {
+    // A superseded request must not restore an old display or report an error that
+    // the host would attach to the request that replaced it.
+    if (requestToken !== latestDesignRequest) return
     display = keep
-    say(`模型加载失败 ${error.message}`)
+    const scenePart = sceneFailure ? `（scene: ${sceneFailure.message}）` : ''
+    const text = `模型加载失败 ${documentId} v${version}：${error.message}${scenePart}`
+    say(text)
+    post('error', { text, documentId, version })
+    requestRender()
   }
 }
 
+let previewAbort = null
 const showPreview = async (url, label) => {
-  if (!kernel || !url) return
+  if (!url) return
+  previewAbort?.abort()
+  const controller = new AbortController()
+  previewAbort = controller
   vacantGroup.visible = false
   empty.classList.remove('on')
   clearHighlight()
   const keep = display
   try {
-    const response = await fetch(url)
+    const response = await fetch(url, { signal: controller.signal })
     if (!response.ok) throw new Error(`STEP ${response.status}`)
-    const object = parseBytes(new Uint8Array(await response.arrayBuffer()))
+    const object = await buildStepObject(new Uint8Array(await response.arrayBuffer()))
+    if (controller.signal.aborted) {
+      disposeObject(object)
+      return
+    }
     previewActive = true
     display = object
     scene.add(display)
@@ -690,21 +1380,1242 @@ const showPreview = async (url, label) => {
     applyWire()
     applySection()
     say(`预览 · ${label || '候选方案'}`)
+    post('preview-shown', { label: label || '' })
   } catch (error) {
+    if (controller.signal.aborted) return
     display = keep
     say(`预览失败 ${error.message}`)
+    post('preview-error', { text: error.message })
+  } finally {
+    if (previewAbort === controller) previewAbort = null
   }
 }
 
-const countFaces = (object) => {
-  const set = new Set()
-  object.traverse((child) => { if (child.isMesh) set.add(child.uuid) })
-  return set.size
+let assemblyPreviewWorker = null
+let assemblyPreviewWorkerUrl = ''
+let assemblyPreviewAbort = null
+let assemblyPreviewActive = null
+let assemblyPreviewRequestId = 0
+let assemblyPreview = null
+let assemblyPreviewStatus = { state: 'idle' }
+window.__assemblyPreview = null
+window.__assemblyPreviewStatus = assemblyPreviewStatus
+
+const setAssemblyPreviewStatus = (status) => {
+  assemblyPreviewStatus = status
+  window.__assemblyPreviewStatus = status
 }
 
-const prefetch = (documentId, version) => {
-  if (!documentId || !version) return
-  fetchBytes(documentId, version).catch(() => {})
+const assemblyPreviewError = (code, message) => {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+const failAssemblyPreview = (id, code, message) => {
+  if (id !== assemblyPreviewRequestId) return
+  const active = assemblyPreviewActive
+  assemblyPreviewActive = null
+  assemblyPreview = null
+  window.__assemblyPreview = null
+  const payload = {
+    state: 'error',
+    requestId: id,
+    code: code || 'BUNDLE_DECODE_FAILED',
+    message: message || 'assembly preview failed',
+    bundleUrl: active ? active.bundleUrl : '',
+  }
+  disposeAssemblyPreviewRender()
+  if (!display) {
+    vacantGroup.visible = true
+    empty.classList.add('on')
+  }
+  setAssemblyPreviewStatus(payload)
+  say(`装配预览失败 ${payload.code}: ${payload.message}`)
+  post('assembly-preview-error', payload)
+}
+
+const assemblyPreviewSummary = (decoded) => {
+  const manifest = decoded.manifest
+  let positions = 0
+  let indices = 0
+  let faceIds = 0
+  let edges = 0
+  for (const prototype of decoded.prototypes) {
+    positions += prototype.positions.length
+    indices += prototype.indices.length
+    faceIds += prototype.faceIds.length
+    edges += prototype.edges.length
+  }
+  return {
+    state: 'ready',
+    requestId: decoded.requestId,
+    bundleUrl: decoded.bundleUrl,
+    bundleKey: decoded.bundleKey || '',
+    previewKey: manifest.previewKey,
+    byteLength: decoded.byteLength,
+    decodeMs: decoded.decodeMs,
+    cached: Boolean(decoded.cached),
+    prototypeCount: manifest.prototypeCount,
+    instanceCount: manifest.instanceCount,
+    leafCount: manifest.leafCount,
+    sceneInstanceCount: manifest.sceneInstanceCount,
+    frameCount: manifest.frameCount,
+    failedCount: manifest.failedCount,
+    suppressedCount: manifest.suppressedCount,
+    prototypes: decoded.prototypes.length,
+    positions,
+    indices,
+    faceIds,
+    edges,
+  }
+}
+
+function onAssemblyPreviewWorkerMessage(event) {
+  const data = event.data
+  if (!data || typeof data !== 'object') return
+  if (data.id !== assemblyPreviewRequestId) return
+  const active = assemblyPreviewActive
+  if (!active || data.id !== active.id) return
+  if (data.type === 'assembly-preview-decoded') {
+    assemblyPreview = {
+      requestId: active.id,
+      bundleUrl: active.bundleUrl,
+      bundleKey: active.bundleKey || '',
+      manifest: data.manifest,
+      prototypes: data.prototypes,
+      dataBase: data.dataBase,
+      byteLength: data.byteLength,
+      decodeMs: data.decodeMs,
+      cached: Boolean(active.cached),
+    }
+    window.__assemblyPreview = assemblyPreview
+    assemblyPreviewActive = null
+    let renderInfo = null
+    try {
+      renderInfo = renderAssemblyPreview(assemblyPreview)
+    } catch (error) {
+      failAssemblyPreview(data.id, 'RENDER_FAILED', error.message || 'assembly preview render failed')
+      return
+    }
+    const summary = assemblyPreviewSummary(assemblyPreview)
+    if (renderInfo) {
+      summary.drawCalls = renderInfo.drawCalls
+      summary.batches = renderInfo.batches.length
+      summary.edgeBatches = renderInfo.edgeBatches.length
+      summary.edgeDrawCalls = renderInfo.edgeDrawCalls
+      summary.showEdges = renderInfo.showEdges
+    }
+    setAssemblyPreviewStatus(summary)
+    say(`装配预览已解码 · ${summary.prototypeCount} 原型 / ${summary.instanceCount} 实例 / ${(summary.byteLength / 1024).toFixed(1)} KiB`)
+    post('assembly-preview-ready', summary)
+    return
+  }
+  if (data.type === 'assembly-preview-error') {
+    if (active.source === 'cache' && active.bundleKey) {
+      deleteAssemblyPreviewCache(active.bundleKey)
+      const request = active.request
+      assemblyPreviewActive = null
+      say('装配预览缓存已失效，改从网络读取')
+      loadAssemblyPreview(request, true)
+      return
+    }
+    if (active.bundleKey) deleteAssemblyPreviewCache(active.bundleKey)
+    failAssemblyPreview(data.id, data.code, data.message)
+  }
+}
+
+function onAssemblyPreviewWorkerError(event) {
+  const worker = assemblyPreviewWorker
+  assemblyPreviewWorker = null
+  if (worker) worker.terminate()
+  const message = (event && event.message) || 'worker failed to load'
+  if (assemblyPreviewActive) {
+    failAssemblyPreview(assemblyPreviewActive.id, 'WORKER_ERROR', message)
+  } else {
+    say(`装配预览 Worker 不可用：${message}`)
+  }
+}
+
+const ensureAssemblyPreviewWorker = () => {
+  if (assemblyPreviewWorker) return assemblyPreviewWorker
+  const source = document.getElementById('assembly-preview-worker-source')
+  const text = source ? source.textContent : ''
+  if (!text.trim()) {
+    throw assemblyPreviewError('WORKER_SOURCE_MISSING', 'assembly preview worker source is missing')
+  }
+  if (!assemblyPreviewWorkerUrl) {
+    assemblyPreviewWorkerUrl = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }))
+  }
+  let worker
+  try {
+    worker = new Worker(assemblyPreviewWorkerUrl)
+  } catch (error) {
+    throw assemblyPreviewError('WORKER_UNAVAILABLE', error.message || 'cannot start assembly preview worker')
+  }
+  worker.addEventListener('message', onAssemblyPreviewWorkerMessage)
+  worker.addEventListener('error', onAssemblyPreviewWorkerError)
+  assemblyPreviewWorker = worker
+  return worker
+}
+
+const resolveAssemblyPreviewUrl = (data) => {
+  const raw = typeof data.bundleUrl === 'string' ? data.bundleUrl.trim() : ''
+  if (raw) {
+    let url
+    try {
+      url = new URL(raw, location.href)
+    } catch (error) {
+      throw assemblyPreviewError('BUNDLE_URL_INVALID', 'bundleUrl is not a valid URL')
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'blob:') {
+      throw assemblyPreviewError('BUNDLE_URL_INVALID', 'bundleUrl must be HTTP or blob')
+    }
+    if (url.protocol !== 'blob:' && url.origin !== location.origin) {
+      throw assemblyPreviewError('BUNDLE_URL_ORIGIN', 'bundleUrl must be same-origin')
+    }
+    return url.href
+  }
+  const bundleKey = typeof data.bundleKey === 'string' ? data.bundleKey.trim() : ''
+  if (bundleKey) {
+    return new URL(`/api/preview/${encodeURIComponent(bundleKey)}.bpx`, location.origin).href
+  }
+  return ''
+}
+
+// The main thread only reads the fixed header. Parsing the manifest and
+// decoding typed arrays belongs to the worker, so a large manifest cannot
+// block the first frame or the page's input handling.
+const inspectAssemblyPreviewBundle = (buffer) => {
+  if (!(buffer instanceof ArrayBuffer)) {
+    throw assemblyPreviewError('BUNDLE_NOT_BUFFER', 'bundle payload is not an ArrayBuffer')
+  }
+  const bytes = new Uint8Array(buffer)
+  if (bytes.length < 16) throw assemblyPreviewError('HEADER_TRUNCATED', 'bundle is shorter than its header')
+  if (bytes[0] !== 0x42 || bytes[1] !== 0x50 || bytes[2] !== 0x58 || bytes[3] !== 0x56) {
+    throw assemblyPreviewError('BAD_MAGIC', 'bundle does not start with BPXV')
+  }
+  const view = new DataView(buffer)
+  const version = view.getUint16(4, true)
+  if (version !== 1) throw assemblyPreviewError('UNSUPPORTED_FORMAT_VERSION', `bundle format ${version} is not supported`)
+  const flags = view.getUint16(6, true)
+  if (flags !== 0) throw assemblyPreviewError('UNKNOWN_FLAGS', `bundle flags 0x${flags.toString(16)} are unknown`)
+  const manifestLength = view.getUint32(8, true)
+  if (view.getUint32(12, true) !== 0) throw assemblyPreviewError('RESERVED_NONZERO', 'bundle reserved word is not zero')
+  if (manifestLength === 0 || manifestLength > 16 * 1024 * 1024) {
+    throw assemblyPreviewError('MANIFEST_LENGTH_INVALID', 'bundle manifest length is invalid')
+  }
+  if (bytes.length > 512 * 1024 * 1024) {
+    throw assemblyPreviewError('BUNDLE_TOO_LARGE', 'bundle exceeds the byte limit')
+  }
+  const manifestEnd = 16 + manifestLength
+  if (manifestEnd > bytes.length) throw assemblyPreviewError('BUNDLE_TRUNCATED', 'bundle manifest is truncated')
+  const dataBase = (manifestEnd + 7) & ~7
+  if (dataBase > bytes.length) throw assemblyPreviewError('BUNDLE_TRUNCATED', 'bundle prototype data is truncated')
+  return { formatVersion: version, flags, manifestLength, dataBase, byteLength: bytes.length }
+}
+
+const assemblyPreviewCache = {
+  database: 'brepx-preview',
+  store: 'bundles',
+  maxEntries: 16,
+  maxBytes: 128 * 1024 * 1024,
+}
+let assemblyPreviewCacheDbPromise = null
+
+const openAssemblyPreviewCache = () => {
+  if (assemblyPreviewCacheDbPromise) return assemblyPreviewCacheDbPromise
+  assemblyPreviewCacheDbPromise = new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      resolve(null)
+      return
+    }
+    let request
+    try {
+      request = indexedDB.open(assemblyPreviewCache.database, 1)
+    } catch (error) {
+      resolve(null)
+      return
+    }
+    request.onupgradeneeded = () => {
+      const database = request.result
+      if (!database.objectStoreNames.contains(assemblyPreviewCache.store)) {
+        database.createObjectStore(assemblyPreviewCache.store, { keyPath: 'bundleKey' })
+      }
+    }
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => database.close()
+      resolve(database)
+    }
+    request.onerror = () => resolve(null)
+    request.onblocked = () => resolve(null)
+  })
+  return assemblyPreviewCacheDbPromise
+}
+
+const readAssemblyPreviewCache = async (bundleKey) => {
+  if (!bundleKey) return null
+  const database = await openAssemblyPreviewCache()
+  if (!database) return null
+  try {
+    const record = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readonly')
+      const request = transaction.objectStore(assemblyPreviewCache.store).get(bundleKey)
+      request.onsuccess = () => resolve(request.result || null)
+      request.onerror = () => reject(request.error)
+    })
+    if (!record) return null
+    if (!(record.data instanceof ArrayBuffer)) {
+      await deleteAssemblyPreviewCache(bundleKey)
+      return null
+    }
+    if (record.byteLength !== record.data.byteLength) {
+      await deleteAssemblyPreviewCache(bundleKey)
+      return null
+    }
+    const bytes = new Uint8Array(record.data)
+    if (bytes.length < 4 || bytes[0] !== 0x42 || bytes[1] !== 0x50 || bytes[2] !== 0x58 || bytes[3] !== 0x56) {
+      await deleteAssemblyPreviewCache(bundleKey)
+      return null
+    }
+    try {
+      inspectAssemblyPreviewBundle(record.data)
+    } catch (error) {
+      await deleteAssemblyPreviewCache(bundleKey)
+      return null
+    }
+    return record
+  } catch (error) {
+    return null
+  }
+}
+
+const deleteAssemblyPreviewCache = async (bundleKey) => {
+  if (!bundleKey) return
+  const database = await openAssemblyPreviewCache()
+  if (!database) return
+  try {
+    await new Promise((resolve) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readwrite')
+      transaction.objectStore(assemblyPreviewCache.store).delete(bundleKey)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => resolve()
+      transaction.onabort = () => resolve()
+    })
+  } catch (error) {
+    /* cache deletion is best effort */
+  }
+}
+
+const evictAssemblyPreviewCache = async () => {
+  const database = await openAssemblyPreviewCache()
+  if (!database) return
+  try {
+    const records = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readonly')
+      const request = transaction.objectStore(assemblyPreviewCache.store).getAll()
+      request.onsuccess = () => resolve(request.result || [])
+      request.onerror = () => reject(request.error)
+    })
+    records.sort((left, right) => (left.storedAt || 0) - (right.storedAt || 0))
+    let totalBytes = records.reduce((sum, record) => sum + (record.byteLength || 0), 0)
+    const remove = []
+    while (records.length && (records.length > assemblyPreviewCache.maxEntries
+      || totalBytes > assemblyPreviewCache.maxBytes)) {
+      const record = records.shift()
+      totalBytes -= record.byteLength || 0
+      remove.push(record.bundleKey)
+    }
+    for (const bundleKey of remove) await deleteAssemblyPreviewCache(bundleKey)
+  } catch (error) {
+    /* eviction is best effort */
+  }
+}
+
+const storeAssemblyPreviewCache = async (bundleKey, buffer, previewKey) => {
+  if (!bundleKey || !(buffer instanceof ArrayBuffer) || !buffer.byteLength) return
+  const database = await openAssemblyPreviewCache()
+  if (!database) return
+  try {
+    await new Promise((resolve) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readwrite')
+      transaction.objectStore(assemblyPreviewCache.store).put({
+        bundleKey,
+        data: buffer,
+        byteLength: buffer.byteLength,
+        previewKey: previewKey || '',
+        storedAt: Date.now(),
+      })
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => resolve()
+      transaction.onabort = () => resolve()
+    })
+    await evictAssemblyPreviewCache()
+  } catch (error) {
+    /* cache writes are best effort */
+  }
+}
+
+const clearAssemblyPreviewCache = async () => {
+  const database = await openAssemblyPreviewCache()
+  if (!database) return 0
+  try {
+    const count = await new Promise((resolve) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readwrite')
+      const store = transaction.objectStore(assemblyPreviewCache.store)
+      const countRequest = store.count()
+      countRequest.onsuccess = () => {
+        store.clear()
+      }
+      transaction.oncomplete = () => resolve(countRequest.result || 0)
+      transaction.onerror = () => resolve(0)
+    })
+    return count
+  } catch (error) {
+    return 0
+  }
+}
+
+const assemblyPreviewCacheInfo = async () => {
+  const database = await openAssemblyPreviewCache()
+  if (!database) {
+    return { available: false, entries: 0, totalBytes: 0, keys: [] }
+  }
+  try {
+    const records = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(assemblyPreviewCache.store, 'readonly')
+      const request = transaction.objectStore(assemblyPreviewCache.store).getAll()
+      request.onsuccess = () => resolve(request.result || [])
+      request.onerror = () => reject(request.error)
+    })
+    return {
+      available: true,
+      entries: records.length,
+      totalBytes: records.reduce((sum, record) => sum + (record.byteLength || 0), 0),
+      keys: records.map((record) => record.bundleKey),
+      maxEntries: assemblyPreviewCache.maxEntries,
+      maxBytes: assemblyPreviewCache.maxBytes,
+    }
+  } catch (error) {
+    return { available: false, entries: 0, totalBytes: 0, keys: [] }
+  }
+}
+
+window.__assemblyPreviewCacheClear = clearAssemblyPreviewCache
+window.__assemblyPreviewCacheInfo = assemblyPreviewCacheInfo
+window.__assemblyPreviewCacheDelete = deleteAssemblyPreviewCache
+
+const loadAssemblyPreview = async (data, skipCache = false) => {
+  const requestId = ++assemblyPreviewRequestId
+  assemblyPreviewAbort?.abort()
+  assemblyPreviewAbort = null
+  assemblyPreview = null
+  window.__assemblyPreview = null
+  let bundleUrl
+  try {
+    bundleUrl = resolveAssemblyPreviewUrl(data)
+  } catch (error) {
+    failAssemblyPreview(requestId, error.code || 'BUNDLE_URL_INVALID', error.message)
+    return
+  }
+  if (!bundleUrl) {
+    failAssemblyPreview(requestId, 'BUNDLE_URL_MISSING', 'assembly-preview needs bundleUrl or bundleKey')
+    return
+  }
+  const controller = new AbortController()
+  assemblyPreviewAbort = controller
+  assemblyPreviewActive = {
+    id: requestId,
+    bundleUrl,
+    bundleKey: typeof data.bundleKey === 'string' ? data.bundleKey : '',
+    previewKey: typeof data.previewKey === 'string' ? data.previewKey : '',
+    request: data,
+    source: 'network',
+    cached: false,
+    retriedFromCache: Boolean(skipCache),
+    startedAt: performance.now(),
+  }
+  setAssemblyPreviewStatus({
+    state: 'loading', requestId, bundleUrl,
+    bundleKey: assemblyPreviewActive.bundleKey,
+    previewKey: assemblyPreviewActive.previewKey,
+  })
+  say('装配预览读取中…')
+  try {
+    const worker = ensureAssemblyPreviewWorker()
+    let buffer = null
+    let source = 'network'
+    if (!skipCache && assemblyPreviewActive.bundleKey) {
+      const cached = await readAssemblyPreviewCache(assemblyPreviewActive.bundleKey)
+      if (controller.signal.aborted || requestId !== assemblyPreviewRequestId) return
+      if (cached) {
+        buffer = cached.data
+        source = 'cache'
+      }
+    }
+    if (!buffer) {
+      const response = await fetch(bundleUrl, { signal: controller.signal })
+      if (controller.signal.aborted || requestId !== assemblyPreviewRequestId) return
+      if (!response.ok) {
+        throw assemblyPreviewError('BUNDLE_HTTP_ERROR', `bundle request failed with ${response.status}`)
+      }
+      buffer = await response.arrayBuffer()
+      if (controller.signal.aborted || requestId !== assemblyPreviewRequestId) return
+      source = 'network'
+      if (assemblyPreviewActive.bundleKey) {
+        // The worker owns the transferred buffer; store an independent copy so the
+        // cache entry survives the transfer.
+        storeAssemblyPreviewCache(
+          assemblyPreviewActive.bundleKey,
+          buffer.slice(0),
+          assemblyPreviewActive.previewKey,
+        ).catch(() => {})
+      }
+    }
+    const header = inspectAssemblyPreviewBundle(buffer)
+    assemblyPreviewActive.byteLength = header.byteLength
+    assemblyPreviewActive.source = source
+    assemblyPreviewActive.cached = source === 'cache'
+    setAssemblyPreviewStatus({
+      state: source === 'cache' ? 'cached' : 'decoding', requestId, bundleUrl,
+      bundleKey: assemblyPreviewActive.bundleKey,
+      previewKey: assemblyPreviewActive.previewKey,
+      byteLength: header.byteLength,
+      cached: source === 'cache',
+    })
+    say(source === 'cache'
+      ? `装配预览缓存命中 · ${(header.byteLength / 1024).toFixed(1)} KiB`
+      : `装配预览解码中 · ${(header.byteLength / 1024).toFixed(1)} KiB`)
+    worker.postMessage({ type: 'assembly-preview-decode', id: requestId, buffer }, [buffer])
+  } catch (error) {
+    if (controller.signal.aborted || requestId !== assemblyPreviewRequestId) return
+    failAssemblyPreview(requestId, error.code || 'BUNDLE_FETCH_FAILED', error.message || 'bundle fetch failed')
+  } finally {
+    if (assemblyPreviewAbort === controller) assemblyPreviewAbort = null
+  }
+}
+
+const cancelAssemblyPreview = () => {
+  assemblyPreviewRequestId += 1
+  assemblyPreviewAbort?.abort()
+  assemblyPreviewAbort = null
+  assemblyPreviewActive = null
+  disposeAssemblyPreviewRender()
+  assemblyPreview = null
+  window.__assemblyPreview = null
+  setAssemblyPreviewStatus({ state: 'idle' })
+}
+
+let assemblyPreviewGroup = null
+let assemblyPreviewGeometries = new Set()
+let assemblyPreviewMaterials = new Map()
+let assemblyPreviewRenderInfo = null
+let assemblyPreviewEdgeGroup = null
+let assemblyPreviewEdgeMaterial = null
+let assemblyPreviewEdgeGeometries = new Set()
+let assemblyPreviewEdgeMeshes = []
+let assemblyPreviewSelection = new Set()
+window.__assemblyPreviewGroup = null
+window.__assemblyPreviewRender = null
+window.__assemblyPreviewEdgeGroup = null
+window.__assemblyPreviewSetEdges = null
+window.__assemblyPreviewSetSelection = null
+
+const ASSEMBLY_PREVIEW_DEFAULT_COLOR = '#b6c9d7'
+const ASSEMBLY_PREVIEW_SELECTED_COLOR = 0x4f8cff
+const ASSEMBLY_PREVIEW_XRAY_OPACITY = 0.22
+const ASSEMBLY_PREVIEW_XRAY_PALETTE = [
+  '#5f8fc4', '#7aa7d3', '#7fb0b8', '#d9a05b', '#cf8248', '#b96b45',
+  '#a4b3c3', '#6b93c4', '#9aa8b7', '#c8a35a', '#6f9fd0',
+]
+let assemblyPreviewXray = false
+let assemblyPreviewXrayPaths = new Set()
+
+const assemblyPreviewMaterial = (opacity) => {
+  const key = String(opacity)
+  const cached = assemblyPreviewMaterials.get(key)
+  if (cached) return cached
+  const transparent = opacity < 1
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    metalness: 0.1,
+    roughness: 0.62,
+    transparent,
+    opacity,
+    depthWrite: !transparent,
+  })
+  material.userData.assemblyPreview = true
+  assemblyPreviewMaterials.set(key, material)
+  return material
+}
+
+const applyAssemblyPreviewXray = (on, paths = []) => {
+  assemblyPreviewXray = Boolean(on)
+  assemblyPreviewXrayPaths = new Set(Array.isArray(paths) ? paths : [])
+  if (assemblyPreviewGroup) {
+    for (const mesh of assemblyPreviewGroup.children) {
+      if (!mesh.isInstancedMesh) continue
+      const base = Number(mesh.userData.opacity ?? 1)
+      const instancePaths = mesh.userData.instancePaths || []
+      const ghost = assemblyPreviewXray
+        && instancePaths.length > 0
+        && instancePaths.every((path) => assemblyPreviewXrayPaths.has(path))
+      const opacity = ghost ? Math.min(base, ASSEMBLY_PREVIEW_XRAY_OPACITY) : base
+      mesh.material = assemblyPreviewMaterial(opacity)
+      mesh.renderOrder = opacity < 1 ? 1 : 0
+      mesh.userData.xrayGhost = ghost
+      if (mesh.instanceColor) {
+        const colors = ghost
+          ? mesh.userData.xrayColors
+          : mesh.userData.baseColors
+        if (colors && colors.length === mesh.instanceColor.array.length) {
+          mesh.instanceColor.array.set(colors)
+          mesh.instanceColor.needsUpdate = true
+        }
+      }
+    }
+    if (assemblyPreviewEdgeMaterial) {
+      assemblyPreviewEdgeMaterial.uniforms.uOpacity.value = assemblyPreviewXray ? 0.72 : 0.85
+    }
+    if (assemblyPreviewRenderInfo) {
+      const visible = assemblyPreviewRenderInfo.batches.filter((batch) => batch.visible)
+      assemblyPreviewRenderInfo.xray = assemblyPreviewXray
+      assemblyPreviewRenderInfo.xrayGhostBatches = assemblyPreviewGroup.children
+        .filter((mesh) => mesh.isInstancedMesh && mesh.userData.xrayGhost).length
+      assemblyPreviewRenderInfo.transparentBatches = assemblyPreviewXray
+        ? assemblyPreviewRenderInfo.xrayGhostBatches
+        : visible.filter((batch) => batch.transparent).length
+      assemblyPreviewRenderInfo.opaqueBatches = assemblyPreviewXray
+        ? visible.length - assemblyPreviewRenderInfo.xrayGhostBatches
+        : visible.filter((batch) => !batch.transparent).length
+    }
+  }
+  window.__assemblyPreviewXray = assemblyPreviewXray
+  window.__assemblyPreviewXrayPaths = [...assemblyPreviewXrayPaths]
+  window.__assemblyPreviewSetXray = applyAssemblyPreviewXray
+  requestRender()
+}
+
+const assemblyPreviewEdgeShaderMaterial = () => {
+  if (assemblyPreviewEdgeMaterial) return assemblyPreviewEdgeMaterial
+  assemblyPreviewEdgeMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      uSelectedColor: { value: new THREE.Color(ASSEMBLY_PREVIEW_SELECTED_COLOR) },
+      uOpacity: { value: 0.85 },
+    },
+    vertexShader: `
+attribute vec4 instanceMatrix0;
+attribute vec4 instanceMatrix1;
+attribute vec4 instanceMatrix2;
+attribute vec4 instanceMatrix3;
+attribute vec3 instanceColor;
+attribute float aSelected;
+uniform vec3 uSelectedColor;
+varying vec3 vColor;
+void main() {
+  vColor = mix(instanceColor, uSelectedColor, aSelected);
+  vec4 placed = instanceMatrix0 * position.x
+    + instanceMatrix1 * position.y
+    + instanceMatrix2 * position.z
+    + instanceMatrix3;
+  gl_Position = projectionMatrix * modelViewMatrix * placed;
+}
+`,
+    fragmentShader: `
+uniform float uOpacity;
+varying vec3 vColor;
+#include <colorspace_pars_fragment>
+void main() {
+  gl_FragColor = vec4(vColor, uOpacity);
+  #include <colorspace_fragment>
+}
+`,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+  })
+  return assemblyPreviewEdgeMaterial
+}
+
+const setShowEdges = (on) => {
+  showEdges = typeof on === 'boolean' ? on : !showEdges
+  if (assemblyPreviewEdgeGroup) assemblyPreviewEdgeGroup.visible = showEdges
+  if (assemblyPreviewRenderInfo) {
+    assemblyPreviewRenderInfo.showEdges = showEdges
+    assemblyPreviewRenderInfo.edgeDrawCalls = showEdges
+      ? assemblyPreviewRenderInfo.edgeBatches.filter((batch) => batch.visible).length
+      : 0
+  }
+  window.__assemblyPreviewShowEdges = showEdges
+  requestRender()
+}
+
+const setAssemblyPreviewSelection = (paths) => {
+  assemblyPreviewSelection = new Set(Array.isArray(paths) ? paths : [])
+  for (const edge of assemblyPreviewEdgeMeshes) {
+    const attribute = edge.geometry.getAttribute('aSelected')
+    if (!attribute) continue
+    const instancePaths = edge.userData.instancePaths
+    for (let index = 0; index < instancePaths.length; index += 1) {
+      attribute.array[index] = assemblyPreviewSelection.has(instancePaths[index]) ? 1 : 0
+    }
+    attribute.needsUpdate = true
+  }
+  if (assemblyPreviewRenderInfo) {
+    assemblyPreviewRenderInfo.selectedPaths = [...assemblyPreviewSelection]
+  }
+  window.__assemblyPreviewSelectedPaths = [...assemblyPreviewSelection]
+  requestRender()
+}
+
+window.__assemblyPreviewSetEdges = setShowEdges
+window.__assemblyPreviewSetSelection = setAssemblyPreviewSelection
+window.__assemblyPreviewShowEdges = showEdges
+let assemblyPreviewPicking = null
+window.__assemblyPreviewPickAt = null
+window.__assemblyPreviewProject = null
+window.__assemblyPreviewPickingInfo = null
+
+const buildAssemblyPreviewBvh = (prototype, arrays) => {
+  const positions = arrays.positions
+  const indices = arrays.indices
+  const faceIds = arrays.faceIds
+  const triangleCount = indices.length / 3
+  const centroids = new Float32Array(triangleCount * 3)
+  const order = new Uint32Array(triangleCount)
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    order[triangle] = triangle
+    const a = indices[triangle * 3] * 3
+    const b = indices[triangle * 3 + 1] * 3
+    const c = indices[triangle * 3 + 2] * 3
+    centroids[triangle * 3] = (positions[a] + positions[b] + positions[c]) / 3
+    centroids[triangle * 3 + 1] = (positions[a + 1] + positions[b + 1] + positions[c + 1]) / 3
+    centroids[triangle * 3 + 2] = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3
+  }
+  const nodes = []
+  const build = (start, end) => {
+    let minX = Infinity, minY = Infinity, minZ = Infinity
+    let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity
+    for (let entry = start; entry < end; entry += 1) {
+      const triangle = order[entry]
+      for (let corner = 0; corner < 3; corner += 1) {
+        const offset = indices[triangle * 3 + corner] * 3
+        const x = positions[offset]
+        const y = positions[offset + 1]
+        const z = positions[offset + 2]
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (z < minZ) minZ = z
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+        if (z > maxZ) maxZ = z
+      }
+    }
+    const nodeIndex = nodes.length
+    const node = { start, end, min: [minX, minY, minZ], max: [maxX, maxY, maxZ], left: -1, right: -1 }
+    nodes.push(node)
+    if (end - start <= 8) return nodeIndex
+    let cMinX = Infinity, cMinY = Infinity, cMinZ = Infinity
+    let cMaxX = -Infinity, cMaxY = -Infinity, cMaxZ = -Infinity
+    for (let entry = start; entry < end; entry += 1) {
+      const triangle = order[entry]
+      const x = centroids[triangle * 3]
+      const y = centroids[triangle * 3 + 1]
+      const z = centroids[triangle * 3 + 2]
+      if (x < cMinX) cMinX = x
+      if (y < cMinY) cMinY = y
+      if (z < cMinZ) cMinZ = z
+      if (x > cMaxX) cMaxX = x
+      if (y > cMaxY) cMaxY = y
+      if (z > cMaxZ) cMaxZ = z
+    }
+    const extentX = cMaxX - cMinX
+    const extentY = cMaxY - cMinY
+    const extentZ = cMaxZ - cMinZ
+    const axis = extentX >= extentY && extentX >= extentZ ? 0 : extentY >= extentZ ? 1 : 2
+    if ((axis === 0 ? extentX : axis === 1 ? extentY : extentZ) <= 1e-9) return nodeIndex
+    order.subarray(start, end).sort((left, right) => centroids[left * 3 + axis] - centroids[right * 3 + axis])
+    const middle = (start + end) >> 1
+    node.left = build(start, middle)
+    node.right = build(middle, end)
+    return nodeIndex
+  }
+  if (triangleCount > 0) build(0, triangleCount)
+  return {
+    prototypeKey: prototype.prototypeKey,
+    faceKeys: prototype.faceKeys,
+    positions,
+    indices,
+    faceIds,
+    order,
+    nodes,
+    triangleCount,
+  }
+}
+
+const assemblyPreviewRayAabb = (origin, direction, min, max) => {
+  let low = 0
+  let high = Infinity
+  for (let axis = 0; axis < 3; axis += 1) {
+    const value = axis === 0 ? origin.x : axis === 1 ? origin.y : origin.z
+    const delta = axis === 0 ? direction.x : axis === 1 ? direction.y : direction.z
+    if (Math.abs(delta) < 1e-12) {
+      if (value < min[axis] || value > max[axis]) return false
+    } else {
+      const inverse = 1 / delta
+      let near = (min[axis] - value) * inverse
+      let far = (max[axis] - value) * inverse
+      if (near > far) { const swap = near; near = far; far = swap }
+      if (near > low) low = near
+      if (far < high) high = far
+      if (low > high) return false
+    }
+  }
+  return true
+}
+
+const assemblyPreviewTriangleHit = (origin, direction, positions, indices, triangle) => {
+  const ia = indices[triangle * 3] * 3
+  const ib = indices[triangle * 3 + 1] * 3
+  const ic = indices[triangle * 3 + 2] * 3
+  const ax = positions[ia], ay = positions[ia + 1], az = positions[ia + 2]
+  const bx = positions[ib], by = positions[ib + 1], bz = positions[ib + 2]
+  const cx = positions[ic], cy = positions[ic + 1], cz = positions[ic + 2]
+  const e1x = bx - ax, e1y = by - ay, e1z = bz - az
+  const e2x = cx - ax, e2y = cy - ay, e2z = cz - az
+  const hx = direction.y * e2z - direction.z * e2y
+  const hy = direction.z * e2x - direction.x * e2z
+  const hz = direction.x * e2y - direction.y * e2x
+  const determinant = e1x * hx + e1y * hy + e1z * hz
+  if (Math.abs(determinant) < 1e-12) return null
+  const inverse = 1 / determinant
+  const sx = origin.x - ax, sy = origin.y - ay, sz = origin.z - az
+  const u = (sx * hx + sy * hy + sz * hz) * inverse
+  if (u < 0 || u > 1) return null
+  const qx = sy * e1z - sz * e1y
+  const qy = sz * e1x - sx * e1z
+  const qz = sx * e1y - sy * e1x
+  const v = (direction.x * qx + direction.y * qy + direction.z * qz) * inverse
+  if (v < 0 || u + v > 1) return null
+  const t = (e2x * qx + e2y * qy + e2z * qz) * inverse
+  if (t <= 0) return null
+  return {
+    t,
+    point: new THREE.Vector3(
+      origin.x + direction.x * t,
+      origin.y + direction.y * t,
+      origin.z + direction.z * t,
+    ),
+    normal: new THREE.Vector3(e1y * e2z - e1z * e2y, e1z * e2x - e1x * e2z, e1x * e2y - e1y * e2x).normalize(),
+  }
+}
+
+const pickAssemblyPreviewAt = (clientX, clientY) => {
+  if (!assemblyPreviewPicking || !assemblyPreviewGroup) return null
+  const rect = renderer.domElement.getBoundingClientRect()
+  if (!rect.width || !rect.height) return null
+  const picker = new THREE.Raycaster()
+  picker.setFromCamera(new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
+  ), camera)
+  const worldRay = picker.ray
+  const localOrigin = new THREE.Vector3()
+  const localDirection = new THREE.Vector3()
+  const worldPoint = new THREE.Vector3()
+  const worldNormal = new THREE.Vector3()
+  const normalMatrix = new THREE.Matrix3()
+  let best = null
+  for (const instance of assemblyPreviewPicking.instances) {
+    if (instance.visible === false) continue
+    const bvh = assemblyPreviewPicking.prototypes.get(instance.prototypeKey)
+    if (!bvh || !bvh.triangleCount) continue
+    localOrigin.copy(worldRay.origin).applyMatrix4(instance.inverse)
+    localDirection.copy(worldRay.direction).transformDirection(instance.inverse)
+    const stack = bvh.nodes.length ? [0] : []
+    let localBest = null
+    while (stack.length) {
+      const node = bvh.nodes[stack.pop()]
+      if (!assemblyPreviewRayAabb(localOrigin, localDirection, node.min, node.max)) continue
+      if (node.left === -1) {
+        for (let entry = node.start; entry < node.end; entry += 1) {
+          const triangle = bvh.order[entry]
+          const hit = assemblyPreviewTriangleHit(localOrigin, localDirection, bvh.positions, bvh.indices, triangle)
+          if (hit && (!localBest || hit.t < localBest.t)) localBest = { hit, triangle }
+        }
+      } else {
+        stack.push(node.left, node.right)
+      }
+    }
+    if (!localBest) continue
+    worldPoint.copy(localBest.hit.point).applyMatrix4(instance.matrix)
+    const distance = worldPoint.distanceTo(worldRay.origin)
+    if (best && distance >= best.distance) continue
+    normalMatrix.getNormalMatrix(instance.matrix)
+    worldNormal.copy(localBest.hit.normal).applyMatrix3(normalMatrix).normalize()
+    const faceId = bvh.faceIds[localBest.triangle]
+    best = {
+      scope: 'assembly',
+      assemblyId: assemblyPreviewPicking.assemblyId,
+      version: assemblyPreviewPicking.version,
+      instancePath: instance.path,
+      instanceId: instance.instanceId,
+      prototypeKey: instance.prototypeKey,
+      faceKey: bvh.faceKeys?.[faceId] ?? null,
+      faceIndex: faceId,
+      triangle: localBest.triangle,
+      distance,
+      point: [worldPoint.x, worldPoint.y, worldPoint.z],
+      normal: [worldNormal.x, worldNormal.y, worldNormal.z],
+      localPoint: [localBest.hit.point.x, localBest.hit.point.y, localBest.hit.point.z],
+    }
+  }
+  return best
+}
+
+window.__assemblyPreviewPickAt = pickAssemblyPreviewAt
+window.__assemblyPreviewProject = (point) => {
+  if (!point || point.length < 3) return null
+  const projected = new THREE.Vector3(point[0], point[1], point[2]).project(camera)
+  const rect = renderer.domElement.getBoundingClientRect()
+  return {
+    x: rect.left + (projected.x + 1) * 0.5 * rect.width,
+    y: rect.top + (1 - projected.y) * 0.5 * rect.height,
+    z: projected.z,
+  }
+}
+window.__assemblyPreviewPickingInfo = () => assemblyPreviewPicking ? {
+  assemblyId: assemblyPreviewPicking.assemblyId,
+  version: assemblyPreviewPicking.version,
+  instances: assemblyPreviewPicking.instances.length,
+  prototypes: [...assemblyPreviewPicking.prototypes.values()].map((bvh) => ({
+    prototypeKey: bvh.prototypeKey,
+    triangles: bvh.triangleCount,
+    nodes: bvh.nodes.length,
+  })),
+} : null
+
+const disposeAssemblyPreviewRender = () => {
+  if (assemblyPreviewGroup) {
+    scene.remove(assemblyPreviewGroup)
+    assemblyPreviewGroup.traverse((child) => {
+      if (child.isInstancedMesh) {
+        child.dispose?.()
+      }
+    })
+  }
+  for (const geometry of assemblyPreviewGeometries) geometry.dispose?.()
+  for (const geometry of assemblyPreviewEdgeGeometries) geometry.dispose?.()
+  for (const material of assemblyPreviewMaterials.values()) material.dispose?.()
+  assemblyPreviewEdgeMaterial?.dispose?.()
+  assemblyPreviewEdgeMaterial = null
+  assemblyPreviewGeometries = new Set()
+  assemblyPreviewEdgeGeometries = new Set()
+  assemblyPreviewMaterials = new Map()
+  assemblyPreviewEdgeMeshes = []
+  assemblyPreviewSelection = new Set()
+  assemblyPreviewGroup = null
+  assemblyPreviewEdgeGroup = null
+  assemblyPreviewRenderInfo = null
+  assemblyPreviewPicking = null
+  window.__assemblyPreviewSelectedPaths = []
+  window.__assemblyPreviewGroup = null
+  window.__assemblyPreviewRender = null
+  window.__assemblyPreviewEdgeGroup = null
+}
+
+const assemblyPreviewPrototypeGeometry = (prototype, arrays) => {
+  const mesh = prototype.mesh
+  if (!mesh.positionCount || !mesh.indexCount) return null
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(arrays.positions, 3))
+  geometry.setIndex(new THREE.BufferAttribute(arrays.indices, 1))
+  // The wire format has no normals; one interpolation normal set per prototype
+  // is enough because every instance shares the same local mesh.
+  geometry.computeVertexNormals()
+  if (Array.isArray(prototype.bounds) && prototype.bounds.length === 2) {
+    const low = prototype.bounds[0]
+    const high = prototype.bounds[1]
+    geometry.boundingBox = new THREE.Box3(
+      new THREE.Vector3(low[0], low[1], low[2]),
+      new THREE.Vector3(high[0], high[1], high[2]),
+    )
+    geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new THREE.Sphere())
+  } else {
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+  }
+  geometry.userData.prototypeKey = prototype.prototypeKey
+  geometry.userData.prototypeBounds = prototype.bounds
+  geometry.userData.faceKeys = prototype.faceKeys
+  geometry.userData.faceIds = arrays.faceIds
+  geometry.userData.edgePoints = arrays.edges
+  assemblyPreviewGeometries.add(geometry)
+  return geometry
+}
+
+/*
+ * The decoded manifest is display data: one local geometry per prototype, then
+ * one InstancedMesh per (prototype, material, opacity, visible) group. Instance
+ * colour never splits a batch; it is carried by the per-instance colour
+ * attribute. Transparent batches are separated from opaque ones so they can
+ * keep depthWrite off, and suppressed or invisible rows never become draws.
+ */
+const renderAssemblyPreview = (decoded) => {
+  if (!decoded) return null
+  disposeAssemblyPreviewRender()
+  const manifest = decoded.manifest
+  const arraysByKey = new Map(decoded.prototypes.map((prototype) => [prototype.prototypeKey, prototype]))
+  const geometries = new Map()
+  for (const prototype of manifest.prototypes) {
+    const arrays = arraysByKey.get(prototype.prototypeKey)
+    if (!arrays) continue
+    const geometry = assemblyPreviewPrototypeGeometry(prototype, arrays)
+    if (geometry) geometries.set(prototype.prototypeKey, geometry)
+  }
+  const rootOffset = Array.isArray(manifest.rootOffset) ? manifest.rootOffset : [0, 0, 0]
+  const edgePositions = new Map()
+  for (const prototype of manifest.prototypes) {
+    const arrays = arraysByKey.get(prototype.prototypeKey)
+    if (arrays?.edges?.length) {
+      edgePositions.set(prototype.prototypeKey, new THREE.BufferAttribute(arrays.edges, 3))
+    }
+  }
+  const groups = new Map()
+  const moduleColors = new Map()
+  for (const instance of manifest.instances) {
+    const module = instance.module || ''
+    if (!moduleColors.has(module)) {
+      const value = ASSEMBLY_PREVIEW_XRAY_PALETTE[
+        moduleColors.size % ASSEMBLY_PREVIEW_XRAY_PALETTE.length
+      ]
+      moduleColors.set(module, new THREE.Color(value))
+    }
+  }
+  for (const instance of manifest.instances) {
+    if (!geometries.has(instance.prototypeKey)) continue
+    const opacity = Math.min(Math.max(Number(instance.opacity ?? 1), 0), 1)
+    const visible = instance.visible !== false && !instance.suppressed
+    const materialKey = `standard:${opacity}`
+    const groupKey = `${instance.prototypeKey}|${materialKey}|${visible ? 1 : 0}`
+    let group = groups.get(groupKey)
+    if (!group) {
+      group = {
+        key: groupKey,
+        prototypeKey: instance.prototypeKey,
+        materialKey,
+        opacity,
+        transparent: opacity < 1,
+        visible,
+        instances: [],
+      }
+      groups.set(groupKey, group)
+    }
+    group.instances.push(instance)
+  }
+  const root = new THREE.Group()
+  root.name = 'assembly-preview'
+  root.userData.previewKey = manifest.previewKey
+  root.userData.prototypeCount = geometries.size
+  root.userData.instanceCount = manifest.instanceCount
+  const matrix = new THREE.Matrix4()
+  const color = new THREE.Color()
+  const batches = []
+  const edgeRoot = new THREE.Group()
+  edgeRoot.name = 'assembly-preview-edges'
+  edgeRoot.visible = showEdges
+  const edgeMaterial = assemblyPreviewEdgeShaderMaterial()
+  const edgeBatches = []
+  const edgeMeshes = []
+  for (const group of groups.values()) {
+    const geometry = geometries.get(group.prototypeKey)
+    if (!geometry || !group.instances.length) continue
+    const material = assemblyPreviewMaterial(group.opacity)
+    const mesh = new THREE.InstancedMesh(geometry, material, group.instances.length)
+    mesh.name = `assembly-preview:${group.prototypeKey.slice(0, 8)}:${group.materialKey}:${group.visible ? 'visible' : 'hidden'}`
+    mesh.frustumCulled = true
+    mesh.renderOrder = group.transparent ? 1 : 0
+    mesh.userData.prototypeKey = group.prototypeKey
+    mesh.userData.opacity = group.opacity
+    mesh.userData.visible = group.visible
+    mesh.userData.transparent = group.transparent
+    mesh.userData.instancePaths = group.instances.map((instance) => instance.path)
+    for (let index = 0; index < group.instances.length; index += 1) {
+      const instance = group.instances[index]
+      matrix.fromArray(instance.matrix)
+      // rootOffset is an origin-rebasing offset added to every placed instance;
+      // it is not part of the prototype geometry.
+      matrix.elements[12] += Number(rootOffset[0]) || 0
+      matrix.elements[13] += Number(rootOffset[1]) || 0
+      matrix.elements[14] += Number(rootOffset[2]) || 0
+      mesh.setMatrixAt(index, matrix)
+      color.setStyle(instance.color || ASSEMBLY_PREVIEW_DEFAULT_COLOR)
+      mesh.setColorAt(index, color)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    mesh.userData.baseColors = mesh.instanceColor
+      ? new Float32Array(mesh.instanceColor.array)
+      : null
+    const xrayColors = new Float32Array(mesh.count * 3)
+    for (let index = 0; index < group.instances.length; index += 1) {
+      const tint = moduleColors.get(group.instances[index].module || '')
+        || new THREE.Color(ASSEMBLY_PREVIEW_DEFAULT_COLOR)
+      xrayColors[index * 3] = tint.r
+      xrayColors[index * 3 + 1] = tint.g
+      xrayColors[index * 3 + 2] = tint.b
+    }
+    mesh.userData.xrayColors = xrayColors
+    mesh.computeBoundingBox()
+    mesh.computeBoundingSphere()
+    mesh.visible = group.visible
+    root.add(mesh)
+    batches.push({
+      prototypeKey: group.prototypeKey,
+      material: 'standard',
+      opacity: group.opacity,
+      transparent: group.transparent,
+      visible: group.visible,
+      count: mesh.count,
+      instancePaths: mesh.userData.instancePaths,
+      geometryBounds: {
+        min: geometry.boundingBox ? geometry.boundingBox.min.toArray() : null,
+        max: geometry.boundingBox ? geometry.boundingBox.max.toArray() : null,
+      },
+      batchBounds: mesh.boundingBox
+        ? { min: mesh.boundingBox.min.toArray(), max: mesh.boundingBox.max.toArray() }
+        : null,
+    })
+    const edgePosition = edgePositions.get(group.prototypeKey)
+    if (edgePosition) {
+      // The edge batch shares the surface batch's matrix and colour attributes,
+      // so an instance cannot drift between its fill and its wireframe.
+      const edgeGeometry = new THREE.InstancedBufferGeometry()
+      edgeGeometry.setAttribute('position', edgePosition)
+      const matrixBuffer = new THREE.InstancedInterleavedBuffer(mesh.instanceMatrix.array, 16, 1)
+      edgeGeometry.setAttribute('instanceMatrix0', new THREE.InterleavedBufferAttribute(matrixBuffer, 4, 0))
+      edgeGeometry.setAttribute('instanceMatrix1', new THREE.InterleavedBufferAttribute(matrixBuffer, 4, 4))
+      edgeGeometry.setAttribute('instanceMatrix2', new THREE.InterleavedBufferAttribute(matrixBuffer, 4, 8))
+      edgeGeometry.setAttribute('instanceMatrix3', new THREE.InterleavedBufferAttribute(matrixBuffer, 4, 12))
+      const edgeColors = mesh.instanceColor
+        ? new THREE.InstancedBufferAttribute(mesh.instanceColor.array, 3)
+        : new THREE.InstancedBufferAttribute(new Float32Array(mesh.count * 3).fill(0.8), 3)
+      edgeGeometry.setAttribute('instanceColor', edgeColors)
+      const selected = new Float32Array(mesh.count)
+      const instancePaths = mesh.userData.instancePaths
+      for (let index = 0; index < mesh.count; index += 1) {
+        selected[index] = assemblyPreviewSelection.has(instancePaths[index]) ? 1 : 0
+      }
+      const selectedAttribute = new THREE.InstancedBufferAttribute(selected, 1)
+      edgeGeometry.setAttribute('aSelected', selectedAttribute)
+      edgeGeometry.instanceCount = mesh.count
+      if (mesh.boundingBox) {
+        edgeGeometry.boundingBox = mesh.boundingBox.clone()
+        edgeGeometry.boundingSphere = edgeGeometry.boundingBox.getBoundingSphere(new THREE.Sphere())
+      } else {
+        edgeGeometry.computeBoundingSphere()
+      }
+      const edge = new THREE.LineSegments(edgeGeometry, edgeMaterial)
+      edge.name = `assembly-preview-edges:${group.prototypeKey.slice(0, 8)}:${group.materialKey}:${group.visible ? 'visible' : 'hidden'}`
+      edge.frustumCulled = true
+      edge.renderOrder = 2
+      edge.visible = group.visible
+      edge.userData.prototypeKey = group.prototypeKey
+      edge.userData.opacity = group.opacity
+      edge.userData.visible = group.visible
+      edge.userData.transparent = group.transparent
+      edge.userData.instancePaths = instancePaths
+      edge.userData.selectedAttribute = selectedAttribute
+      assemblyPreviewEdgeGeometries.add(edgeGeometry)
+      edgeRoot.add(edge)
+      edgeMeshes.push(edge)
+      edgeBatches.push({
+        prototypeKey: group.prototypeKey,
+        count: mesh.count,
+        visible: group.visible,
+        transparent: group.transparent,
+        instancePaths,
+      })
+    }
+  }
+  assemblyPreviewEdgeMeshes = edgeMeshes
+  if (edgeMeshes.length) {
+    root.add(edgeRoot)
+    assemblyPreviewEdgeGroup = edgeRoot
+    window.__assemblyPreviewEdgeGroup = edgeRoot
+  } else {
+    edgeMaterial.dispose?.()
+    assemblyPreviewEdgeMaterial = null
+  }
+  const pickingPrototypes = new Map()
+  for (const prototype of manifest.prototypes) {
+    if (!geometries.has(prototype.prototypeKey)) continue
+    const arrays = arraysByKey.get(prototype.prototypeKey)
+    if (!arrays) continue
+    pickingPrototypes.set(prototype.prototypeKey, buildAssemblyPreviewBvh(prototype, arrays))
+  }
+  const pickingInstances = []
+  for (const instance of manifest.instances) {
+    if (!pickingPrototypes.has(instance.prototypeKey)) continue
+    const instanceMatrix = new THREE.Matrix4().fromArray(instance.matrix)
+    instanceMatrix.elements[12] += Number(rootOffset[0]) || 0
+    instanceMatrix.elements[13] += Number(rootOffset[1]) || 0
+    instanceMatrix.elements[14] += Number(rootOffset[2]) || 0
+    pickingInstances.push({
+      path: instance.path,
+      instanceId: instance.instanceId,
+      prototypeKey: instance.prototypeKey,
+      visible: instance.visible !== false && !instance.suppressed,
+      matrix: instanceMatrix,
+      inverse: instanceMatrix.clone().invert(),
+    })
+  }
+  assemblyPreviewPicking = {
+    prototypes: pickingPrototypes,
+    instances: pickingInstances,
+    assemblyId: manifest.assembly?.id ?? null,
+    version: manifest.assembly?.version ?? null,
+  }
+  scene.add(root)
+  vacantGroup.visible = false
+  empty.classList.remove('on')
+  assemblyPreviewGroup = root
+  window.__assemblyPreviewGroup = root
+  const info = {
+    previewKey: manifest.previewKey,
+    prototypes: geometries.size,
+    instances: batches.reduce((sum, batch) => sum + batch.count, 0),
+    batchCount: batches.length,
+    drawCalls: batches.filter((batch) => batch.visible).length,
+    transparentBatches: batches.filter((batch) => batch.transparent).length,
+    hiddenBatches: batches.filter((batch) => !batch.visible).length,
+    opaqueBatches: batches.filter((batch) => !batch.transparent && batch.visible).length,
+    rootOffset,
+    frustumCulled: true,
+    showEdges,
+    selectedPaths: [...assemblyPreviewSelection],
+    edgeBatches,
+    edgeDrawCalls: showEdges ? edgeBatches.filter((batch) => batch.visible).length : 0,
+    edgeInstances: edgeBatches.reduce((sum, batch) => sum + batch.count, 0),
+    batches,
+  }
+  assemblyPreviewRenderInfo = info
+  window.__assemblyPreviewRender = info
+  info.xray = assemblyPreviewXray
+  if (assemblyPreviewXray) applyAssemblyPreviewXray(true, [...assemblyPreviewXrayPaths])
+  if (!hasFitted) {
+    fit(root)
+    hasFitted = true
+  }
+  requestRender()
+  return info
+}
+
+const countFaces = (object) => {
+  let count = 0
+  object.traverse((child) => { if (child.isMesh) count += 1 })
+  return count
 }
 
 const raycaster = new THREE.Raycaster()
@@ -748,6 +2659,7 @@ const clearHandle = () => {
     scene.remove(handleGroup)
     disposeObject(handleGroup)
     handleGroup = null
+    requestRender()
   }
   handleInfo = null
   if (handleDrag) {
@@ -815,6 +2727,7 @@ const setHandle = (payload) => {
   handleGroup = group
   handleInfo = { ...payload, point, axis, length, worldPerPixel }
   say(`拖动 ${handleValueText(handleInfo.value)}`)
+  requestRender()
 }
 
 const handleHit = (event) => {
@@ -919,9 +2832,29 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   const start = pointerStart
   activePointers.delete(event.pointerId)
   pointerStart = null
-  // OrbitControls turns left-drag into rotation and right-drag into pan; only a
-  // short left press is a selection, otherwise every orbit would pick a face.
-  if (!display || !pickupIsClick(event, start)) return
+  // A short left press is a selection; dragging is orbit/pan.
+  if (!pickupIsClick(event, start)) return
+  if (assemblyPreviewGroup && assemblyPreviewPicking) {
+    const assemblyHit = pickAssemblyPreviewAt(event.clientX, event.clientY)
+    if (!assemblyHit) {
+      setAssemblyPreviewSelection([])
+      post('pick', { pick: null })
+      say('未选中几何')
+      return
+    }
+    setAssemblyPreviewSelection([assemblyHit.instancePath])
+    post('pick', {
+      pick: {
+        ...assemblyHit,
+        scope: 'assembly',
+        documentId: assemblyHit.assemblyId,
+        version: assemblyHit.version,
+      },
+    })
+    say(`拾取 ${assemblyHit.instancePath}${assemblyHit.faceKey ? ` · ${assemblyHit.faceKey}` : ''}`)
+    return
+  }
+  if (!display) return
   const found = pickAt(event)
   if (!found) {
     post('pick', { pick: null })
@@ -987,6 +2920,11 @@ addEventListener('keydown', (event) => {
     if (display) fit(display)
     return
   }
+  if (key === 'e') {
+    event.preventDefault()
+    setShowEdges()
+    return
+  }
   if (event.key === 'Escape') {
     post('pick', { pick: null })
     clearHighlight()
@@ -996,7 +2934,16 @@ addEventListener('keydown', (event) => {
 addEventListener('message', (event) => {
   const data = event.data
   if (!data || data.from !== 'brepx-workbench') return
+  if (data.type === 'ping') {
+    // The workbench attaches its listener after this frame may already have sent
+    // its first ready message; answer a late ping so the handshake is idempotent.
+    post('ready', {})
+    return
+  }
   if (data.type === 'clear') {
+    previewAbort?.abort()
+    previewAbort = null
+    cancelAssemblyPreview()
     currentDoc = null
     currentVersion = 0
     previewActive = false
@@ -1012,12 +2959,16 @@ addEventListener('message', (event) => {
     camera.updateProjectionMatrix()
     controls.update()
     say('空白文档')
+    requestRender()
     post('cleared', {})
   } else if (data.type === 'design') {
-    showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight, simplified: data.simplified })
-    if (data.prefetch) prefetch(data.documentId, data.prefetch)
+    showVersion(data.documentId, data.version, { fit: data.fit, highlight: data.highlight })
   } else if (data.type === 'preview') {
     showPreview(data.url, data.label)
+  } else if (data.type === 'assembly-preview') {
+    loadAssemblyPreview(data)
+  } else if (data.type === 'assembly-xray') {
+    applyAssemblyPreviewXray(data.on !== false, data.paths || [])
   } else if (data.type === 'ghost') {
     if (data.on === false || !data.version) { clearGhost(); say('残影关闭') }
     else showGhost(data.documentId || currentDoc, data.version)
@@ -1036,6 +2987,8 @@ addEventListener('message', (event) => {
   } else if (data.type === 'wire') {
     wire = typeof data.on === 'boolean' ? data.on : !wire
     applyWire()
+  } else if (data.type === 'show-edges') {
+    setShowEdges(typeof data.on === 'boolean' ? data.on : undefined)
   } else if (data.type === 'measure') {
     measureMode = typeof data.on === 'boolean' ? data.on : !measureMode
     measureA = null
@@ -1058,6 +3011,7 @@ const resize = () => {
   renderer.setSize(width, height, false)
   camera.aspect = width / height
   camera.updateProjectionMatrix()
+  requestRender()
 }
 addEventListener('resize', resize)
 const resizeObserver = new ResizeObserver(resize)
@@ -1065,31 +3019,83 @@ resizeObserver.observe(host)
 
 let frameCount = 0
 let lastFrameError = null
+let frameHandle = 0
+let dirty = true
+
+const scheduleFrame = () => {
+  if (frameHandle) return
+  if (document.visibilityState !== 'visible') return
+  frameHandle = requestAnimationFrame(frame)
+}
+
+// Rendering follows state changes: an idle viewport must not keep the GPU busy,
+// while damping and pointer interaction need consecutive frames until they settle.
+const requestRender = () => {
+  dirty = true
+  scheduleFrame()
+}
+
 const frame = () => {
-  requestAnimationFrame(frame)
+  frameHandle = 0
+  let moved = false
   try {
-    controls.update()
-    renderer.render(scene, camera)
-    frameCount += 1
+    moved = controls.update()
   } catch (error) {
     lastFrameError = error.message
   }
+  if (!dirty && !moved) return
+  try {
+    renderer.render(scene, camera)
+    dirty = false
+    frameCount += 1
+  } catch (error) {
+    lastFrameError = error.message
+    dirty = false
+  }
+  if (dirty || moved) scheduleFrame()
 }
 
-const start = async () => {
-  resize()
-  frame()
-  try {
-    const payload = await (await fetch('/api/kernel/smlibwasm.wasm')).arrayBuffer()
-    say(`kernel ${(payload.byteLength / 1e6).toFixed(1)} MB · loading…`)
+controls.addEventListener('change', requestRender)
+
+addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestRender()
+  else if (frameHandle) {
+    cancelAnimationFrame(frameHandle)
+    frameHandle = 0
+  }
+})
+
+const loadKernel = () => {
+  if (kernelTask) return kernelTask
+  kernelTask = (async () => {
+    const response = await fetch('/api/kernel/smlibwasm.wasm')
+    if (!response.ok) throw new Error(`KERNEL ${response.status}`)
+    const payload = await response.arrayBuffer()
     kernel = await init({ wasmBinary: payload })
     window.__kernelReady = true
-    say('kernel ready')
-    post('ready', {})
-  } catch (error) {
-    say(`kernel failed: ${error.message}`)
-    post('error', { text: error.message })
-  }
+    return kernel
+  })()
+  kernelTask.catch((error) => {
+    kernelError = error
+    kernelTask = null
+    say(`内核初始化失败：${error.message}`)
+  })
+  return kernelTask
+}
+
+const ensureKernel = () => {
+  if (kernel) return Promise.resolve(kernel)
+  if (kernelError) return Promise.reject(kernelError)
+  return loadKernel()
+}
+
+const start = () => {
+  resize()
+  requestRender()
+  // The scene path draws without the kernel, so readiness must not wait for the
+  // 9.4 MB wasm: only STEP parsing, ghost and preview await it.
+  post('ready', {})
+  ensureKernel().catch(() => {})
 }
 
 start()

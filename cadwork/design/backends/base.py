@@ -7,8 +7,9 @@ with a failure; a backend only raises a typed error.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 class BackendError(RuntimeError):
@@ -18,7 +19,9 @@ class BackendError(RuntimeError):
     kernel's own text so the service layer can show the real cause.
     """
 
-    def __init__(self, message: str, *, code: str = "SCRIPT_FAILED", raw: str | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str = "SCRIPT_FAILED", raw: str | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.raw = raw
@@ -30,7 +33,12 @@ class BackendError(RuntimeError):
 class BackendTimeout(BackendError):
     """The node did not finish in time (``SCRIPT_TIMEOUT``)."""
 
-    def __init__(self, message: str = "the script did not finish in time", *, raw: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str = "the script did not finish in time",
+        *,
+        raw: str | None = None,
+    ) -> None:
         super().__init__(message, code="SCRIPT_TIMEOUT", raw=raw)
 
 

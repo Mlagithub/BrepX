@@ -14,9 +14,10 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from cadwork.design.build import BuildError, BuildResult
 from cadwork.design.document import Document, DocumentError, apply_ops
@@ -46,10 +47,12 @@ class Variant:
             "label": self.label,
             "ops": self.ops,
             "ok": self.ok,
-            "thumb": (f"/api/variants/{set_id}/{self.index}/thumb.png"
-                      if self.thumb is not None else None),
-            "step": (f"/api/variants/{set_id}/{self.index}/step"
-                     if self.ok else None),
+            "thumb": (
+                f"/api/variants/{set_id}/{self.index}/thumb.png"
+                if self.thumb is not None
+                else None
+            ),
+            "step": (f"/api/variants/{set_id}/{self.index}/step" if self.ok else None),
             **self.summary,
         }
         if self.values:
@@ -122,7 +125,9 @@ class VariantBook:
             raise ValueError("give at least one variant")
         total = len(specs) + (1 if include_base else 0)
         if total > MAX_VARIANTS:
-            raise ValueError(f"{total} variants requested, at most {MAX_VARIANTS} at a time")
+            raise ValueError(
+                f"{total} variants requested, at most {MAX_VARIANTS} at a time"
+            )
 
         prepared: list[dict[str, Any]] = []
         if include_base:
@@ -133,11 +138,13 @@ class VariantBook:
             ops = spec.get("ops") or []
             if not isinstance(ops, list) or any(not isinstance(op, dict) for op in ops):
                 raise ValueError("`ops` must be a list of operations")
-            prepared.append({
-                "label": str(spec.get("label") or "").strip() or _auto_label(ops),
-                "ops": ops,
-                "values": spec.get("values") or {},
-            })
+            prepared.append(
+                {
+                    "label": str(spec.get("label") or "").strip() or _auto_label(ops),
+                    "ops": ops,
+                    "values": spec.get("values") or {},
+                }
+            )
 
         set_id = f"vs_{uuid.uuid4().hex[:10]}"
         folder = self._root / set_id
@@ -151,8 +158,9 @@ class VariantBook:
             label=str(label or ""),
         )
         for index, item in enumerate(prepared):
-            variant = Variant(index=index, label=item["label"], ops=item["ops"],
-                              values=item["values"])
+            variant = Variant(
+                index=index, label=item["label"], ops=item["ops"], values=item["values"]
+            )
             self._build_variant(document, variant, folder, thumbs)
             entry.variants.append(variant)
 
@@ -170,7 +178,9 @@ class VariantBook:
         thumbs: bool = True,
     ) -> VariantSet:
         """Sugar: one dimension per parameter, cartesian product as the cards."""
-        feature = next((item for item in document.features if item.id == feature_id), None)
+        feature = next(
+            (item for item in document.features if item.id == feature_id), None
+        )
         if feature is None:
             raise ValueError(f"no feature {feature_id!r} in this document")
         spec = spec_for(feature.type)
@@ -189,16 +199,22 @@ class VariantBook:
         specs = []
         for combo in combos:
             values = dict(zip(names, combo))
-            specs.append({
-                "label": " · ".join(f"{name} {_number(value)}" for name, value in values.items()),
-                "values": values,
-                "ops": [{"op": "update", "id": feature_id, "params": values}],
-            })
-        return self.create(document, specs, include_base=include_base, label=feature_id,
-                           thumbs=thumbs)
+            specs.append(
+                {
+                    "label": " · ".join(
+                        f"{name} {_number(value)}" for name, value in values.items()
+                    ),
+                    "values": values,
+                    "ops": [{"op": "update", "id": feature_id, "params": values}],
+                }
+            )
+        return self.create(
+            document, specs, include_base=include_base, label=feature_id, thumbs=thumbs
+        )
 
-    def _build_variant(self, document: Document, variant: Variant, folder: Path,
-                       thumbs: bool = True) -> None:
+    def _build_variant(
+        self, document: Document, variant: Variant, folder: Path, thumbs: bool = True
+    ) -> None:
         try:
             # No base_version: this is a copy of the document we were handed.
             candidate = apply_ops(document, variant.ops) if variant.ops else document
@@ -211,9 +227,14 @@ class VariantBook:
                 "cache_hits": getattr(result, "cache_hits", 0),
             }
             variant.checks = [
-                {"name": check.name, "ok": check.ok, "hint": check.hint,
-                 "expected": check.expected}
-                for item in result.features for check in item.checks
+                {
+                    "name": check.name,
+                    "ok": check.ok,
+                    "hint": check.hint,
+                    "expected": check.expected,
+                }
+                for item in result.features
+                for check in item.checks
             ]
             if thumbs and final is not None and self._render is not None:
                 try:
@@ -226,19 +247,27 @@ class VariantBook:
                     variant.thumb = path
         except (BuildError, DocumentError) as exc:
             variant.ok = False
-            variant.error = {"code": exc.code, "message": exc.message,
-                             "hint": getattr(exc, "hint", None),
-                             "feature_id": getattr(exc, "feature_id", None)}
+            variant.error = {
+                "code": exc.code,
+                "message": exc.message,
+                "hint": getattr(exc, "hint", None),
+                "feature_id": getattr(exc, "feature_id", None),
+            }
             variant.checks = [
-                {"name": check.name, "ok": check.ok, "hint": check.hint,
-                 "expected": check.expected}
+                {
+                    "name": check.name,
+                    "ok": check.ok,
+                    "hint": check.hint,
+                    "expected": check.expected,
+                }
                 for check in getattr(exc, "checks", ())
             ]
 
     def _evict_locked(self) -> None:
         now = time.time()
-        stale = [key for key, item in self._sets.items()
-                 if now - item.created > TTL_SECONDS]
+        stale = [
+            key for key, item in self._sets.items() if now - item.created > TTL_SECONDS
+        ]
         for key in stale:
             self._drop_locked(key)
         while len(self._sets) >= MAX_SETS:
@@ -268,7 +297,7 @@ class VariantBook:
         if not drawn:
             raise LookupError("no variant pictures to compose")
 
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
 
         font = _load_font(15)
         small = _load_font(13)
@@ -278,8 +307,14 @@ class VariantBook:
         for variant, path in drawn:
             image = Image.open(path).convert("RGB")
             ratio = card_w / image.width
-            tiles.append((variant, image.resize((card_w, max(1, int(image.height * ratio))),
-                                                Image.LANCZOS)))
+            tiles.append(
+                (
+                    variant,
+                    image.resize(
+                        (card_w, max(1, int(image.height * ratio))), Image.LANCZOS
+                    ),
+                )
+            )
         height = margin * 2 + bar + max(tile.height for _, tile in tiles)
         sheet = Image.new("RGB", (width, height), (255, 255, 255))
         canvas = ImageDraw.Draw(sheet)
@@ -288,19 +323,26 @@ class VariantBook:
         for variant, tile in tiles:
             top = margin + bar
             sheet.paste(tile, (x, top))
-            canvas.rectangle([x, top, x + card_w - 1, top + tile.height - 1],
-                             outline=(214, 220, 228))
+            canvas.rectangle(
+                [x, top, x + card_w - 1, top + tile.height - 1], outline=(214, 220, 228)
+            )
             label = variant.label
             canvas.text((x, margin), label, fill=(26, 32, 42), font=font)
             if variant.ok:
-                numbers = (f"{variant.summary.get('faces', 0)} faces · "
-                           f"{_number(variant.summary.get('volume', 0))} mm³ · "
-                           f"{variant.summary.get('seconds', 0)} s")
+                numbers = (
+                    f"{variant.summary.get('faces', 0)} faces · "
+                    f"{_number(variant.summary.get('volume', 0))} mm³ · "
+                    f"{variant.summary.get('seconds', 0)} s"
+                )
                 canvas.text((x, margin + 22), numbers, fill=(96, 108, 124), font=small)
             else:
                 reason = (variant.error or {}).get("message", "does not build")
-                canvas.text((x, margin + 22), f"FAILED · {reason}"[:60],
-                            fill=(196, 60, 80), font=small)
+                canvas.text(
+                    (x, margin + 22),
+                    f"FAILED · {reason}"[:60],
+                    fill=(196, 60, 80),
+                    font=small,
+                )
             x += card_w + gap
 
         import io
@@ -318,8 +360,11 @@ def _auto_label(ops: list[dict[str, Any]]) -> str:
         if kind == "update":
             params = op.get("params") or {}
             if params:
-                parts.append(" · ".join(f"{name} {_number(value)}"
-                                        for name, value in params.items()))
+                parts.append(
+                    " · ".join(
+                        f"{name} {_number(value)}" for name, value in params.items()
+                    )
+                )
             elif op.get("enabled") is False:
                 parts.append(f"{op.get('id')} 关闭")
             elif op.get("enabled") is True:

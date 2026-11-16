@@ -15,7 +15,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 _MAX_BYTES = 8 * 1024 * 1024
 
@@ -50,7 +50,9 @@ class DomainEvent:
 class EventLog:
     """A tiny rotating JSONL writer; failures must never break a CAD request."""
 
-    def __init__(self, path: str | os.PathLike[str], max_bytes: int = _MAX_BYTES) -> None:
+    def __init__(
+        self, path: str | os.PathLike[str], max_bytes: int = _MAX_BYTES
+    ) -> None:
         self.path = Path(path)
         self.max_bytes = max_bytes
         self._lock = threading.Lock()
@@ -100,43 +102,63 @@ def timeline(document: Any, plan: Any | None = None) -> list[dict[str, Any]]:
     feature_map = {feature.id: feature for feature in getattr(document, "features", ())}
     for milestone in getattr(document, "milestones", ()):
         metrics = dict(getattr(milestone, "metrics", ()))
-        entries.append({
-            "version": milestone.version,
-            "at": milestone.created,
-            "actor": milestone.actor,
-            "title": milestone.title,
-            "plan_id": getattr(milestone, "plan_id", None),
-            "node_id": getattr(milestone, "node_id", None),
-            "changed": list(getattr(milestone, "changed_features", ())),
-            "features": [
-                {"id": fid, "type": feature_map[fid].type}
-                for fid in getattr(milestone, "changed_features", ())
-                if fid in feature_map
-            ],
-            "checks": {
-                "passed": metrics.get("checks_passed", 0),
-                "total": metrics.get("checks_total", 0),
-            },
-            "metrics": {key: value for key, value in metrics.items()
-                        if key in {"faces", "volume", "edges", "seconds", "backend", "duration_ms", "cache_hits"}},
-        })
+        entries.append(
+            {
+                "version": milestone.version,
+                "at": milestone.created,
+                "actor": milestone.actor,
+                "title": milestone.title,
+                "plan_id": getattr(milestone, "plan_id", None),
+                "node_id": getattr(milestone, "node_id", None),
+                "changed": list(getattr(milestone, "changed_features", ())),
+                "features": [
+                    {"id": fid, "type": feature_map[fid].type}
+                    for fid in getattr(milestone, "changed_features", ())
+                    if fid in feature_map
+                ],
+                "checks": {
+                    "passed": metrics.get("checks_passed", 0),
+                    "total": metrics.get("checks_total", 0),
+                },
+                "metrics": {
+                    key: value
+                    for key, value in metrics.items()
+                    if key
+                    in {
+                        "faces",
+                        "volume",
+                        "edges",
+                        "seconds",
+                        "backend",
+                        "duration_ms",
+                        "cache_hits",
+                    }
+                },
+            }
+        )
     if plan is not None:
         for node in getattr(plan, "nodes", ()):
-            entries.append({
-                "version": getattr(node, "milestone_version", None),
-                "at": None,
-                "actor": "agent",
-                "title": f"{node.kind}: {node.title}",
-                "plan_id": getattr(plan, "id", None),
-                "node_id": node.id,
-                "changed": [],
-                "features": [],
-                "checks": {},
-                "metrics": {"node_status": node.status},
-                "error": getattr(node, "error", None),
-            })
-    entries.sort(key=lambda item: (item["version"] if item["version"] is not None else -1,
-                                   item["at"] or 0.0))
+            entries.append(
+                {
+                    "version": getattr(node, "milestone_version", None),
+                    "at": None,
+                    "actor": "agent",
+                    "title": f"{node.kind}: {node.title}",
+                    "plan_id": getattr(plan, "id", None),
+                    "node_id": node.id,
+                    "changed": [],
+                    "features": [],
+                    "checks": {},
+                    "metrics": {"node_status": node.status},
+                    "error": getattr(node, "error", None),
+                }
+            )
+    entries.sort(
+        key=lambda item: (
+            item["version"] if item["version"] is not None else -1,
+            item["at"] or 0.0,
+        )
+    )
     return entries
 
 

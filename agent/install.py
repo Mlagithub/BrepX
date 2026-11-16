@@ -13,7 +13,6 @@ import argparse
 import importlib.util
 import os
 import shutil
-import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -38,7 +37,7 @@ def _copy_tree(source: Path, target: Path, force: bool, copied: list[Path]) -> N
 
 def _copy_cadview(source: Path, target: Path, force: bool, copied: list[Path]) -> None:
     """Copy the built browser half and its manifest, never the plugin's node_modules."""
-    required = source / "lib" / "viewport.mjs"
+    required = source / "lib" / "workbench.mjs"
     if not required.is_file():
         raise FileNotFoundError(
             f"{required} is missing; run `npm run build` in {source} first"
@@ -52,13 +51,22 @@ def _copy_cadview(source: Path, target: Path, force: bool, copied: list[Path]) -
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install the cadwork dsh profile.")
-    parser.add_argument("--home", default=os.environ.get("DSH_HOME"),
-                        help="dsh home (default: $DSH_HOME or ~/.dsh)")
+    parser.add_argument(
+        "--home",
+        default=os.environ.get("DSH_HOME"),
+        help="dsh home (default: $DSH_HOME or ~/.dsh)",
+    )
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--web", action="store_true",
-                        help="also install the cad-web workbench profile (dsh web + cadview)")
-    parser.add_argument("--no-smlibpy", action="store_true",
-                        help="do not copy the smlibpy skill from the installed wheel")
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="also install the cad-web workbench profile (dsh web + cadview)",
+    )
+    parser.add_argument(
+        "--no-smlibpy",
+        action="store_true",
+        help="do not copy the smlibpy skill from the installed wheel",
+    )
     args = parser.parse_args(argv)
 
     home = Path(args.home) if args.home else Path.home() / ".dsh"
@@ -77,7 +85,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_smlibpy:
         spec = importlib.util.find_spec("smlibpy")
         if spec is None or spec.origin is None:
-            print("warning: smlibpy is not installed in this Python; skill references not copied")
+            print(
+                "warning: smlibpy is not installed in this Python; skill references not copied"
+            )
         else:
             vendor = Path(spec.origin).parent / "skill"
             if (vendor / "SKILL.md").is_file():
@@ -90,8 +100,12 @@ def main(argv: list[str] | None = None) -> int:
         web.mkdir(parents=True, exist_ok=True)
         for name in ("package.json", "cordis.patch.yml"):
             _copy_file(HERE / "cad-web" / name, web / name, args.force, copied)
-        _copy_cadview(HERE.parent / "plugins" / "cadview", web / "node_modules" / "cadview",
-                      args.force, copied)
+        _copy_cadview(
+            HERE.parent / "plugins" / "cadview",
+            web / "node_modules" / "cadview",
+            args.force,
+            copied,
+        )
 
     for path in copied:
         print(f"installed: {path}")

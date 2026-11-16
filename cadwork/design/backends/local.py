@@ -8,7 +8,8 @@ carries the Python values those names refer to.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from ..features import resolve_params, spec_for
 from .base import BackendError, NodeResult
@@ -22,8 +23,12 @@ def _metrics(value: Any) -> dict[str, Any]:
                 metrics[name] = float(getattr(value, name))
             except Exception:
                 pass
-    for name, method in (("faces", "faces"), ("edges", "edges"),
-                         ("solids", "solids"), ("vertices", "vertices")):
+    for name, method in (
+        ("faces", "faces"),
+        ("edges", "edges"),
+        ("solids", "solids"),
+        ("vertices", "vertices"),
+    ):
         accessor = getattr(value, method, None)
         if callable(accessor):
             try:
@@ -88,7 +93,9 @@ class LocalBackend:
             raise BackendError(
                 f"{step.node_id} ({step.action}) failed: {exc}", raw=str(exc)
             ) from exc
-        failed = [check for check in spec.check(output.value, params, inputs) if not check.ok]
+        failed = [
+            check for check in spec.check(output.value, params, inputs) if not check.ok
+        ]
         if failed:
             first = failed[0]
             raise BackendError(

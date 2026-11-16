@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from . import refs
 from .build import BuildResult
@@ -11,18 +12,30 @@ from .document import Document, Ref, ref_from_json
 
 
 def _vec3(value: Any) -> list[float]:
-    return [round(float(value[0]), 4), round(float(value[1]), 4), round(float(value[2]), 4)]
+    return [
+        round(float(value[0]), 4),
+        round(float(value[1]), 4),
+        round(float(value[2]), 4),
+    ]
 
 
-def _dist(a: list[float] | tuple[float, ...], b: list[float] | tuple[float, ...]) -> float:
+def _dist(
+    a: list[float] | tuple[float, ...], b: list[float] | tuple[float, ...]
+) -> float:
     return math.sqrt(sum((float(x) - float(y)) ** 2 for x, y in zip(a, b)))
 
 
-def _display_feature_id(document: Document, result: BuildResult, feature_id: str | None = None) -> str | None:
+def _display_feature_id(
+    document: Document, result: BuildResult, feature_id: str | None = None
+) -> str | None:
     if feature_id:
         return feature_id
     for feature in reversed(document.features):
-        if feature.enabled and feature.type not in {"cavity_extraction", "cavity"} and feature.id in result.outputs:
+        if (
+            feature.enabled
+            and feature.type not in {"cavity_extraction", "cavity"}
+            and feature.id in result.outputs
+        ):
             return feature.id
     for feature in reversed(document.features):
         if feature.enabled and feature.id in result.outputs:
@@ -70,18 +83,25 @@ def probe_geometry(
             center = _vec3(face.center())
             normal = _vec3(face.normal_at(face.center()))
             area = round(float(face.area), 4)
-            surface_type = str(getattr(face, "surface_type", None) or getattr(face, "geom_type", "face"))
-            face_records.append({
-                "index": index,
-                "area": area,
-                "center": center,
-                "normal": normal,
-                "type": surface_type,
-            })
+            surface_type = str(
+                getattr(face, "surface_type", None)
+                or getattr(face, "geom_type", "face")
+            )
+            face_records.append(
+                {
+                    "index": index,
+                    "area": area,
+                    "center": center,
+                    "normal": normal,
+                    "type": surface_type,
+                }
+            )
         except Exception:
             continue
 
-    dominant = sorted(face_records, key=lambda item: item["area"], reverse=True)[:max_faces]
+    dominant = sorted(face_records, key=lambda item: item["area"], reverse=True)[
+        :max_faces
+    ]
     return {
         "feature_id": target_id,
         "empty": False,
@@ -179,7 +199,10 @@ def pick_to_ref(
             c = _vec3(face.center())
             n = _vec3(face.normal_at(face.center()))
             f_area = round(float(face.area), 4)
-            f_type = str(getattr(face, "surface_type", None) or getattr(face, "geom_type", "face"))
+            f_type = str(
+                getattr(face, "surface_type", None)
+                or getattr(face, "geom_type", "face")
+            )
             dist = _dist(pt, c)
             score = dist
             if area is not None and area > 0:

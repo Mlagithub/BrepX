@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 from cadwork.design.backends.base import BackendError, BackendTimeout, NodeResult
-from cadwork.design.script_emit import EmitError, METRICS_PREFIX, emit_node, supported_actions
+from cadwork.design.script_emit import (
+    METRICS_PREFIX,
+    EmitError,
+    emit_node,
+    supported_actions,
+)
 
 
 def _server_available() -> bool:
@@ -84,7 +90,7 @@ class EmitterTests(unittest.TestCase):
 
     def test_metrics_marker_and_no_time_or_random(self) -> None:
         script = emit_node(box_step())
-        self.assertIn(f'print({METRICS_PREFIX!r} + json.dumps', script)
+        self.assertIn(f"print({METRICS_PREFIX!r} + json.dumps", script)
         self.assertIn("sort_keys=True", script)
         for forbidden in ("time.", "datetime", "random", "uuid"):
             self.assertNotIn(forbidden, script)
@@ -110,7 +116,9 @@ class EmitterTests(unittest.TestCase):
             {"start_radius": 2.0, "end_radius": 8.0, "turns": 3.0, "plane": "XY"},
         )
         self.assertIn("plane=Plane.XY", emit_node(spiral))
-        twist = Step("5", "k_twist", "n5", {"target": "n1"}, {"angle": 30.0, "axis": "Z"})
+        twist = Step(
+            "5", "k_twist", "n5", {"target": "n1"}, {"angle": 30.0, "axis": "Z"}
+        )
         self.assertIn("n5 = n1.twist(angle=30.0, axis=Z)", emit_node(twist))
 
     def test_export_step_is_opt_in(self) -> None:
@@ -136,7 +144,15 @@ class EmitterTests(unittest.TestCase):
         with self.assertRaises(EmitError):
             emit_node(Step("2", "k_cut", "n2", {"target": "n1"}, {}))
         with self.assertRaises(EmitError):
-            emit_node(Step("1", "k_box", "n1", {}, {"length": object(), "width": 1.0, "height": 1.0}))
+            emit_node(
+                Step(
+                    "1",
+                    "k_box",
+                    "n1",
+                    {},
+                    {"length": object(), "width": 1.0, "height": 1.0},
+                )
+            )
         self.assertIn("k_box", supported_actions())
 
 
@@ -177,7 +193,9 @@ class SmlibpyClientTests(unittest.IsolatedAsyncioTestCase):
             self.assertRegex(result.session_id or "", r"^s-[a-z0-9]+$")
             self.assertIn("6000", result.text)
 
-            failed = await client.run(result.session_id or "", "raise RuntimeError('nope')")
+            failed = await client.run(
+                result.session_id or "", "raise RuntimeError('nope')"
+            )
             self.assertFalse(failed.ok)
             self.assertIn("Script failed", failed.text)
         finally:
@@ -223,7 +241,9 @@ class ScriptBackendTests(unittest.TestCase):
     def test_export_step_node(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = folder + r"\doc-export.step"
-            result = self.backend.build_node("doc-export", box_step("7"), step_path=path)
+            result = self.backend.build_node(
+                "doc-export", box_step("7"), step_path=path
+            )
             self.assertEqual(result.step_path, path)
             with open(path, "rb") as handle:
                 self.assertGreater(len(handle.read()), 0)
@@ -256,7 +276,9 @@ class ScriptBackendTests(unittest.TestCase):
         replay = self.backend.replay("doc-replay", [box, shell])
         self.assertIsNotNone(replay)
         self.assertAlmostEqual(replay["volume"], second.metrics["volume"], places=6)
-        self.assertEqual(self.backend.committed_nodes("doc-replay"), frozenset({"1", "2"}))
+        self.assertEqual(
+            self.backend.committed_nodes("doc-replay"), frozenset({"1", "2"})
+        )
 
     def test_reset_forgets_session_and_commits(self) -> None:
         first = box_step("3")
@@ -277,13 +299,19 @@ class _StubClient:
         self.error = error
         self.cleared: list[str] = []
 
-    def start(self) -> "_StubClient":
+    def start(self) -> _StubClient:
         return self
 
     def new_session(self) -> str:
         return "s-stub"
 
-    def run(self, session: str, script: str, label: str | None = None, timeout_s: float = 120.0) -> Any:
+    def run(
+        self,
+        session: str,
+        script: str,
+        label: str | None = None,
+        timeout_s: float = 120.0,
+    ) -> Any:
         if self.error is not None:
             raise self.error
         return self.result
@@ -321,7 +349,9 @@ class BackendFailureTests(unittest.TestCase):
     def test_missing_metrics_raises_backend_error(self) -> None:
         if ScriptBackend is None:  # pragma: no cover
             self.skipTest(SKIP_REASON)
-        backend = ScriptBackend(client=_StubClient(result=RunResult(ok=True, text="Output:\nnothing")))
+        backend = ScriptBackend(
+            client=_StubClient(result=RunResult(ok=True, text="Output:\nnothing"))
+        )
         with self.assertRaises(BackendError) as caught:
             backend.build_node("doc-nometrics", box_step())
         self.assertIn("no __BREPX_METRICS__", str(caught.exception))

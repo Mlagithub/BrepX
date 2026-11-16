@@ -9,12 +9,12 @@ or document metadata.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from cadwork import smlib as S
 
-from . import checks
 from .checks import CheckResult
 
 
@@ -82,7 +82,9 @@ class Param:
             return _numbers(name, list(value))
         elif self.kind == "points":
             if not isinstance(value, (list, tuple)) or not value:
-                raise FeatureError("INVALID_PARAM", f"{name} must be a non-empty point list")
+                raise FeatureError(
+                    "INVALID_PARAM", f"{name} must be a non-empty point list"
+                )
             points: list[list[float]] = []
             for index, point in enumerate(value):
                 if not isinstance(point, (list, tuple)) or len(point) not in (2, 3):
@@ -92,7 +94,9 @@ class Param:
                 points.append(_numbers(f"{name}[{index}]", list(point)))
             return points
         else:
-            raise FeatureError("INVALID_PARAM", f"{name} has an unknown kind {self.kind!r}")
+            raise FeatureError(
+                "INVALID_PARAM", f"{name} has an unknown kind {self.kind!r}"
+            )
 
         if self.kind in {"float", "int"}:
             if self.minimum is not None and result < self.minimum:
@@ -142,8 +146,9 @@ INPUT_KINDS: dict[str, InputKind] = {
 }
 
 
-def register_input_kind(name: str, selects: tuple[str, ...],
-                        accepts: tuple[type, ...] = ()) -> None:
+def register_input_kind(
+    name: str, selects: tuple[str, ...], accepts: tuple[type, ...] = ()
+) -> None:
     """Extend the reference vocabulary without touching the build engine."""
     if not name or name in INPUT_KINDS:
         raise FeatureError("INVALID_KIND", f"input kind {name!r} already exists")
@@ -182,8 +187,8 @@ def _load_registry() -> None:
         return
     _REGISTRY_LOADED = True
     try:
-        from .kernel_actions import generated_actions
         from .adapters import ADAPTERS
+        from .kernel_actions import generated_actions
 
         for spec in generated_actions():
             FEATURES.setdefault(spec.type, spec)
@@ -249,7 +254,7 @@ def validate_feature(feature_type: str, refs: Mapping[str, Any]) -> FeatureSpec:
             "INVALID_REFS",
             f"{feature_type} refs: missing {missing}, unexpected {extra}",
             hint=f"required roles: {', '.join(sorted(set(roles) - optional)) or '(none)'}"
-                 + (f"; optional: {', '.join(sorted(optional))}" if optional else ""),
+            + (f"; optional: {', '.join(sorted(optional))}" if optional else ""),
         )
     return spec
 
@@ -257,31 +262,37 @@ def validate_feature(feature_type: str, refs: Mapping[str, Any]) -> FeatureSpec:
 def catalog() -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for spec in sorted(all_specs().values(), key=lambda item: item.type):
-        entries.append({
-            "type": spec.type,
-            "summary": spec.summary,
-            "tier": spec.tier,
-            "origin": spec.origin,
-            "return_kind": spec.return_kind,
-            "inputs": [
-                {"role": role.role, "kind": role.kind,
-                 "many": role.many, "optional": role.optional}
-                for role in spec.inputs
-            ],
-            "params": {
-                name: {
-                    "kind": param.kind,
-                    "default": param.default,
-                    "min": param.minimum,
-                    "max": param.maximum,
-                    "unit": param.unit,
-                    "choices": list(param.choices) if param.choices else None,
-                    "description": param.description,
-                    "required": param.required,
-                }
-                for name, param in spec.params.items()
-            },
-        })
+        entries.append(
+            {
+                "type": spec.type,
+                "summary": spec.summary,
+                "tier": spec.tier,
+                "origin": spec.origin,
+                "return_kind": spec.return_kind,
+                "inputs": [
+                    {
+                        "role": role.role,
+                        "kind": role.kind,
+                        "many": role.many,
+                        "optional": role.optional,
+                    }
+                    for role in spec.inputs
+                ],
+                "params": {
+                    name: {
+                        "kind": param.kind,
+                        "default": param.default,
+                        "min": param.minimum,
+                        "max": param.maximum,
+                        "unit": param.unit,
+                        "choices": list(param.choices) if param.choices else None,
+                        "description": param.description,
+                        "required": param.required,
+                    }
+                    for name, param in spec.params.items()
+                },
+            }
+        )
     return entries
 
 

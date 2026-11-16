@@ -27,9 +27,13 @@ class Box:
     def __init__(self, minimum, maximum) -> None:
         self.min = Vec(*minimum)
         self.max = Vec(*maximum)
-        self.size = Vec(maximum[0] - minimum[0],
-                        maximum[1] - minimum[1],
-                        maximum[2] - minimum[2])
+        self.size = Vec(
+            maximum[0] - minimum[0], maximum[1] - minimum[1], maximum[2] - minimum[2]
+        )
+
+    @property
+    def diagonal(self) -> float:
+        return sum(value * value for value in self.size) ** 0.5
 
 
 class Mesh:
@@ -46,9 +50,16 @@ class Face:
 
 
 class Part:
-    def __init__(self, volume: float = 100.0, face_areas=(10.0, 20.0, 30.0),
-                 edges: int = 12, solids: int = 1, closed: bool = True,
-                 distance_value: float = 1.5, intersects_value: bool = True) -> None:
+    def __init__(
+        self,
+        volume: float = 100.0,
+        face_areas=(10.0, 20.0, 30.0),
+        edges: int = 12,
+        solids: int = 1,
+        closed: bool = True,
+        distance_value: float = 1.5,
+        intersects_value: bool = True,
+    ) -> None:
         self.volume = volume
         self._faces = [Face(area) for area in face_areas]
         self._edges = [object() for _ in range(edges)]
@@ -73,7 +84,7 @@ class Part:
     def bbox(self):
         return self._box
 
-    def mesh(self):
+    def mesh(self, tolerance=None, angle=15.0):
         return Mesh(self._closed)
 
     def distance(self, other):
@@ -84,10 +95,20 @@ class Part:
 
 
 def _plan_for(source_id: str, feature_id: str | None = None):
-    return new_plan("d1", "test", 0, nodes=(
-        PlanNode(source_id, "feature", "source", action="solid_box",
-                 feature_id=feature_id),
-    ))
+    return new_plan(
+        "d1",
+        "test",
+        0,
+        nodes=(
+            PlanNode(
+                source_id,
+                "feature",
+                "source",
+                action="solid_box",
+                feature_id=feature_id,
+            ),
+        ),
+    )
 
 
 class VerifyMetricTests(unittest.TestCase):
@@ -134,7 +155,9 @@ class VerifyMetricTests(unittest.TestCase):
 
     def test_watertight_uses_mesh(self) -> None:
         self.assertTrue(evaluate(Expect("watertight", "true"), Part(closed=True))[0].ok)
-        self.assertFalse(evaluate(Expect("watertight", "true"), Part(closed=False))[0].ok)
+        self.assertFalse(
+            evaluate(Expect("watertight", "true"), Part(closed=False))[0].ok
+        )
 
     def test_bbox_metrics_are_vectors(self) -> None:
         part = Part()

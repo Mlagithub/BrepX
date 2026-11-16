@@ -12,22 +12,64 @@ from cadwork.service.mcp import build_mcp_server
 from cadwork.service.service import CADService
 from cadwork.service.store import Store
 
-EXPECTED_TOOLS = sorted([
-    "documents", "new_document", "state", "probe", "resolve", "catalog",
-    "plan_schema", "plan_add_node", "preview", "variants", "commit", "revert",
-    "render", "plan", "plan_edit", "plan_compile", "plan_run", "intents", "import",
-])
+EXPECTED_TOOLS = sorted(
+    [
+        "documents",
+        "new_document",
+        "new_assembly",
+        "domain_list",
+        "domain_brief",
+        "state",
+        "probe",
+        "resolve",
+        "catalog",
+        "plan_schema",
+        "plan_add_node",
+        "preview",
+        "variants",
+        "commit",
+        "revert",
+        "render",
+        "plan",
+        "plan_edit",
+        "plan_compile",
+        "plan_run",
+        "intents",
+        "import",
+        "assembly_state",
+        "assembly_edit",
+        "assembly_scene",
+        "assembly_bom",
+        "assembly_references",
+        "update_assembly_references",
+        "assembly_plan",
+        "assembly_plan_schema",
+        "import_step_assembly",
+    ]
+)
 
 PLAN_OPS = [
     {"op": "add_node", "node": {"id": "g", "kind": "goal", "title": "make a box"}},
-    {"op": "add_node", "node": {
-        "id": "n1", "kind": "feature", "title": "box", "action": "k_box",
-        "params": {"length": 20.0, "width": 20.0, "height": 20.0},
-    }},
-    {"op": "add_node", "node": {
-        "id": "c1", "kind": "check", "title": "has volume", "deps": ["n1"],
-        "expect": [{"metric": "volume", "op": "ge", "value": 1.0}],
-    }},
+    {
+        "op": "add_node",
+        "node": {
+            "id": "n1",
+            "kind": "feature",
+            "title": "box",
+            "action": "k_box",
+            "params": {"length": 20.0, "width": 20.0, "height": 20.0},
+        },
+    },
+    {
+        "op": "add_node",
+        "node": {
+            "id": "c1",
+            "kind": "check",
+            "title": "has volume",
+            "deps": ["n1"],
+            "expect": [{"metric": "volume", "op": "ge", "value": 1.0}],
+        },
+    },
 ]
 
 
@@ -63,9 +105,19 @@ class MCPTests(unittest.TestCase):
         async def scenario():
             tools = await self.server.list_tools()
             self.assertEqual(sorted(tool.name for tool in tools), EXPECTED_TOOLS)
-            self.assertEqual(len(tools), 19)
+            self.assertEqual(len(tools), 31)
             for tool in tools:
                 self.assertFalse(tool.name.startswith("cad_"), tool.name)
+
+        self._run(scenario())
+
+    def test_domain_catalog_tools(self) -> None:
+        async def scenario():
+            domains = await self._call("domain_list", {})
+            self.assertEqual(domains[0]["id"], "aircraft")
+            brief = await self._call("domain_brief", {"domain_id": "aircraft"})
+            self.assertEqual(brief["brief"]["id"], "aircraft-wing")
+            self.assertEqual(brief["gates"][0]["id"], "W1")
 
         self._run(scenario())
 
@@ -83,11 +135,14 @@ class MCPTests(unittest.TestCase):
             self.assertIn("pattern", {entry["type"] for entry in catalog})
             self.assertIn("cavity", {entry["type"] for entry in catalog})
 
-            edited = await self._call("plan_edit", {
-                "document_id": document_id,
-                "ops": PLAN_OPS,
-                "goal": "make a box",
-            })
+            edited = await self._call(
+                "plan_edit",
+                {
+                    "document_id": document_id,
+                    "ops": PLAN_OPS,
+                    "goal": "make a box",
+                },
+            )
             plan = edited["plan"]
             self.assertEqual(plan["goal"], "make a box")
             self.assertEqual([node["id"] for node in plan["nodes"]], ["g", "n1", "c1"])
@@ -96,9 +151,13 @@ class MCPTests(unittest.TestCase):
             self.assertTrue(compiled["ok"], compiled)
             self.assertEqual(compiled["ops_count"], 1)
 
-            ran = await self._call("plan_run", {
-                "document_id": document_id, "node_id": "n1",
-            })
+            ran = await self._call(
+                "plan_run",
+                {
+                    "document_id": document_id,
+                    "node_id": "n1",
+                },
+            )
             self.assertEqual(ran["document_version"], 1)
             nodes = {node["id"]: node for node in ran["plan"]["nodes"]}
             self.assertEqual(nodes["n1"]["status"], "done")
@@ -112,44 +171,66 @@ class MCPTests(unittest.TestCase):
             self.assertEqual(state["plan"]["nodes"], 3)
             self.assertGreater(len(state["focus_params"]), 0)
 
-            checked = await self._call("plan_run", {
-                "document_id": document_id, "node_id": "c1", "base_version": 1,
-            })
+            checked = await self._call(
+                "plan_run",
+                {
+                    "document_id": document_id,
+                    "node_id": "c1",
+                    "base_version": 1,
+                },
+            )
             nodes = {node["id"]: node for node in checked["plan"]["nodes"]}
             self.assertEqual(nodes["c1"]["status"], "done")
             self.assertIn("volume", nodes["c1"]["observed"])
 
-            preview = await self._call("preview", {
-                "document_id": document_id,
-                "ops": [{"op": "update", "id": "n1", "params": {"length": 40.0}}],
-                "base_version": 1,
-            })
+            preview = await self._call(
+                "preview",
+                {
+                    "document_id": document_id,
+                    "ops": [{"op": "update", "id": "n1", "params": {"length": 40.0}}],
+                    "base_version": 1,
+                },
+            )
             self.assertIn("n1", preview["diff"]["changed"])
             self.assertAlmostEqual(preview["metrics"]["volume"], 16000.0, places=1)
             still = await self._call("state", {"document_id": document_id})
             self.assertEqual(still["document"]["version"], 1)
 
-            probe = await self._call("probe", {
-                "document_id": document_id,
-                "ref": {"source": "n1", "select": "faces",
-                        "filters": [{"method": "top"}]},
-            })
+            probe = await self._call(
+                "probe",
+                {
+                    "document_id": document_id,
+                    "ref": {
+                        "source": "n1",
+                        "select": "faces",
+                        "filters": [{"method": "top"}],
+                    },
+                },
+            )
             self.assertTrue(probe["ref_probe"]["ok"])
             self.assertEqual(probe["ref_probe"]["count"], 1)
 
-            resolved = await self._call("resolve", {
-                "document_id": document_id, "phrase": "最后那个",
-            })
+            resolved = await self._call(
+                "resolve",
+                {
+                    "document_id": document_id,
+                    "phrase": "最后那个",
+                },
+            )
             self.assertIn("matches", resolved)
 
             image = await self.server.call_tool("render", {"document_id": document_id})
             self.assertFalse(image.is_error, image.content)
             self.assertTrue(any(item.type == "image" for item in image.content))
 
-            reverted = await self._call("revert", {
-                "document_id": document_id, "target_version": 0,
-                "title": "回到空白",
-            })
+            reverted = await self._call(
+                "revert",
+                {
+                    "document_id": document_id,
+                    "target_version": 0,
+                    "title": "回到空白",
+                },
+            )
             self.assertEqual(reverted["document"]["version"], 2)
             self.assertEqual(reverted["document"]["features"], [])
 
@@ -184,15 +265,28 @@ class MCPTests(unittest.TestCase):
             state = await self._call("state", {})
             document_id = state["document"]["id"]
 
-            committed = await self._call("commit", {
-                "document_id": document_id,
-                "base_version": 0,
-                "ops": [{"op": "add", "feature": {
-                    "id": "b1", "type": "k_box",
-                    "params": {"length": 20.0, "width": 20.0, "height": 20.0},
-                }}],
-                "title": "box",
-            })
+            committed = await self._call(
+                "commit",
+                {
+                    "document_id": document_id,
+                    "base_version": 0,
+                    "ops": [
+                        {
+                            "op": "add",
+                            "feature": {
+                                "id": "b1",
+                                "type": "k_box",
+                                "params": {
+                                    "length": 20.0,
+                                    "width": 20.0,
+                                    "height": 20.0,
+                                },
+                            },
+                        }
+                    ],
+                    "title": "box",
+                },
+            )
             self.assertEqual(committed["document"]["version"], 1)
             self.assertEqual(len(committed["document"]["features"]), 1)
             self.assertEqual(committed["build"]["features"][0]["id"], "b1")
@@ -200,14 +294,22 @@ class MCPTests(unittest.TestCase):
             self.service.add_intent_note(document_id, "把方块加长到 40")
             listed = await self._call("intents", {"document_id": document_id})
             self.assertEqual(len(listed["intents"]), 1)
-            cleared = await self._call("intents", {
-                "document_id": document_id, "action": "clear",
-            })
+            cleared = await self._call(
+                "intents",
+                {
+                    "document_id": document_id,
+                    "action": "clear",
+                },
+            )
             self.assertEqual(cleared["cleared"], 1)
 
-            reverted = await self._call("revert", {
-                "document_id": document_id, "target_version": 0,
-            })
+            reverted = await self._call(
+                "revert",
+                {
+                    "document_id": document_id,
+                    "target_version": 0,
+                },
+            )
             self.assertEqual(reverted["document"]["version"], 2)
             self.assertEqual(reverted["document"]["features"], [])
 

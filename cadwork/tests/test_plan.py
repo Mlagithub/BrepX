@@ -27,10 +27,18 @@ from cadwork.design.plan import (
 def _base_plan() -> ModelingPlan:
     nodes = (
         PlanNode("g", "goal", "Build a small block"),
-        PlanNode("f1", "feature", "block", action="solid_box",
-                 params={"length": 10.0, "width": 20.0, "height": 30.0}),
         PlanNode(
-            "f2", "feature", "cut it", action="boolean",
+            "f1",
+            "feature",
+            "block",
+            action="solid_box",
+            params={"length": 10.0, "width": 20.0, "height": 30.0},
+        ),
+        PlanNode(
+            "f2",
+            "feature",
+            "cut it",
+            action="boolean",
             params={"kind": "cut"},
             refs={
                 "target": Ref("f1", "self"),
@@ -39,7 +47,10 @@ def _base_plan() -> ModelingPlan:
             deps=("f1",),
         ),
         PlanNode(
-            "c1", "check", "still has volume", deps=("f2",),
+            "c1",
+            "check",
+            "still has volume",
+            deps=("f2",),
             expect=(
                 Expect("volume", "ge", 1.0),
                 Expect("faces", "between", (1, 100)),
@@ -62,20 +73,33 @@ class PlanModelTests(unittest.TestCase):
         self.assertGreater(plan.created, 0.0)
 
     def test_with_node_appends_then_replaces_in_place(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "one", action="solid_box"),
-            PlanNode("f2", "feature", "two", action="solid_box"),
-        ))
-        updated = with_node(plan, PlanNode("f3", "feature", "three", action="solid_box"))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "one", action="solid_box"),
+                PlanNode("f2", "feature", "two", action="solid_box"),
+            ),
+        )
+        updated = with_node(
+            plan, PlanNode("f3", "feature", "three", action="solid_box")
+        )
         self.assertEqual([node.id for node in updated.nodes], ["f1", "f2", "f3"])
         self.assertEqual(updated.revision, plan.revision)
         self.assertEqual(updated.created, plan.created)
 
-        replaced = with_node(updated, PlanNode("f2", "feature", "TWO", action="solid_box"))
+        replaced = with_node(
+            updated, PlanNode("f2", "feature", "TWO", action="solid_box")
+        )
         self.assertEqual([node.id for node in replaced.nodes], ["f1", "f2", "f3"])
-        self.assertEqual([node.title for node in replaced.nodes], ["one", "TWO", "three"])
+        self.assertEqual(
+            [node.title for node in replaced.nodes], ["one", "TWO", "three"]
+        )
         # Pure helper: the input is untouched.
-        self.assertEqual([node.title for node in updated.nodes], ["one", "two", "three"])
+        self.assertEqual(
+            [node.title for node in updated.nodes], ["one", "two", "three"]
+        )
 
     def test_with_revision_increments_or_sets(self) -> None:
         plan = new_plan("d1", "goal", 0)
@@ -86,19 +110,33 @@ class PlanModelTests(unittest.TestCase):
     def test_next_node_id(self) -> None:
         self.assertEqual(next_node_id(new_plan("d1", "goal", 0)), "n1")
         self.assertEqual(next_node_id(), "n1")
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("n1", "goal", "g"),
-            PlanNode("n3", "goal", "g"),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("n1", "goal", "g"),
+                PlanNode("n3", "goal", "g"),
+            ),
+        )
         self.assertEqual(next_node_id(plan), "n2")
 
     def test_round_trip_carries_since_and_extra(self) -> None:
-        ref = Ref("f1", "faces", (Filter("largest"),),
-                  since=("f0",), extra=("f2",))
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("c1", "check", "c", deps=("f1",),
-                     expect=(Expect("distance", "le", 1.0, ref=ref),)),
-        ))
+        ref = Ref("f1", "faces", (Filter("largest"),), since=("f0",), extra=("f2",))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode(
+                    "c1",
+                    "check",
+                    "c",
+                    deps=("f1",),
+                    expect=(Expect("distance", "le", 1.0, ref=ref),),
+                ),
+            ),
+        )
         decoded = ModelingPlan.from_json(json.dumps(plan.to_json()))
         self.assertEqual(decoded.nodes[0].expect[0].ref, ref)
         self.assertEqual(decoded.nodes[0].expect[0].ref.since, ("f0",))
@@ -116,7 +154,9 @@ class PlanModelTests(unittest.TestCase):
 
     def test_round_trip_preserves_tuple_refs(self) -> None:
         node = PlanNode(
-            "f1", "feature", "thicken",
+            "f1",
+            "feature",
+            "thicken",
             action="thicken_faces",
             refs={"faces": (Ref("n0", "faces"), Ref("n0", "faces"))},
         )
@@ -151,10 +191,15 @@ class PlanValidationTests(unittest.TestCase):
         validate_plan(plan, object())
 
     def test_duplicate_node_ids(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("g", "goal", "one"),
-            PlanNode("g", "goal", "two"),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("g", "goal", "one"),
+                PlanNode("g", "goal", "two"),
+            ),
+        )
         self.assertPlanError(plan, "NODE_ID_CONFLICT")
 
     def test_invalid_node_id(self) -> None:
@@ -162,82 +207,151 @@ class PlanValidationTests(unittest.TestCase):
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_unknown_dependency(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("g", "goal", "g"),
-            PlanNode("f1", "feature", "f", action="solid_box", deps=("missing",)),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("g", "goal", "g"),
+                PlanNode("f1", "feature", "f", action="solid_box", deps=("missing",)),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_forward_dependency_is_rejected(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box", deps=("f2",)),
-            PlanNode("f2", "feature", "f", action="solid_box"),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box", deps=("f2",)),
+                PlanNode("f2", "feature", "f", action="solid_box"),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_ref_must_point_at_an_earlier_feature(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("g", "goal", "g"),
-            PlanNode("f1", "feature", "one", action="solid_box"),
-            PlanNode("f2", "feature", "two", action="transform",
-                     refs={"target": Ref("f1", "self")}),
-            PlanNode("f3", "feature", "three", action="transform",
-                     refs={"target": Ref("g", "self")}),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("g", "goal", "g"),
+                PlanNode("f1", "feature", "one", action="solid_box"),
+                PlanNode(
+                    "f2",
+                    "feature",
+                    "two",
+                    action="transform",
+                    refs={"target": Ref("f1", "self")},
+                ),
+                PlanNode(
+                    "f3",
+                    "feature",
+                    "three",
+                    action="transform",
+                    refs={"target": Ref("g", "self")},
+                ),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
-        later = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "one", action="transform",
-                     refs={"target": Ref("f2", "self")}),
-            PlanNode("f2", "feature", "two", action="solid_box"),
-        ))
+        later = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode(
+                    "f1",
+                    "feature",
+                    "one",
+                    action="transform",
+                    refs={"target": Ref("f2", "self")},
+                ),
+                PlanNode("f2", "feature", "two", action="solid_box"),
+            ),
+        )
         self.assertPlanError(later, "PLAN_INVALID")
 
     def test_feature_requires_action(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "no action"),
-        ))
+        plan = new_plan(
+            "d1", "goal", 0, nodes=(PlanNode("f1", "feature", "no action"),)
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_goal_cannot_have_an_action(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("g", "goal", "g", action="solid_box"),
-        ))
+        plan = new_plan(
+            "d1", "goal", 0, nodes=(PlanNode("g", "goal", "g", action="solid_box"),)
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_goal_cannot_have_expectations(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("g", "goal", "g", expect=(Expect("volume", "ge", 1.0),)),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(PlanNode("g", "goal", "g", expect=(Expect("volume", "ge", 1.0),)),),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_check_requires_one_dependency(self) -> None:
-        none = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("c1", "check", "c", expect=(Expect("volume", "ge", 1.0),)),
-        ))
+        none = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("c1", "check", "c", expect=(Expect("volume", "ge", 1.0),)),
+            ),
+        )
         self.assertPlanError(none, "PLAN_INVALID")
 
-        two = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box"),
-            PlanNode("f2", "feature", "f", action="solid_box"),
-            PlanNode("c1", "check", "c", deps=("f1", "f2"),
-                     expect=(Expect("volume", "ge", 1.0),)),
-        ))
+        two = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box"),
+                PlanNode("f2", "feature", "f", action="solid_box"),
+                PlanNode(
+                    "c1",
+                    "check",
+                    "c",
+                    deps=("f1", "f2"),
+                    expect=(Expect("volume", "ge", 1.0),),
+                ),
+            ),
+        )
         self.assertPlanError(two, "PLAN_INVALID")
 
     def test_check_cannot_have_an_action(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box"),
-            PlanNode("c1", "check", "c", action="solid_box", deps=("f1",),
-                     expect=(Expect("volume", "ge", 1.0),)),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box"),
+                PlanNode(
+                    "c1",
+                    "check",
+                    "c",
+                    action="solid_box",
+                    deps=("f1",),
+                    expect=(Expect("volume", "ge", 1.0),),
+                ),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_check_requires_an_expectation(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box"),
-            PlanNode("c1", "check", "c", deps=("f1",)),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box"),
+                PlanNode("c1", "check", "c", deps=("f1",)),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_unknown_kind(self) -> None:
@@ -245,24 +359,51 @@ class PlanValidationTests(unittest.TestCase):
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_invalid_feature_id(self) -> None:
-        plan = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box", feature_id="has-dash"),
-        ))
+        plan = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode(
+                    "f1", "feature", "f", action="solid_box", feature_id="has-dash"
+                ),
+            ),
+        )
         self.assertPlanError(plan, "PLAN_INVALID")
 
     def test_unknown_metric_and_op_fail_at_validation_time(self) -> None:
-        bad_metric = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box"),
-            PlanNode("c1", "check", "c", deps=("f1",),
-                     expect=(Expect("weight", "ge", 1.0),)),
-        ))
+        bad_metric = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box"),
+                PlanNode(
+                    "c1",
+                    "check",
+                    "c",
+                    deps=("f1",),
+                    expect=(Expect("weight", "ge", 1.0),),
+                ),
+            ),
+        )
         self.assertPlanError(bad_metric, "PLAN_INVALID")
 
-        bad_op = new_plan("d1", "goal", 0, nodes=(
-            PlanNode("f1", "feature", "f", action="solid_box"),
-            PlanNode("c1", "check", "c", deps=("f1",),
-                     expect=(Expect("volume", "roughly", 1.0),)),
-        ))
+        bad_op = new_plan(
+            "d1",
+            "goal",
+            0,
+            nodes=(
+                PlanNode("f1", "feature", "f", action="solid_box"),
+                PlanNode(
+                    "c1",
+                    "check",
+                    "c",
+                    deps=("f1",),
+                    expect=(Expect("volume", "roughly", 1.0),),
+                ),
+            ),
+        )
         self.assertPlanError(bad_op, "PLAN_INVALID")
 
         with self.assertRaises(PlanError) as caught:

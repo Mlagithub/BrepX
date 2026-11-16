@@ -12,8 +12,9 @@ import math
 import re
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 Scalar = int | float | bool | str
 Arg = Scalar | list
@@ -40,7 +41,7 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def features_digest(features: tuple["Feature", ...]) -> str:
+def features_digest(features: tuple[Feature, ...]) -> str:
     payload = [feature_to_json(feature) for feature in features]
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:16]
 
@@ -52,12 +53,18 @@ def _check_param_value(name: str, value: Any) -> Any:
             raise DocumentError("INVALID_VALUE", f"{name} must be finite")
         return value
     if isinstance(value, (list, tuple)) and value:
-        if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value):
+        if all(
+            isinstance(item, (int, float)) and not isinstance(item, bool)
+            for item in value
+        ):
             return list(value)
         if all(
             isinstance(item, (list, tuple))
             and len(item) in (2, 3)
-            and all(isinstance(number, (int, float)) and not isinstance(number, bool) for number in item)
+            and all(
+                isinstance(number, (int, float)) and not isinstance(number, bool)
+                for number in item
+            )
             for item in value
         ):
             return [list(item) for item in value]
@@ -118,8 +125,15 @@ class Ref:
         if not _ID.match(self.source):
             raise DocumentError("INVALID_REF", f"invalid ref source {self.source!r}")
         if self.select not in {
-            "self", "faces", "edges", "solids", "vertices",
-            "voids", "cells", "shells", "wires",
+            "self",
+            "faces",
+            "edges",
+            "solids",
+            "vertices",
+            "voids",
+            "cells",
+            "shells",
+            "wires",
         }:
             raise DocumentError("INVALID_REF", f"invalid select {self.select!r}")
         for name in self.since + self.extra:
@@ -141,7 +155,9 @@ class Feature:
         if not _ID.match(self.id):
             raise DocumentError("INVALID_FEATURE", f"invalid feature id {self.id!r}")
         if not _TYPE.match(self.type):
-            raise DocumentError("INVALID_FEATURE", f"invalid feature type {self.type!r}")
+            raise DocumentError(
+                "INVALID_FEATURE", f"invalid feature type {self.type!r}"
+            )
         for key, value in self.params.items():
             _check_param_value(f"param {key}", value)
         for role, value in self.refs.items():
@@ -187,6 +203,178 @@ class Milestone:
 
 
 @dataclass(frozen=True)
+class ParameterSpec:
+    """A driving parameter exposed to assembly overrides and the UI."""
+
+    name: str
+    feature_id: str
+    param: str
+    kind: str = "float"
+    default: Any = None
+    unit: str = ""
+    minimum: float | None = None
+    maximum: float | None = None
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        if not _ID.match(self.name):
+            raise DocumentError(
+                "INVALID_PARAMETER", f"invalid parameter name {self.name!r}"
+            )
+        if not _ID.match(self.feature_id):
+            raise DocumentError(
+                "INVALID_PARAMETER", f"invalid feature id {self.feature_id!r}"
+            )
+        if not self.param:
+            raise DocumentError("INVALID_PARAMETER", "parameter source cannot be empty")
+        if self.kind not in {"float", "int", "bool", "str", "vector"}:
+            raise DocumentError(
+                "INVALID_PARAMETER", f"unknown parameter kind {self.kind!r}"
+            )
+        if self.default is not None:
+            _check_param_value(f"parameter {self.name} default", self.default)
+        for bound_name, bound in (("minimum", self.minimum), ("maximum", self.maximum)):
+            if bound is not None and (
+                isinstance(bound, bool) or not isinstance(bound, (int, float))
+            ):
+                raise DocumentError(
+                    "INVALID_PARAMETER", f"{bound_name} must be a number"
+                )
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
+            raise DocumentError("INVALID_PARAMETER", "minimum cannot exceed maximum")
+
+
+@dataclass(frozen=True)
+class Interface:
+    """A named frame or face contract used by assembly mates."""
+
+    name: str
+    kind: str
+    feature_id: str
+    params: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not _ID.match(self.name):
+            raise DocumentError(
+                "INVALID_INTERFACE", f"invalid interface name {self.name!r}"
+            )
+        if not _ID.match(self.feature_id):
+            raise DocumentError(
+                "INVALID_INTERFACE", f"invalid interface feature {self.feature_id!r}"
+            )
+        if self.kind not in {"axis", "plane", "frame", "bolt_pattern", "face", "point"}:
+            raise DocumentError(
+                "INVALID_INTERFACE", f"unknown interface kind {self.kind!r}"
+            )
+        for key, value in dict(self.params).items():
+            _check_param_value(f"interface {self.name}.{key}", value)
+        object.__setattr__(self, "params", dict(self.params))
+        _validate_interface_params(self)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.params.get(key, default)
+
+
+def _vector3(value: Any, label: str) -> tuple[float, float, float]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise DocumentError("INVALID_INTERFACE", f"{label} must be a 3-vector")
+    numbers = tuple(float(item) for item in value)
+    if any(not math.isfinite(item) for item in numbers):
+        raise DocumentError("INVALID_INTERFACE", f"{label} must be finite")
+    return numbers  # type: ignore[return-value]
+
+
+def _validate_interface_params(interface: Interface) -> None:
+    params = interface.params
+    if interface.kind in {"axis", "plane", "frame"}:
+        for key in ("origin",):
+            if key in params:
+                _vector3(params[key], f"interface {interface.name}.{key}")
+        if interface.kind == "axis" and "direction" in params:
+            direction = _vector3(
+                params["direction"], f"interface {interface.name}.direction"
+            )
+            if sum(item * item for item in direction) <= 1e-18:
+                raise DocumentError(
+                    "INVALID_INTERFACE", "axis direction cannot be zero"
+                )
+        if interface.kind in {"plane", "frame"} and "normal" in params:
+            normal = _vector3(params["normal"], f"interface {interface.name}.normal")
+            if sum(item * item for item in normal) <= 1e-18:
+                raise DocumentError("INVALID_INTERFACE", "plane normal cannot be zero")
+        for key in ("x_axis", "z_axis"):
+            if key in params:
+                axis = _vector3(params[key], f"interface {interface.name}.{key}")
+                if sum(item * item for item in axis) <= 1e-18:
+                    raise DocumentError("INVALID_INTERFACE", f"{key} cannot be zero")
+    if interface.kind == "bolt_pattern":
+        count = params.get("count")
+        if count is not None:
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                raise DocumentError(
+                    "INVALID_INTERFACE", "bolt pattern count must be >= 1"
+                )
+        for key in ("diameter", "circle_radius"):
+            if key in params:
+                value = params[key]
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or value < 0
+                ):
+                    raise DocumentError(
+                        "INVALID_INTERFACE", f"{key} must be a non-negative number"
+                    )
+
+
+def _parallel(
+    left: tuple[float, float, float],
+    right: tuple[float, float, float],
+    tolerance: float,
+) -> bool:
+    left_length = math.sqrt(sum(item * item for item in left))
+    right_length = math.sqrt(sum(item * item for item in right))
+    if left_length <= 1e-18 or right_length <= 1e-18:
+        return False
+    dot = abs(sum(a * b for a, b in zip(left, right)) / (left_length * right_length))
+    return abs(dot - 1.0) <= tolerance
+
+
+def interface_compatibility(
+    left: Interface, right: Interface, tolerance: float = 1e-6
+) -> tuple[bool, tuple[str, ...]]:
+    """Compare two interface contracts; return every incompatibility."""
+    mismatches: list[str] = []
+    if left.kind != right.kind:
+        return False, (f"kind {left.kind!r} != {right.kind!r}",)
+    if left.kind == "bolt_pattern":
+        fields = (("count", 0.0), ("diameter", tolerance), ("circle_radius", tolerance))
+        for key, field_tolerance in fields:
+            first, second = left.params.get(key), right.params.get(key)
+            if first is None or second is None:
+                continue
+            if field_tolerance == 0.0:
+                if first != second:
+                    mismatches.append(f"{key} {first!r} != {second!r}")
+            elif abs(float(first) - float(second)) > field_tolerance:
+                mismatches.append(f"{key} {first} != {second}")
+    keys = ("direction", "normal", "x_axis", "z_axis")
+    for key in keys:
+        if key in left.params and key in right.params:
+            if not _parallel(
+                _vector3(left.params[key], key),
+                _vector3(right.params[key], key),
+                tolerance,
+            ):
+                mismatches.append(f"{key} is not parallel")
+    return not mismatches, tuple(mismatches)
+
+
+@dataclass(frozen=True)
 class Document:
     id: str
     name: str
@@ -195,17 +383,89 @@ class Document:
     milestones: tuple[Milestone, ...] = ()
     history: tuple[str, ...] = ()
     seq: int = 0
+    kind: str = "part"
+    configurations: Mapping[str, Mapping[str, Mapping[str, Any]]] = field(
+        default_factory=dict
+    )
+    parameters: tuple[ParameterSpec, ...] = ()
+    interfaces: tuple[Interface, ...] = ()
+    generation: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.kind != "part":
+            raise DocumentError("INVALID_KIND", f"unknown document kind {self.kind!r}")
+        normalized: dict[str, dict[str, dict[str, Any]]] = {}
+        for config_name, overrides in dict(self.configurations).items():
+            if not isinstance(config_name, str) or not config_name:
+                raise DocumentError(
+                    "INVALID_CONFIG", "configuration name cannot be empty"
+                )
+            normalized_overrides: dict[str, dict[str, Any]] = {}
+            for feature_id, params in dict(overrides).items():
+                if not _ID.match(str(feature_id)):
+                    raise DocumentError(
+                        "INVALID_CONFIG",
+                        f"invalid configuration feature {feature_id!r}",
+                    )
+                normalized_overrides[str(feature_id)] = {
+                    str(key): _check_param_value(
+                        f"config {config_name}.{feature_id}.{key}", value
+                    )
+                    for key, value in dict(params).items()
+                }
+            normalized[config_name] = normalized_overrides
+        if not isinstance(self.generation, Mapping):
+            raise DocumentError(
+                "INVALID_GENERATION", "generation metadata must be an object"
+            )
+        try:
+            generation = json.loads(
+                json.dumps(dict(self.generation), ensure_ascii=False)
+            )
+        except (TypeError, ValueError) as exc:
+            raise DocumentError(
+                "INVALID_GENERATION", "generation metadata must be JSON data"
+            ) from exc
+        object.__setattr__(self, "configurations", normalized)
+        object.__setattr__(self, "parameters", tuple(self.parameters))
+        object.__setattr__(self, "interfaces", tuple(self.interfaces))
+        object.__setattr__(self, "generation", generation)
+
+    def interface(self, name: str) -> Interface:
+        for interface in self.interfaces:
+            if interface.name == name:
+                return interface
+        raise DocumentError("UNKNOWN_INTERFACE", f"no interface {name!r}")
+
+    def configuration(self, name: str) -> Mapping[str, Mapping[str, Any]]:
+        if name == "default":
+            return {}
+        try:
+            return self.configurations[name]
+        except KeyError as exc:
+            raise DocumentError("UNKNOWN_CONFIG", f"no configuration {name!r}") from exc
 
 
-def new_document(name: str = "Untitled", document_id: str | None = None,
-                 seq: int = 0, actor: str = "human") -> Document:
+def new_document(
+    name: str = "Untitled",
+    document_id: str | None = None,
+    seq: int = 0,
+    actor: str = "human",
+) -> Document:
     """A new document has one empty milestone at version 0 and no features."""
     return Document(
         id=document_id or f"d_{uuid.uuid4().hex[:10]}",
         name=name,
         version=0,
-        milestones=(Milestone(version=0, title="空白文档", parent_version=None,
-                              actor=actor, created=time.time()),),
+        milestones=(
+            Milestone(
+                version=0,
+                title="空白文档",
+                parent_version=None,
+                actor=actor,
+                created=time.time(),
+            ),
+        ),
         seq=seq,
     )
 
@@ -226,6 +486,38 @@ def validate_layout(document: Document) -> None:
                             "which is not an earlier feature",
                         )
         seen.add(feature.id)
+
+    for config_name, overrides in document.configurations.items():
+        for feature_id in overrides:
+            if feature_id not in seen:
+                raise DocumentError(
+                    "UNKNOWN_CONFIG_FEATURE",
+                    f"configuration {config_name!r} overrides missing feature {feature_id!r}",
+                )
+    parameter_names: set[str] = set()
+    for parameter in document.parameters:
+        if parameter.name in parameter_names:
+            raise DocumentError(
+                "DUPLICATE_PARAMETER", f"duplicate parameter {parameter.name!r}"
+            )
+        parameter_names.add(parameter.name)
+        if parameter.feature_id not in seen:
+            raise DocumentError(
+                "UNKNOWN_PARAMETER_FEATURE",
+                f"parameter {parameter.name!r} points at missing feature {parameter.feature_id!r}",
+            )
+    interface_names: set[str] = set()
+    for interface in document.interfaces:
+        if interface.name in interface_names:
+            raise DocumentError(
+                "DUPLICATE_INTERFACE", f"duplicate interface {interface.name!r}"
+            )
+        interface_names.add(interface.name)
+        if interface.feature_id not in seen:
+            raise DocumentError(
+                "UNKNOWN_INTERFACE_FEATURE",
+                f"interface {interface.name!r} points at missing feature {interface.feature_id!r}",
+            )
 
 
 def _find(features: list[Feature], feature_id: str) -> int:
@@ -250,7 +542,9 @@ def _apply_update(features: list[Feature], op: Mapping[str, Any]) -> None:
     index = _find(features, str(op.get("id")))
     current = features[index]
     if "type" in op and op["type"] != current.type:
-        raise DocumentError("INVALID_OP", "feature type is immutable; remove and re-add instead")
+        raise DocumentError(
+            "INVALID_OP", "feature type is immutable; remove and re-add instead"
+        )
     params = dict(current.params)
     for key, value in dict(op.get("params") or {}).items():
         params[key] = _check_param_value(f"param {key}", value)
@@ -359,7 +653,9 @@ def apply_ops(
         milestones.append(
             Milestone(
                 version=next_version,
-                parent_version=document.version if parent_version is None else parent_version,
+                parent_version=document.version
+                if parent_version is None
+                else parent_version,
                 title=str(title),
                 changed_features=tuple(changed_ids),
                 focus_params=tuple(parsed_focus[:_MAX_FOCUS]),
@@ -382,6 +678,10 @@ def apply_ops(
         milestones=tuple(milestones),
         history=history,
         seq=document.seq,
+        kind=document.kind,
+        configurations=document.configurations,
+        parameters=document.parameters,
+        interfaces=document.interfaces,
     )
     validate_layout(updated)
     return updated
@@ -392,7 +692,7 @@ def _trim_milestones(milestones: list[Milestone]) -> list[Milestone]:
     if len(milestones) <= _MAX_MILESTONES:
         return milestones
     head = [item for item in milestones[:1] if item.version == 0]
-    return head + milestones[-(_MAX_MILESTONES - len(head)):]
+    return head + milestones[-(_MAX_MILESTONES - len(head)) :]
 
 
 def focus_param_to_json(value: FocusParam) -> dict[str, Any]:
@@ -453,10 +753,17 @@ def milestone_from_json(payload: Mapping[str, Any]) -> Milestone:
         node_id=payload.get("node_id"),
         created=float(payload.get("created", 0.0) or 0.0),
         changed_features=tuple(str(x) for x in (payload.get("changed_features") or ())),
-        changed_face_indices=tuple(int(x) for x in (payload.get("changed_face_indices") or ())),
-        metrics=tuple(sorted((str(k), v) for k, v in dict(payload.get("metrics") or {}).items())),
-        focus_params=tuple(focus_param_from_json(item) for item in (payload.get("focus_params") or ())),
+        changed_face_indices=tuple(
+            int(x) for x in (payload.get("changed_face_indices") or ())
+        ),
+        metrics=tuple(
+            sorted((str(k), v) for k, v in dict(payload.get("metrics") or {}).items())
+        ),
+        focus_params=tuple(
+            focus_param_from_json(item) for item in (payload.get("focus_params") or ())
+        ),
     )
+
 
 def filter_to_json(value: Filter) -> dict[str, Any]:
     return {
@@ -527,15 +834,66 @@ def feature_from_json(payload: Mapping[str, Any] | None) -> Feature:
         id=str(payload.get("id", "")),
         type=str(payload.get("type", "")),
         params=dict(payload.get("params") or {}),
-        refs={role: refs_from_json(ref) for role, ref in dict(payload.get("refs") or {}).items()},
+        refs={
+            role: refs_from_json(ref)
+            for role, ref in dict(payload.get("refs") or {}).items()
+        },
         enabled=bool(payload.get("enabled", True)),
         note=str(payload.get("note", "")),
         actor=str(payload.get("actor", "human")),
     )
 
 
-def document_to_json(value: Document) -> dict[str, Any]:
+def parameter_to_json(value: ParameterSpec) -> dict[str, Any]:
     return {
+        "name": value.name,
+        "feature_id": value.feature_id,
+        "param": value.param,
+        "kind": value.kind,
+        "default": value.default,
+        "unit": value.unit,
+        "minimum": value.minimum,
+        "maximum": value.maximum,
+        "description": value.description,
+    }
+
+
+def parameter_from_json(payload: Mapping[str, Any]) -> ParameterSpec:
+    minimum = payload.get("minimum")
+    maximum = payload.get("maximum")
+    return ParameterSpec(
+        name=str(payload.get("name", "")),
+        feature_id=str(payload.get("feature_id", "")),
+        param=str(payload.get("param", "")),
+        kind=str(payload.get("kind", "float")),
+        default=payload.get("default"),
+        unit=str(payload.get("unit", "")),
+        minimum=float(minimum) if minimum is not None else None,
+        maximum=float(maximum) if maximum is not None else None,
+        description=str(payload.get("description", "")),
+    )
+
+
+def interface_to_json(value: Interface) -> dict[str, Any]:
+    return {
+        "name": value.name,
+        "kind": value.kind,
+        "feature_id": value.feature_id,
+        "params": dict(value.params),
+    }
+
+
+def interface_from_json(payload: Mapping[str, Any]) -> Interface:
+    return Interface(
+        name=str(payload.get("name", "")),
+        kind=str(payload.get("kind", "")),
+        feature_id=str(payload.get("feature_id", "")),
+        params=dict(payload.get("params") or {}),
+    )
+
+
+def document_to_json(value: Document) -> dict[str, Any]:
+    payload = {
         "id": value.id,
         "name": value.name,
         "version": value.version,
@@ -543,7 +901,17 @@ def document_to_json(value: Document) -> dict[str, Any]:
         "milestones": [milestone_to_json(item) for item in value.milestones],
         "history": list(value.history),
         "seq": value.seq,
+        "kind": value.kind,
+        "configurations": {
+            name: {feature: dict(params) for feature, params in overrides.items()}
+            for name, overrides in value.configurations.items()
+        },
+        "parameters": [parameter_to_json(item) for item in value.parameters],
+        "interfaces": [interface_to_json(item) for item in value.interfaces],
     }
+    if value.generation:
+        payload["generation"] = dict(value.generation)
+    return payload
 
 
 def document_from_json(payload: Mapping[str, Any]) -> Document:
@@ -551,10 +919,29 @@ def document_from_json(payload: Mapping[str, Any]) -> Document:
         id=str(payload.get("id", "")),
         name=str(payload.get("name", "Untitled")),
         version=int(payload.get("version", 0)),
-        features=tuple(feature_from_json(item) for item in payload.get("features") or ()),
-        milestones=tuple(milestone_from_json(item) for item in payload.get("milestones") or ()),
+        features=tuple(
+            feature_from_json(item) for item in payload.get("features") or ()
+        ),
+        milestones=tuple(
+            milestone_from_json(item) for item in payload.get("milestones") or ()
+        ),
         history=tuple(payload.get("history") or ()),
         seq=int(payload.get("seq", 0) or 0),
+        kind=str(payload.get("kind", "part")),
+        configurations={
+            str(name): {
+                str(feature): dict(params)
+                for feature, params in dict(overrides).items()
+            }
+            for name, overrides in dict(payload.get("configurations") or {}).items()
+        },
+        parameters=tuple(
+            parameter_from_json(item) for item in payload.get("parameters") or ()
+        ),
+        interfaces=tuple(
+            interface_from_json(item) for item in payload.get("interfaces") or ()
+        ),
+        generation=dict(payload.get("generation") or {}),
     )
     validate_layout(document)
     return document
@@ -565,14 +952,38 @@ def ensure_chain(document: Document) -> Document:
     milestones = list(document.milestones)
     if not milestones:
         if document.version == 0:
-            milestones = [Milestone(version=0, title="空白文档", parent_version=None,
-                                    actor="human", created=time.time())]
+            milestones = [
+                Milestone(
+                    version=0,
+                    title="空白文档",
+                    parent_version=None,
+                    actor="human",
+                    created=time.time(),
+                )
+            ]
         else:
-            milestones = [Milestone(version=document.version, title="当前状态",
-                                    parent_version=None, actor="human", created=time.time())]
-        return Document(id=document.id, name=document.name, version=document.version,
-                        features=document.features, milestones=tuple(milestones),
-                        history=document.history, seq=document.seq)
+            milestones = [
+                Milestone(
+                    version=document.version,
+                    title="当前状态",
+                    parent_version=None,
+                    actor="human",
+                    created=time.time(),
+                )
+            ]
+        return Document(
+            id=document.id,
+            name=document.name,
+            version=document.version,
+            features=document.features,
+            milestones=tuple(milestones),
+            history=document.history,
+            seq=document.seq,
+            kind=document.kind,
+            configurations=document.configurations,
+            parameters=document.parameters,
+            interfaces=document.interfaces,
+        )
     if milestones[-1].version == document.version:
         return document
     previous = milestones[-1].version
@@ -585,6 +996,16 @@ def ensure_chain(document: Document) -> Document:
             created=time.time(),
         )
     )
-    return Document(id=document.id, name=document.name, version=document.version,
-                    features=document.features, milestones=tuple(milestones),
-                    history=document.history, seq=document.seq)
+    return Document(
+        id=document.id,
+        name=document.name,
+        version=document.version,
+        features=document.features,
+        milestones=tuple(milestones),
+        history=document.history,
+        seq=document.seq,
+        kind=document.kind,
+        configurations=document.configurations,
+        parameters=document.parameters,
+        interfaces=document.interfaces,
+    )

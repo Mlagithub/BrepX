@@ -32,8 +32,7 @@
     "esbuild": "^0.28.2"
   },
   "scripts": {
-    "build": "npm run build:viewport && npm run build:workbench",
-    "build:viewport": "esbuild src/viewport.js --bundle --format=esm --platform=browser --target=es2022 --log-level=warning --outfile=lib/viewport.mjs",
+    "build": "npm run build:workbench",
     "build:workbench": "esbuild src/workbench.js --bundle --format=esm --platform=browser --target=es2022 --log-level=warning --outfile=lib/workbench.mjs"
   }
 }

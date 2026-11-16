@@ -7,8 +7,9 @@ an entry here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from cadwork.design.document import Document
 
@@ -48,8 +49,13 @@ SAMPLES: dict[str, SampleSpec] = {
             SampleParam("wrap", 30.0, 10.0, 60.0, "float", "deg"),
             SampleParam("fillet_radius", 0.3, 0.0, 1.0, "float", "mm"),
         ),
-        build=lambda count=9, wrap=30.0, fillet_radius=0.3, name="Impeller": impeller_document(
-            count=int(count), wrap=float(wrap), fillet_radius=float(fillet_radius), name=name,
+        build=lambda count=9, wrap=30.0, fillet_radius=0.3, name="Impeller": (
+            impeller_document(
+                count=int(count),
+                wrap=float(wrap),
+                fillet_radius=float(fillet_radius),
+                name=name,
+            )
         ),
     ),
     "volute": SampleSpec(
@@ -62,7 +68,10 @@ SAMPLES: dict[str, SampleSpec] = {
             SampleParam("wall", 1.0, 0.5, 1.2, "float", "mm"),
         ),
         build=lambda turns=1.25, r_end=70.0, wall=1.0, name="Volute": volute_document(
-            turns=float(turns), r_end=float(r_end), wall=float(wall), name=name,
+            turns=float(turns),
+            r_end=float(r_end),
+            wall=float(wall),
+            name=name,
         ),
     ),
     "blade": SampleSpec(
@@ -74,8 +83,13 @@ SAMPLES: dict[str, SampleSpec] = {
             SampleParam("b_out", 22.0, 10.0, 40.0, "float", "mm"),
             SampleParam("thickness", 1.0, 0.5, 1.3, "float", "mm"),
         ),
-        build=lambda wrap=60.0, b_out=22.0, thickness=1.0, name="Hollow blade": blade_document(
-            wrap=float(wrap), b_out=float(b_out), thickness=float(thickness), name=name,
+        build=lambda wrap=60.0, b_out=22.0, thickness=1.0, name="Hollow blade": (
+            blade_document(
+                wrap=float(wrap),
+                b_out=float(b_out),
+                thickness=float(thickness),
+                name=name,
+            )
         ),
     ),
     "flange": SampleSpec(
@@ -88,13 +102,14 @@ SAMPLES: dict[str, SampleSpec] = {
             SampleParam("bolt_count", 8, 3, 16, "int", "holes"),
             SampleParam("chamfer_length", 1.5, 0.2, 4.0, "float", "mm"),
         ),
-        build=lambda plate_radius=60.0, boss_height=34.0, bolt_count=8,
-        chamfer_length=1.5, name="Flange": flange_document(
-            plate_radius=float(plate_radius),
-            boss_height=float(boss_height),
-            bolt_count=int(bolt_count),
-            chamfer_length=float(chamfer_length),
-            name=name,
+        build=lambda plate_radius=60.0, boss_height=34.0, bolt_count=8, chamfer_length=1.5, name="Flange": (
+            flange_document(
+                plate_radius=float(plate_radius),
+                boss_height=float(boss_height),
+                bolt_count=int(bolt_count),
+                chamfer_length=float(chamfer_length),
+                name=name,
+            )
         ),
     ),
 }

@@ -157,7 +157,7 @@ python scripts/accept_volute.py --all
 ## 视口
 
 `plugins/cadview` 需要构建一次：`cd plugins/cadview && npm install && npm run build`
-（产出 `lib/viewport.mjs`，被 `.gitignore` 忽略）。视口用 import map 直接加载内核包，
+（产出 `lib/workbench.mjs`，被 `.gitignore` 忽略）。视口用 import map 直接加载内核包，
 点选得到真实 B-Rep 面与面积；不要用 esbuild 打包内核（`init` 会 pending）。
 
 ## 边界

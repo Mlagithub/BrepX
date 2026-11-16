@@ -2,33 +2,80 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from cadwork import smlib as S
 
 from .document import Filter, Ref
 
 _SELECTS = {
-    "self", "faces", "edges", "solids", "vertices",
-    "voids", "cells", "shells", "wires",
+    "self",
+    "faces",
+    "edges",
+    "solids",
+    "vertices",
+    "voids",
+    "cells",
+    "shells",
+    "wires",
 }
 
 _METHODS = {
-    "top", "bottom", "left", "right", "front", "back",
-    "nearest", "at",
-    "concave", "convex", "cylinders", "planar", "circles", "lines", "fillets",
-    "parallel_to", "perpendicular_to", "facing",
-    "largest", "smallest", "one", "of_type", "smooth",
-    "new", "derived_from", "joining", "shared",
-    "tangent_chain", "g1", "g2", "hit_by",
-    "group_by", "max_by", "min_by", "sort_by", "sort_by_distance",
-    "edges", "faces", "vertices", "wires",
-    "closed", "open", "length_between", "radius_between",
+    "top",
+    "bottom",
+    "left",
+    "right",
+    "front",
+    "back",
+    "nearest",
+    "at",
+    "concave",
+    "convex",
+    "cylinders",
+    "planar",
+    "circles",
+    "lines",
+    "fillets",
+    "parallel_to",
+    "perpendicular_to",
+    "facing",
+    "largest",
+    "smallest",
+    "one",
+    "of_type",
+    "smooth",
+    "new",
+    "derived_from",
+    "joining",
+    "shared",
+    "tangent_chain",
+    "g1",
+    "g2",
+    "hit_by",
+    "group_by",
+    "max_by",
+    "min_by",
+    "sort_by",
+    "sort_by_distance",
+    "edges",
+    "faces",
+    "vertices",
+    "wires",
+    "closed",
+    "open",
+    "length_between",
+    "radius_between",
 }
 _PROPERTIES = {"first", "last", "count"}
 _AXIS_METHODS = {
-    "parallel_to", "perpendicular_to", "facing",
-    "group_by", "max_by", "min_by", "sort_by",
+    "parallel_to",
+    "perpendicular_to",
+    "facing",
+    "group_by",
+    "max_by",
+    "min_by",
+    "sort_by",
 }
 _SPECIAL = {"new", "derived_from", "joining"}
 
@@ -80,7 +127,9 @@ def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> An
             ) from exc
 
     if name in _SPECIAL:
-        shapes = [outputs[source] for source in (*ref.since, *ref.extra) if source in outputs]
+        shapes = [
+            outputs[source] for source in (*ref.since, *ref.extra) if source in outputs
+        ]
         if name == "new":
             if not ref.since:
                 raise RefError("REF_INVALID_ARG", "new(since=...) needs Ref.since")
@@ -105,17 +154,23 @@ def _apply(items: Any, item: Filter, ref: Ref, outputs: Mapping[str, Any]) -> An
 
     if name in {"closed", "open", "length_between", "radius_between"}:
         if name == "closed":
-            selected = [entry for entry in items if bool(getattr(entry, "is_closed", False))]
+            selected = [
+                entry for entry in items if bool(getattr(entry, "is_closed", False))
+            ]
         elif name == "open":
-            selected = [entry for entry in items
-                        if not bool(getattr(entry, "is_closed", True))]
+            selected = [
+                entry for entry in items if not bool(getattr(entry, "is_closed", True))
+            ]
         else:
             if len(item.args) != 2:
                 raise RefError("REF_INVALID_ARG", f"{name} needs a [low, high] pair")
             low, high = (float(item.args[0]), float(item.args[1]))
             if name == "length_between":
-                selected = [entry for entry in items
-                            if low <= float(getattr(entry, "length", 0.0)) <= high]
+                selected = [
+                    entry
+                    for entry in items
+                    if low <= float(getattr(entry, "length", 0.0)) <= high
+                ]
             else:
                 selected = []
                 for entry in items:

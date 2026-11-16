@@ -7,7 +7,7 @@ latent coupling.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import smlibpy
 from smlibpy import (
@@ -17,6 +17,7 @@ from smlibpy import (
     Cylinder,
     Edge,
     Face,
+    GridLocations,
     Helix,
     Locations,
     Part,
@@ -30,10 +31,10 @@ from smlibpy import (
     Sketch,
     Sphere,
     Spiral,
+    Wire,
     X,
     Y,
     Z,
-    Wire,
     export_dxf,
     export_glb,
     export_step,
@@ -44,7 +45,6 @@ from smlibpy import (
     import_step,
     import_stl,
     loft,
-    GridLocations,
     merge,
     mirror,
     render,
@@ -55,13 +55,63 @@ from smlibpy import (
     thicken,
 )
 
+# Names the plan compiler resolves on this module with getattr(S, name), so a
+# re-export stays reachable even where no module imports it directly.
+__all__ = [
+    "VERSION",
+    "AxisName",
+    "Box",
+    "Circle",
+    "Cone",
+    "Cylinder",
+    "Edge",
+    "Face",
+    "GridLocations",
+    "Helix",
+    "Locations",
+    "Part",
+    "Plane",
+    "PolarLocations",
+    "Polygon",
+    "Rectangle",
+    "RegularPolygon",
+    "ShapeList",
+    "Shell",
+    "Sketch",
+    "Sphere",
+    "Spiral",
+    "Wire",
+    "X",
+    "Y",
+    "Z",
+    "error_text",
+    "export_dxf",
+    "export_glb",
+    "export_step",
+    "export_stl",
+    "extrude",
+    "import_brep",
+    "import_iges",
+    "import_step",
+    "import_stl",
+    "loft",
+    "merge",
+    "mirror",
+    "render",
+    "revolve",
+    "shell",
+    "split",
+    "sweep",
+    "thicken",
+]
+
 VERSION = getattr(smlibpy, "__version__", "unknown")
 
 
 class AxisName:
     """Resolve a serialised axis name ("X" | "Y" | "Z") to a kernel axis."""
 
-    _axes = {"X": X, "Y": Y, "Z": Z}
+    _axes: ClassVar[dict[str, Any]] = {"X": X, "Y": Y, "Z": Z}
 
     @classmethod
     def get(cls, name: str) -> Any:

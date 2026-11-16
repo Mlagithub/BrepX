@@ -12,13 +12,15 @@ from __future__ import annotations
 import json
 import os
 import time
-import traceback
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 import smlibpy as s
 
-OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "probe")
+OUT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "probe"
+)
 
 
 @dataclass
@@ -40,9 +42,14 @@ def run(name: str, fn: Callable[[], Any]) -> Any:
         RESULTS.append(Probe(name, True, time.perf_counter() - t0))
         print(f"[ok]   {name} ({RESULTS[-1].seconds:.3f}s)")
         return value
-    except Exception as exc:  # noqa: BLE001 - probe records every failure
+    except Exception as exc:
         RESULTS.append(
-            Probe(name, False, time.perf_counter() - t0, error=f"{type(exc).__name__}: {exc}")
+            Probe(
+                name,
+                False,
+                time.perf_counter() - t0,
+                error=f"{type(exc).__name__}: {exc}",
+            )
         )
         print(f"[FAIL] {name}: {type(exc).__name__}: {exc}")
         return None
@@ -68,8 +75,10 @@ def capability_report() -> dict[str, bool]:
         "Part.volume": hasattr(part, "volume"),
         "Part.mass_properties": hasattr(part, "mass_properties"),
         "Part.heal": hasattr(part, "heal"),
-        "Part.check": hasattr(part, "check"),          # 0.6; may be absent
-        "Part.faces/edges/vertices": all(hasattr(part, n) for n in ("faces", "edges", "vertices")),
+        "Part.check": hasattr(part, "check"),  # 0.6; may be absent
+        "Part.faces/edges/vertices": all(
+            hasattr(part, n) for n in ("faces", "edges", "vertices")
+        ),
         "Part.mesh": hasattr(part, "mesh"),
         "Part.solids": hasattr(part, "solids"),
         # selection
@@ -81,7 +90,7 @@ def capability_report() -> dict[str, bool]:
         "ShapeList.planar": hasattr(faces, "planar"),
         "ShapeList.largest": hasattr(faces, "largest"),
         "ShapeList.filter_by": hasattr(edges, "filter_by"),
-        "ShapeList.new": hasattr(edges, "new"),          # history-based; 0.6
+        "ShapeList.new": hasattr(edges, "new"),  # history-based; 0.6
         "ShapeList.derived_from": hasattr(edges, "derived_from"),
         # mesh
         "Mesh.triangles": hasattr(s.Mesh, "triangles"),
@@ -137,7 +146,13 @@ def build_impeller(count: int = 9, wrap_deg: float = 30.0) -> dict[str, Any]:
     impeller = hub.fuse(blades)
     marks["fuse"] = time.perf_counter() - t3
     marks["total"] = time.perf_counter() - t0
-    return {"hub": hub, "blade": blade, "blades": blades, "impeller": impeller, "marks": marks}
+    return {
+        "hub": hub,
+        "blade": blade,
+        "blades": blades,
+        "impeller": impeller,
+        "marks": marks,
+    }
 
 
 SELECTORS: dict[str, Callable[[Any], Any]] = {
@@ -157,7 +172,7 @@ def selector_report(part: Any) -> dict[str, Any]:
             value = fn(part)
             n = len(value) if hasattr(value, "__len__") else 1
             report[name] = {"ok": True, "hits": n}
-        except Exception as exc:  # noqa: BLE001 - probe records every failure
+        except Exception as exc:
             report[name] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
     return report
 
@@ -176,22 +191,34 @@ def main() -> int:
     parts = run("build impeller", lambda: build_impeller(count=9))
     total = time.perf_counter() - t0
     if parts is None:
-        write_report({"capabilities": caps, "build": "failed", "probes": [p.__dict__ for p in RESULTS]})
+        write_report(
+            {
+                "capabilities": caps,
+                "build": "failed",
+                "probes": [p.__dict__ for p in RESULTS],
+            }
+        )
         return 1
 
     imp = parts["impeller"]
     print(f"  stages: {parts['marks']}")
-    print(f"  valid={imp.is_valid()} volume={imp.volume:.1f} "
-          f"faces={len(imp.faces())} edges={len(imp.edges())}")
+    print(
+        f"  valid={imp.is_valid()} volume={imp.volume:.1f} "
+        f"faces={len(imp.faces())} edges={len(imp.edges())}"
+    )
 
     mesh = run("impeller mesh", lambda: imp.mesh())
     if mesh is not None:
-        print(f"  mesh triangles={len(mesh.triangles)} vertices={len(mesh.vertices)} "
-              f"closed={mesh.is_closed()}")
+        print(
+            f"  mesh triangles={len(mesh.triangles)} vertices={len(mesh.vertices)} "
+            f"closed={mesh.is_closed()}"
+        )
 
     face_mesh = run("per-face mesh", lambda: [(f, f.mesh()) for f in imp.faces()])
     if face_mesh is not None:
-        print(f"  {len(face_mesh)} faces meshed, first has {len(face_mesh[0][1].triangles)} triangles")
+        print(
+            f"  {len(face_mesh)} faces meshed, first has {len(face_mesh[0][1].triangles)} triangles"
+        )
 
     print("\n--- selectors on final part ---")
     sel9 = selector_report(imp)
@@ -203,7 +230,10 @@ def main() -> int:
         "fillet all concave r=2.0 (expected failure)",
         lambda: imp.fillet(imp.edges().concave(), 2.0),
     )
-    single = run("fillet one concave edge r=0.3", lambda: imp.fillet(imp.edges().concave().first, 0.3))
+    single = run(
+        "fillet one concave edge r=0.3",
+        lambda: imp.fillet(imp.edges().concave().first, 0.3),
+    )
     if single is not None:
         print(f"  valid={single.is_valid()} faces={len(single.faces())}")
 
@@ -226,8 +256,12 @@ def main() -> int:
         "zebra": dict(view="iso", zebra=True),
     }
     for name, kwargs in shots.items():
-        run(f"render {name}", lambda kw=kwargs: s.render(imp, path=os.path.join(OUT, f"{name}.png"),
-                                                         size=(900, 700), **kw))
+        run(
+            f"render {name}",
+            lambda kw=kwargs, name=name: s.render(
+                imp, path=os.path.join(OUT, f"{name}.png"), size=(900, 700), **kw
+            ),
+        )
 
     print("\n--- export ---")
     run("export step", lambda: s.export_step(imp, os.path.join(OUT, "impeller.step")))
@@ -238,8 +272,10 @@ def main() -> int:
     t0 = time.perf_counter()
     build_impeller(count=11)
     warm = time.perf_counter() - t0
-    print(f"  rebuild 11 blades: before-renders={clean:.3f}s after-4-renders={warm:.3f}s "
-          f"ratio={warm / clean:.1f}x")
+    print(
+        f"  rebuild 11 blades: before-renders={clean:.3f}s after-4-renders={warm:.3f}s "
+        f"ratio={warm / clean:.1f}x"
+    )
 
     report = {
         "smlibpy": getattr(s, "__version__", "?"),
@@ -253,15 +289,20 @@ def main() -> int:
             "faces": len(imp.faces()),
             "edges": len(imp.edges()),
         },
-        "mesh": None if mesh is None else {
+        "mesh": None
+        if mesh is None
+        else {
             "triangles": len(mesh.triangles),
             "vertices": len(mesh.vertices),
             "closed": bool(mesh.is_closed()),
         },
         "selectors_9": sel9,
         "selectors_11": sel11,
-        "render_side_effect": {"clean": clean, "after_4_renders": warm,
-                               "ratio": warm / clean if clean else None},
+        "render_side_effect": {
+            "clean": clean,
+            "after_4_renders": warm,
+            "ratio": warm / clean if clean else None,
+        },
         "probes": [p.__dict__ for p in RESULTS],
     }
     write_report(report)

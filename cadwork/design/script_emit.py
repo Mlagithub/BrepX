@@ -31,18 +31,32 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # type-only: importing plan_compile would pull in smlibpy
-    from cadwork.design.plan_compile import BuildProgram, Step  # noqa: F401
+    from cadwork.design.plan_compile import Step
 
 #: The generated script prints this marker immediately before a JSON object.
 METRICS_PREFIX = "__BREPX_METRICS__"
 
 _VARIABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _PLANE_MEMBERS = frozenset(
-    {"XY", "XZ", "YZ", "YX", "ZX", "ZY", "front", "back", "left", "right", "top", "bottom"}
+    {
+        "XY",
+        "XZ",
+        "YZ",
+        "YX",
+        "ZX",
+        "ZY",
+        "front",
+        "back",
+        "left",
+        "right",
+        "top",
+        "bottom",
+    }
 )
 _AXIS_MEMBERS = frozenset({"X", "Y", "Z"})
 
@@ -54,7 +68,9 @@ class EmitError(ValueError):
     from a malformed step (``PLAN_INVALID``) so the service layer can map it.
     """
 
-    def __init__(self, message: str, *, code: str = "PLAN_INVALID", node_id: str | None = None) -> None:
+    def __init__(
+        self, message: str, *, code: str = "PLAN_INVALID", node_id: str | None = None
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.node_id = node_id
@@ -134,7 +150,7 @@ _ACTIONS: dict[str, _Action] = {
 #: Bare names accepted in addition to the canonical ``k_<snake>`` action names.
 _ALIASES = {"box": "k_box", "cylinder": "k_cylinder"}
 
-_METRICS_HELPER = '''\
+_METRICS_HELPER = """\
 def _brepx_metrics(value):
     metrics = {}
     for key in ("volume", "area"):
@@ -167,7 +183,7 @@ def _brepx_metrics(value):
         except Exception:
             metrics["bbox"] = None
     return metrics
-'''
+"""
 
 
 def supported_actions() -> tuple[str, ...]:
@@ -220,10 +236,14 @@ def _literal(value: Any, *, node_id: str, what: str = "value") -> str:
     if isinstance(value, str):
         return repr(value)
     if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(
-            _literal(item, node_id=node_id, what=f"{what}[{index}]")
-            for index, item in enumerate(value)
-        ) + "]"
+        return (
+            "["
+            + ", ".join(
+                _literal(item, node_id=node_id, what=f"{what}[{index}]")
+                for index, item in enumerate(value)
+            )
+            + "]"
+        )
     if isinstance(value, Mapping):
         items: list[tuple[str, str]] = []
         for key, item in value.items():
@@ -313,7 +333,8 @@ def _many(value: Any, role: str, node_id: str) -> list[str]:
     items = list(value) if isinstance(value, (list, tuple)) else [value]
     if not items:
         raise EmitError(
-            f"node {node_id}: input {role!r} needs at least one variable", node_id=node_id
+            f"node {node_id}: input {role!r} needs at least one variable",
+            node_id=node_id,
         )
     return [_variable(item, role, node_id) for item in items]
 
@@ -398,7 +419,8 @@ def _render_call(spec: _Action, step: Any, *, node_id: str) -> str:
                     if item.optional:
                         continue
                     raise EmitError(
-                        f"node {node_id}: input {item.role!r} is required", node_id=node_id
+                        f"node {node_id}: input {item.role!r} is required",
+                        node_id=node_id,
                     )
                 positional.extend(_many(value, item.role, node_id))
             else:
@@ -421,7 +443,7 @@ def _render_call(spec: _Action, step: Any, *, node_id: str) -> str:
     return f"{spec.source}({', '.join(arguments)})"
 
 
-def emit_node(step: "Step", step_path: str | None = None) -> str:
+def emit_node(step: Step, step_path: str | None = None) -> str:
     """Render one plan step as a deterministic Python script.
 
     ``step_path`` optionally adds ``export_step`` for that node's result; the
@@ -444,7 +466,9 @@ def emit_node(step: "Step", step_path: str | None = None) -> str:
         _METRICS_HELPER,
     ]
     if step_path is not None:
-        lines.append(f"export_step({variable}, {_literal(str(step_path), node_id=node_id, what='step_path')})")
+        lines.append(
+            f"export_step({variable}, {_literal(str(step_path), node_id=node_id, what='step_path')})"
+        )
         lines.append("")
     lines.append(
         f"print({METRICS_PREFIX!r} + json.dumps(_brepx_metrics({variable}), sort_keys=True))"
@@ -453,8 +477,8 @@ def emit_node(step: "Step", step_path: str | None = None) -> str:
 
 
 __all__ = [
-    "EmitError",
     "METRICS_PREFIX",
+    "EmitError",
     "emit_node",
     "supported_actions",
 ]

@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from cadwork.design import kernel_inventory  # noqa: E402  (path set up above)
+from cadwork.design import kernel_inventory
 
 DOCS_PATH = ROOT / "docs" / "kernel-inventory.md"
 BASELINE_PATH = ROOT / "cadwork" / "design" / "kernel_actions.baseline.json"

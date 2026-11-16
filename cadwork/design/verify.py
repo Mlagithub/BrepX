@@ -13,25 +13,28 @@ failed :class:`CheckResult` rather than an exception.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from .checks import CheckResult
 from .plan import Expect, PlanError, validate_expect
 
-METRICS = frozenset({
-    "volume",
-    "area",
-    "faces",
-    "edges",
-    "solids",
-    "watertight",
-    "bbox_size",
-    "bbox_min",
-    "bbox_max",
-    "distance",
-    "intersects",
-})
+METRICS = frozenset(
+    {
+        "volume",
+        "area",
+        "faces",
+        "edges",
+        "solids",
+        "watertight",
+        "bbox_size",
+        "bbox_min",
+        "bbox_max",
+        "distance",
+        "intersects",
+    }
+)
 OPS = frozenset({"ge", "le", "between", "eq", "true"})
 VECTOR_METRICS = frozenset({"bbox_size", "bbox_min", "bbox_max"})
 
@@ -299,7 +302,11 @@ def _distance(one: Any, other: Any) -> float:
         for name in ("distance", "distance_to"):
             method = getattr(target, name, None)
             if method is not None:
-                value = method(other if target is one else one) if callable(method) else method
+                value = (
+                    method(other if target is one else one)
+                    if callable(method)
+                    else method
+                )
                 return _number(value)
     try:
         from cadwork import smlib as S
@@ -326,7 +333,11 @@ def _intersects(one: Any, other: Any) -> bool:
         for name in ("intersects", "intersects_with", "touches"):
             method = getattr(target, name, None)
             if method is not None:
-                return bool(method(other if target is one else one)) if callable(method) else bool(method)
+                return (
+                    bool(method(other if target is one else one))
+                    if callable(method)
+                    else bool(method)
+                )
     # A curve list is itself the observable: any curve means the shapes meet.
     # An empty list means "no boundary contact", not necessarily "no overlap"
     # (one solid can contain another), so fall through to the volume test.
@@ -387,8 +398,9 @@ def _intersects(one: Any, other: Any) -> bool:
     )
 
 
-def _measure(metric: str, value: Any, expect: Expect,
-             outputs: Mapping[str, Any], plan: Any) -> Any:
+def _measure(
+    metric: str, value: Any, expect: Expect, outputs: Mapping[str, Any], plan: Any
+) -> Any:
     value = _unwrap(value)
     if metric == "volume":
         return _number(_attr(value, "volume"))
@@ -463,11 +475,15 @@ def _compare_vector(observed: Any, expected: Any, op: str, tolerance: float) -> 
     if op == "le":
         return all(actual[index] <= target[index] + tolerance for index in range(3))
     if op == "eq":
-        return all(abs(actual[index] - target[index]) <= tolerance for index in range(3))
+        return all(
+            abs(actual[index] - target[index]) <= tolerance for index in range(3)
+        )
     raise PlanError("PLAN_INVALID", f"unknown expectation op {op!r}")
 
 
-def _compare(metric: str, op: str, observed: Any, expected: Any, tolerance: float) -> bool:
+def _compare(
+    metric: str, op: str, observed: Any, expected: Any, tolerance: float
+) -> bool:
     if op == "true":
         return bool(observed)
     if metric in VECTOR_METRICS:
@@ -489,7 +505,9 @@ def _expected_text(expect: Expect) -> str:
     return text
 
 
-def _observed_payload(metric: str, op: str, expect: Expect, observed: Any) -> dict[str, Any]:
+def _observed_payload(
+    metric: str, op: str, expect: Expect, observed: Any
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "metric": metric,
         "observed": _plain(observed),
@@ -504,8 +522,9 @@ def _observed_payload(metric: str, op: str, expect: Expect, observed: Any) -> di
     return payload
 
 
-def evaluate(expects: Iterable[Expect] | Expect | None, value: Any,
-             context: Any | None = None) -> list[CheckResult]:
+def evaluate(
+    expects: Iterable[Expect] | Expect | None, value: Any, context: Any | None = None
+) -> list[CheckResult]:
     """Evaluate expectations against ``value``.
 
     ``context`` may be a :class:`VerifyContext`, an object with ``outputs``,
@@ -528,32 +547,41 @@ def evaluate(expects: Iterable[Expect] | Expect | None, value: Any,
         text = _expected_text(expect)
         try:
             observed = _measure(expect.metric, value, expect, outputs, plan)
-            ok = _compare(expect.metric, expect.op, observed, expect.value,
-                          float(expect.tolerance))
+            ok = _compare(
+                expect.metric,
+                expect.op,
+                observed,
+                expect.value,
+                float(expect.tolerance),
+            )
         except Exception as exc:
-            results.append(CheckResult(
-                name=expect.metric,
-                ok=False,
-                observed={"metric": expect.metric, "error": str(exc)},
-                expected=text,
-                hint=str(exc),
-            ))
+            results.append(
+                CheckResult(
+                    name=expect.metric,
+                    ok=False,
+                    observed={"metric": expect.metric, "error": str(exc)},
+                    expected=text,
+                    hint=str(exc),
+                )
+            )
             continue
-        results.append(CheckResult(
-            name=expect.metric,
-            ok=bool(ok),
-            observed=_observed_payload(expect.metric, expect.op, expect, observed),
-            expected=text,
-            hint=None if ok else text,
-        ))
+        results.append(
+            CheckResult(
+                name=expect.metric,
+                ok=bool(ok),
+                observed=_observed_payload(expect.metric, expect.op, expect, observed),
+                expected=text,
+                hint=None if ok else text,
+            )
+        )
     return results
 
 
 __all__ = [
-    "CheckResult",
     "METRICS",
     "OPS",
     "VECTOR_METRICS",
+    "CheckResult",
     "VerifyContext",
     "evaluate",
 ]

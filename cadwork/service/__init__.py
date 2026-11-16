@@ -4,4 +4,4 @@ from .app import create_app
 from .service import CADService, ServiceError
 from .store import Store, StoreError
 
-__all__ = ["create_app", "CADService", "ServiceError", "Store", "StoreError"]
+__all__ = ["CADService", "ServiceError", "Store", "StoreError", "create_app"]

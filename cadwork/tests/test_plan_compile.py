@@ -65,8 +65,9 @@ class CompileNodeTests(unittest.TestCase):
             id="d1",
             features=(SimpleNamespace(id="part_1", type="k_cylinder"),),
         )
-        plan = _plan(_feature("n1", action="k_box", feature_id="part_1",
-                              params=_box_params()))
+        plan = _plan(
+            _feature("n1", action="k_box", feature_id="part_1", params=_box_params())
+        )
         with self.assertRaises(CompileError) as caught:
             compile_node(plan, plan.nodes[0], document)
         self.assertEqual(caught.exception.code, "PLAN_INVALID")
@@ -75,7 +76,10 @@ class CompileNodeTests(unittest.TestCase):
         plan = _plan(
             _feature("n1", feature_id="base", params=_box_params()),
             PlanNode(
-                "n2", "feature", "cut", action="k_cut",
+                "n2",
+                "feature",
+                "cut",
+                action="k_cut",
                 refs={"target": Ref("n1", "self"), "others": Ref("n1", "self")},
                 deps=("n1",),
             ),
@@ -91,7 +95,10 @@ class CompileNodeTests(unittest.TestCase):
             _feature("n1", params=_box_params()),
             _feature("n2", params=_box_params()),
             PlanNode(
-                "n3", "feature", "cut", action="k_cut",
+                "n3",
+                "feature",
+                "cut",
+                action="k_cut",
                 refs={
                     "target": Ref("n1", "self"),
                     "others": (Ref("n2", "self"), Ref("n2", "self")),
@@ -108,7 +115,10 @@ class CompileNodeTests(unittest.TestCase):
         plan = _plan(
             _feature("n1", params=_box_params()),
             PlanNode(
-                "n2", "feature", "place", action="place_on",
+                "n2",
+                "feature",
+                "place",
+                action="place_on",
                 refs={"shape": Ref("n1", "self")},
                 deps=("n1",),
             ),
@@ -122,7 +132,10 @@ class CompileNodeTests(unittest.TestCase):
             _feature("n1", feature_id="base1", params=_box_params()),
             _feature("n2", feature_id="base2", params=_box_params()),
             PlanNode(
-                "n3", "feature", "cut", action="k_cut",
+                "n3",
+                "feature",
+                "cut",
+                action="k_cut",
                 refs={
                     "target": Ref("n1", "self", since=("n1",), extra=("n2",)),
                     "others": Ref("n2", "self"),
@@ -140,8 +153,13 @@ class CompileNodeTests(unittest.TestCase):
         plan = _plan(
             PlanNode("g", "goal", "goal"),
             _feature("f1", params=_box_params()),
-            PlanNode("c1", "check", "check", deps=("f1",),
-                     expect=(Expect("volume", "ge", 1.0),)),
+            PlanNode(
+                "c1",
+                "check",
+                "check",
+                deps=("f1",),
+                expect=(Expect("volume", "ge", 1.0),),
+            ),
         )
         self.assertEqual(compile_node(plan, plan.nodes[0], None), [])
         self.assertEqual(compile_node(plan, plan.nodes[2], None), [])
@@ -177,16 +195,29 @@ class CompileNodeTests(unittest.TestCase):
 class CompileProgramTests(unittest.TestCase):
     def _plan(self):
         return _plan(
-            PlanNode("n1", "feature", "box", action="k_box",
-                     params=_box_params(),
-                     expect=(Expect("volume", "ge", 0.0),)),
             PlanNode(
-                "n2", "feature", "move", action="k_translate",
+                "n1",
+                "feature",
+                "box",
+                action="k_box",
+                params=_box_params(),
+                expect=(Expect("volume", "ge", 0.0),),
+            ),
+            PlanNode(
+                "n2",
+                "feature",
+                "move",
+                action="k_translate",
                 refs={"target": Ref("n1", "self")},
                 deps=("n1",),
             ),
-            PlanNode("c1", "check", "volume", deps=("n2",),
-                     expect=(Expect("volume", "ge", 1.0),)),
+            PlanNode(
+                "c1",
+                "check",
+                "volume",
+                deps=("n2",),
+                expect=(Expect("volume", "ge", 1.0),),
+            ),
         )
 
     def test_steps_variables_inputs_and_final(self) -> None:
@@ -215,7 +246,10 @@ class CompileProgramTests(unittest.TestCase):
             _feature("n1", params=_box_params()),
             _feature("n2", params=_box_params()),
             PlanNode(
-                "n3", "feature", "cut", action="k_cut",
+                "n3",
+                "feature",
+                "cut",
+                action="k_cut",
                 refs={
                     "target": Ref("n1", "self"),
                     "others": (Ref("n2", "self"),),
@@ -253,12 +287,20 @@ class CompilePlanTests(unittest.TestCase):
             PlanNode("g", "goal", "goal"),
             _feature("n1", feature_id="base", params=_box_params()),
             PlanNode(
-                "n2", "feature", "cut", action="k_cut",
+                "n2",
+                "feature",
+                "cut",
+                action="k_cut",
                 refs={"target": Ref("n1", "self"), "others": Ref("n1", "self")},
                 deps=("n1",),
             ),
-            PlanNode("c1", "check", "volume", deps=("n2",),
-                     expect=(Expect("volume", "ge", 1.0),)),
+            PlanNode(
+                "c1",
+                "check",
+                "volume",
+                deps=("n2",),
+                expect=(Expect("volume", "ge", 1.0),),
+            ),
         )
 
     def test_report_ops_coverage_and_program(self) -> None:

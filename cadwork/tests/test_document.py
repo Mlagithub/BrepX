@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from cadwork.design.document import (
-    Document,
     DocumentError,
     Feature,
     Filter,
+    Interface,
+    ParameterSpec,
     Ref,
     apply_ops,
     document_from_json,
@@ -55,47 +57,66 @@ class DocumentEditTests(unittest.TestCase):
         self.assertEqual(doc.milestones[-1].parent_version, 0)
 
     def test_update_merges_params(self) -> None:
-        doc = apply_ops(self.doc, [{
-            "op": "add",
-            "feature": {
-                "id": "f1", "type": "k_box",
-                "params": {"length": 30.0, "width": 5.0},
-            },
-        }])
+        doc = apply_ops(
+            self.doc,
+            [
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f1",
+                        "type": "k_box",
+                        "params": {"length": 30.0, "width": 5.0},
+                    },
+                }
+            ],
+        )
         doc = apply_ops(doc, [{"op": "update", "id": "f1", "params": {"length": 40.0}}])
         self.assertEqual(doc.features[0].params["length"], 40.0)
         self.assertEqual(doc.features[0].params["width"], 5.0)
 
     def test_update_can_remove_ref(self) -> None:
-        doc = apply_ops(self.doc, [{
-            "op": "add",
-            "feature": {"id": "f1", "type": "k_box", "refs": {}},
-        }, {
-            "op": "add",
-            "feature": {
-                "id": "f2", "type": "pattern", "params": {"kind": "linear"},
-                "refs": {"target": ref_to_json(Ref("f1", "self"))},
-            },
-        }])
+        doc = apply_ops(
+            self.doc,
+            [
+                {
+                    "op": "add",
+                    "feature": {"id": "f1", "type": "k_box", "refs": {}},
+                },
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f2",
+                        "type": "pattern",
+                        "params": {"kind": "linear"},
+                        "refs": {"target": ref_to_json(Ref("f1", "self"))},
+                    },
+                },
+            ],
+        )
         doc = apply_ops(doc, [{"op": "update", "id": "f2", "refs": {"target": None}}])
         self.assertEqual(doc.features[1].refs, {})
 
     def test_remove_rejects_dangling_ref(self) -> None:
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2", "pattern", target=Ref("f1", "self")),
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2", "pattern", target=Ref("f1", "self")),
+            ],
+        )
         with self.assertRaises(DocumentError) as caught:
             apply_ops(doc, [{"op": "remove", "id": "f1"}])
         self.assertEqual(caught.exception.code, "DANGLING_REF")
 
     def test_remove_sees_since_and_extra(self) -> None:
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2"),
-            _feature("f3", "pattern",
-                     target=Ref("f2", "self", extra=("f1",))),
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2"),
+                _feature("f3", "pattern", target=Ref("f2", "self", extra=("f1",))),
+            ],
+        )
         with self.assertRaises(DocumentError) as caught:
             apply_ops(doc, [{"op": "remove", "id": "f1"}])
         self.assertEqual(caught.exception.code, "DANGLING_REF")
@@ -106,13 +127,18 @@ class DocumentEditTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "FORWARD_REF")
 
     def test_forward_since_or_extra_is_rejected(self) -> None:
-        for ref in (Ref("f1", "faces", since=("f0",)),
-                    Ref("f1", "faces", extra=("f0",))):
+        for ref in (
+            Ref("f1", "faces", since=("f0",)),
+            Ref("f1", "faces", extra=("f0",)),
+        ):
             with self.assertRaises(DocumentError) as caught:
-                apply_ops(self.doc, [
-                    _feature("f1", "k_box"),
-                    _feature("f2", "pattern", target=ref),
-                ])
+                apply_ops(
+                    self.doc,
+                    [
+                        _feature("f1", "k_box"),
+                        _feature("f2", "pattern", target=ref),
+                    ],
+                )
             self.assertEqual(caught.exception.code, "FORWARD_REF")
 
     def test_duplicate_id_is_rejected(self) -> None:
@@ -134,19 +160,25 @@ class DocumentEditTests(unittest.TestCase):
         self.assertEqual(document_to_json(doc), before)
 
     def test_reorder_keeps_valid_layout(self) -> None:
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2", "pattern", target=Ref("f1", "self")),
-            _feature("f3"),
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2", "pattern", target=Ref("f1", "self")),
+                _feature("f3"),
+            ],
+        )
         moved = apply_ops(doc, [{"op": "reorder", "id": "f3", "before": "f1"}])
         self.assertEqual([item.id for item in moved.features], ["f3", "f1", "f2"])
 
     def test_reorder_that_breaks_refs_is_rejected(self) -> None:
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2", "pattern", target=Ref("f1", "self")),
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2", "pattern", target=Ref("f1", "self")),
+            ],
+        )
         with self.assertRaises(DocumentError) as caught:
             apply_ops(doc, [{"op": "reorder", "id": "f2", "before": "f1"}])
         self.assertEqual(caught.exception.code, "FORWARD_REF")
@@ -157,16 +189,22 @@ class ValueRoundtripTests(unittest.TestCase):
         self.doc = new_document("test", "d_test")
 
     def test_vector_and_points_params_roundtrip(self) -> None:
-        doc = apply_ops(self.doc, [{
-            "op": "add",
-            "feature": {
-                "id": "f1", "type": "k_polygon",
-                "params": {
-                    "points": [[0, 0], [10, 0], [10, 5]],
-                    "direction": [0, 0, 1],
-                },
-            },
-        }])
+        doc = apply_ops(
+            self.doc,
+            [
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f1",
+                        "type": "k_polygon",
+                        "params": {
+                            "points": [[0, 0], [10, 0], [10, 5]],
+                            "direction": [0, 0, 1],
+                        },
+                    },
+                }
+            ],
+        )
         self.assertEqual(doc.features[0].params["points"][1], [10, 0])
         restored = document_from_json(document_to_json(doc))
         self.assertEqual(restored.features[0].params["points"][2], [10, 5])
@@ -176,24 +214,42 @@ class ValueRoundtripTests(unittest.TestCase):
     def test_invalid_param_values_are_rejected(self) -> None:
         for bad in ({"nested": {"a": 1}}, [], [[]], [True, False]):
             with self.assertRaises(DocumentError) as caught:
-                apply_ops(self.doc, [{
-                    "op": "add",
-                    "feature": {"id": "f1", "type": "k_box", "params": {"p": bad}},
-                }])
+                apply_ops(
+                    self.doc,
+                    [
+                        {
+                            "op": "add",
+                            "feature": {
+                                "id": "f1",
+                                "type": "k_box",
+                                "params": {"p": bad},
+                            },
+                        }
+                    ],
+                )
             self.assertEqual(caught.exception.code, "INVALID_VALUE")
 
     def test_tuple_refs_roundtrip(self) -> None:
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2"),
-            {"op": "add", "feature": {
-                "id": "f3", "type": "k_loft",
-                "refs": {"sections": [
-                    ref_to_json(Ref("f1", "self")),
-                    ref_to_json(Ref("f2", "self")),
-                ]},
-            }},
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2"),
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f3",
+                        "type": "k_loft",
+                        "refs": {
+                            "sections": [
+                                ref_to_json(Ref("f1", "self")),
+                                ref_to_json(Ref("f2", "self")),
+                            ]
+                        },
+                    },
+                },
+            ],
+        )
         refs = doc.features[2].refs["sections"]
         self.assertIsInstance(refs, tuple)
         self.assertEqual(len(refs), 2)
@@ -203,9 +259,13 @@ class ValueRoundtripTests(unittest.TestCase):
         self.assertEqual(document_to_json(restored), document_to_json(doc))
 
     def test_ref_since_and_extra_roundtrip(self) -> None:
-        ref = Ref("f2", "faces",
-                  filters=(Filter("nearest", args=([0.0, 0.0, 1.0],)),),
-                  since=("f1",), extra=("f4",))
+        ref = Ref(
+            "f2",
+            "faces",
+            filters=(Filter("nearest", args=([0.0, 0.0, 1.0],)),),
+            since=("f1",),
+            extra=("f4",),
+        )
         payload = ref_to_json(ref)
         self.assertEqual(payload["since"], ["f1"])
         self.assertEqual(payload["extra"], ["f4"])
@@ -214,11 +274,14 @@ class ValueRoundtripTests(unittest.TestCase):
 
     def test_since_and_extra_survive_a_document_roundtrip(self) -> None:
         ref = Ref("f2", "faces", since=("f1",), extra=("f1",))
-        doc = apply_ops(self.doc, [
-            _feature("f1"),
-            _feature("f2"),
-            _feature("f3", "pattern", target=ref),
-        ])
+        doc = apply_ops(
+            self.doc,
+            [
+                _feature("f1"),
+                _feature("f2"),
+                _feature("f3", "pattern", target=ref),
+            ],
+        )
         stored = doc.features[2].refs["target"]
         self.assertEqual(stored.since, ("f1",))
         self.assertEqual(stored.extra, ("f1",))
@@ -226,14 +289,18 @@ class ValueRoundtripTests(unittest.TestCase):
         self.assertEqual(restored.features[2].refs["target"], ref)
 
     def test_feature_to_json_roundtrip_keeps_new_fields(self) -> None:
-        feature = feature_from_json({
-            "id": "f1",
-            "type": "pattern",
-            "params": {"count": 4},
-            "refs": {
-                "target": ref_to_json(Ref("f0", "self", since=("f9",), extra=("f8",))),
-            },
-        })
+        feature = feature_from_json(
+            {
+                "id": "f1",
+                "type": "pattern",
+                "params": {"count": 4},
+                "refs": {
+                    "target": ref_to_json(
+                        Ref("f0", "self", since=("f9",), extra=("f8",))
+                    ),
+                },
+            }
+        )
         self.assertEqual(feature.params, {"count": 4})
         self.assertEqual(feature_to_json(feature)["refs"]["target"]["since"], ["f9"])
         self.assertIsInstance(feature, Feature)
@@ -244,8 +311,16 @@ class MilestoneIdentityTests(unittest.TestCase):
         doc = new_document("test", "d_test")
         doc = apply_ops(
             doc,
-            [{"op": "add", "feature": {"id": "b1", "type": "k_box",
-                                       "params": {"length": 10.0}}}],
+            [
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "b1",
+                        "type": "k_box",
+                        "params": {"length": 10.0},
+                    },
+                }
+            ],
             milestone_title="step one",
             plan_id="p_demo",
             node_id="n1",
@@ -279,6 +354,61 @@ class MilestoneIdentityTests(unittest.TestCase):
         self.assertIsNone(doc.milestones[-1].node_id)
         restored = document_from_json(document_to_json(doc))
         self.assertIsNone(restored.milestones[-1].plan_id)
+
+
+class PartDocumentMetadataTests(unittest.TestCase):
+    def test_legacy_json_defaults_to_part(self) -> None:
+        doc = new_document("test", "d_test")
+        payload = document_to_json(doc)
+        for key in ("kind", "configurations", "parameters", "interfaces"):
+            payload.pop(key)
+        restored = document_from_json(payload)
+        self.assertEqual(restored.kind, "part")
+        self.assertEqual(restored.configurations, {})
+        self.assertEqual(restored.parameters, ())
+        self.assertEqual(restored.interfaces, ())
+
+    def test_configuration_parameter_interface_roundtrip(self) -> None:
+        doc = new_document("test", "d_test")
+        doc = apply_ops(doc, [_feature("base")])
+        doc = replace(
+            doc,
+            configurations={"long": {"base": {"length": 30.0}}},
+            parameters=(
+                ParameterSpec("length", "base", "length", unit="mm", minimum=1.0),
+            ),
+            interfaces=(Interface("top", "plane", "base", params={"offset": 10.0}),),
+        )
+        roundtrip = document_from_json(document_to_json(doc))
+        self.assertEqual(roundtrip.configurations["long"]["base"]["length"], 30.0)
+        self.assertEqual(roundtrip.parameters[0].name, "length")
+        self.assertEqual(roundtrip.interfaces[0].kind, "plane")
+
+    def test_configuration_cannot_target_missing_feature(self) -> None:
+        doc = new_document("test", "d_test")
+        with self.assertRaises(DocumentError) as caught:
+            document_from_json(
+                {
+                    **document_to_json(doc),
+                    "configurations": {"short": {"missing": {"length": 5.0}}},
+                }
+            )
+        self.assertEqual(caught.exception.code, "UNKNOWN_CONFIG_FEATURE")
+
+    def test_duplicate_parameter_name_is_rejected(self) -> None:
+        doc = new_document("test", "d_test")
+        doc = apply_ops(doc, [_feature("base")])
+        with self.assertRaises(DocumentError) as caught:
+            document_from_json(
+                {
+                    **document_to_json(doc),
+                    "parameters": [
+                        {"name": "length", "feature_id": "base", "param": "length"},
+                        {"name": "length", "feature_id": "base", "param": "width"},
+                    ],
+                }
+            )
+        self.assertEqual(caught.exception.code, "DUPLICATE_PARAMETER")
 
 
 if __name__ == "__main__":

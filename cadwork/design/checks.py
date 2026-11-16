@@ -37,8 +37,11 @@ def _guard(name: str, expected: str | None, action) -> CheckResult:
 
 
 def valid(part: Any) -> CheckResult:
-    return _guard("valid", "shape must pass the kernel validity check",
-                  lambda: {"_ok": part.is_valid()})
+    return _guard(
+        "valid",
+        "shape must pass the kernel validity check",
+        lambda: {"_ok": part.is_valid()},
+    )
 
 
 def solid(part: Any) -> CheckResult:
@@ -51,7 +54,14 @@ def solid(part: Any) -> CheckResult:
 
 def watertight(part: Any) -> CheckResult:
     def action() -> dict[str, Any]:
-        mesh = part.mesh()
+        # Closeness is a topological property of the tessellation, not a precision measure:
+        # a coarse mesh decides it as reliably as a fine one. The default tessellation
+        # density (0.1% of the bounding box diagonal) made this check a full-body
+        # triangulation per part feature on every cold build; 1% and 30 degrees keeps the
+        # same closed/free-edge verdict at a fraction of the triangles.
+        diagonal = float(part.bbox().diagonal)
+        tolerance = max(diagonal * 0.01, 1e-3)
+        mesh = part.mesh(tolerance=tolerance, angle=30.0)
         closed = bool(mesh.is_closed())
         return {"_ok": closed, "closed": closed, "triangles": len(mesh.triangles)}
 
@@ -75,13 +85,19 @@ def min_edge(part: Any, minimum: float) -> CheckResult:
     return _guard("no_degenerate", f"every edge >= {minimum} mm", action)
 
 
-def face_count(part: Any, minimum: int | None = None, maximum: int | None = None) -> CheckResult:
+def face_count(
+    part: Any, minimum: int | None = None, maximum: int | None = None
+) -> CheckResult:
     def action() -> dict[str, Any]:
         count = len(part.faces())
-        ok = (minimum is None or count >= minimum) and (maximum is None or count <= maximum)
+        ok = (minimum is None or count >= minimum) and (
+            maximum is None or count <= maximum
+        )
         return {"_ok": ok, "faces": count, "min": minimum, "max": maximum}
 
-    return _guard("face_count", "face count within the feature's expected range", action)
+    return _guard(
+        "face_count", "face count within the feature's expected range", action
+    )
 
 
 def thickness_param(params: dict[str, Any], key: str, minimum: float) -> CheckResult:
@@ -99,9 +115,16 @@ def volume_ratio(part: Any, expected: float, tolerance: float) -> CheckResult:
     def action() -> dict[str, Any]:
         volume = float(part.volume)
         ok = abs(volume - expected) <= abs(expected) * tolerance + 1e-9
-        return {"_ok": ok, "volume": volume, "expected": expected, "tolerance": tolerance}
+        return {
+            "_ok": ok,
+            "volume": volume,
+            "expected": expected,
+            "tolerance": tolerance,
+        }
 
-    return _guard("volume_ratio", f"volume within {tolerance:.0%} of {expected:.1f}", action)
+    return _guard(
+        "volume_ratio", f"volume within {tolerance:.0%} of {expected:.1f}", action
+    )
 
 
 def volume_between(part: Any, low: float, high: float) -> CheckResult:
@@ -109,8 +132,12 @@ def volume_between(part: Any, low: float, high: float) -> CheckResult:
         volume = float(part.volume)
         lower = low * (1.0 - 1e-6) - 1e-9
         upper = high * (1.0 + 1e-6) + 1e-9
-        return {"_ok": lower <= volume <= upper, "volume": volume,
-                "low": low, "high": high}
+        return {
+            "_ok": lower <= volume <= upper,
+            "volume": volume,
+            "low": low,
+            "high": high,
+        }
 
     return _guard("volume_range", "volume between the operand bounds", action)
 
@@ -131,7 +158,10 @@ def extent(value: Any, minimum: float = 0.0) -> CheckResult:
             if hasattr(value, attribute):
                 measured = float(getattr(value, attribute))
                 return {"_ok": measured > minimum, attribute: measured, "min": minimum}
-        return {"_ok": False, "error": f"{type(value).__name__} has no measurable extent"}
+        return {
+            "_ok": False,
+            "error": f"{type(value).__name__} has no measurable extent",
+        }
 
     return _guard("extent", f"extent > {minimum}", action)
 
@@ -144,4 +174,3 @@ def items(value: Any, minimum: int = 1) -> CheckResult:
         return {"_ok": count >= minimum, "items": count, "min": minimum}
 
     return _guard("items", f"at least {minimum} item(s)", action)
-

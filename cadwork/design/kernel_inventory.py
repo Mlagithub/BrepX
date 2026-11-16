@@ -42,10 +42,11 @@ unclassified callable into a non-zero exit code.
 from __future__ import annotations
 
 import argparse
-import json
-from typing import Any, Iterable
-
 import inspect
+import json
+from collections.abc import Iterable
+from typing import Any
+
 import smlibpy
 
 SCHEMA_VERSION = 1
@@ -106,47 +107,187 @@ def _table(*groups: tuple[str, Iterable[str]]) -> dict[str, str]:
 # (it exists only as ``Part.heal``), and includes ``fit_curve`` (a public
 # top-level callable).
 _TOP_LEVEL: dict[str, str] = _table(
-    (GEN, {
-        "AnnularSector", "ArcSlot", "Bezier", "Box", "CenterArc", "Circle",
-        "Cone", "ConicArc", "CounterBoreHole", "CounterSinkHole", "Cylinder",
-        "Ellipse", "EllipticalArc", "FilletPolyline", "Helix", "Hole",
-        "HyperbolicArc", "Line", "ParabolicArc", "PolarLine", "Polygon",
-        "Polyline", "Pyramid", "RadiusArc", "Rectangle", "RegularPolygon",
-        "RoundedRectangle", "SagittaArc", "Slot", "Sphere", "Spiral", "Spline",
-        "Stroke", "TangentArc", "ThreePointArc", "Text", "Torus", "Trapezoid",
-        "Triangle", "Wedge",
-        "bend", "blend", "chamfer", "cut", "draft", "extrude", "extend",
-        "fill", "fillet", "fit_curve", "flange", "fold", "fuse", "imprint",
-        "intersect", "loft", "make_face", "match_edge", "merge", "merge_faces",
-        "mirror", "move_faces", "network", "offset", "offset_faces",
-        "remove_faces", "remove_fillets", "revolve", "ruled", "scale",
-        "section", "shell", "split", "stitch", "surface_fillet", "sweep",
-        "swing", "taper", "thicken", "twist", "unfold", "unroll", "xor",
-        "Hull",
-    }),
-    (MEASURE, {
-        "bend_allowance", "bend_deduction", "developed_length",
-        "fillet_preview", "flat_pattern", "intersection_curves", "outline",
-        "parting_line", "project", "silhouette", "slices",
-    }),
-    (SERVICE, {
-        "diff_images", "drawing_views", "export", "export_brep", "export_dxf",
-        "export_glb", "export_gltf", "export_obj", "export_step", "export_stl",
-        "export_svg", "export_usd", "from_brep", "from_dxf", "from_dxf_wires",
-        "from_file", "from_iges", "from_smb", "from_smp", "from_step",
-        "from_step_model", "from_stl", "from_usd", "import_brep", "import_dxf",
-        "import_dxf_wires", "import_iges", "import_step", "import_stl",
-        "import_usd", "load", "read_step", "render", "save", "show",
-        "tessellate", "to_brep", "to_dxf", "to_file", "to_glb", "to_gltf",
-        "to_obj", "to_smb", "to_smp", "to_step", "to_stl", "to_svg", "to_usd",
-    }),
-    (DEFER, {
-        "deform", "flatten", "make_compatible", "nurbs_surface", "push",
-        "surface", "trim", "warp",
-    }),
-    (NA, {
-        "GridLocations", "HexLocations", "PolarLocations", "Pos", "Rot",
-    }),
+    (
+        GEN,
+        {
+            "AnnularSector",
+            "ArcSlot",
+            "Bezier",
+            "Box",
+            "CenterArc",
+            "Circle",
+            "Cone",
+            "ConicArc",
+            "CounterBoreHole",
+            "CounterSinkHole",
+            "Cylinder",
+            "Ellipse",
+            "EllipticalArc",
+            "FilletPolyline",
+            "Helix",
+            "Hole",
+            "HyperbolicArc",
+            "Line",
+            "ParabolicArc",
+            "PolarLine",
+            "Polygon",
+            "Polyline",
+            "Pyramid",
+            "RadiusArc",
+            "Rectangle",
+            "RegularPolygon",
+            "RoundedRectangle",
+            "SagittaArc",
+            "Slot",
+            "Sphere",
+            "Spiral",
+            "Spline",
+            "Stroke",
+            "TangentArc",
+            "ThreePointArc",
+            "Text",
+            "Torus",
+            "Trapezoid",
+            "Triangle",
+            "Wedge",
+            "bend",
+            "blend",
+            "chamfer",
+            "cut",
+            "draft",
+            "extrude",
+            "extend",
+            "fill",
+            "fillet",
+            "fit_curve",
+            "flange",
+            "fold",
+            "fuse",
+            "imprint",
+            "intersect",
+            "loft",
+            "make_face",
+            "match_edge",
+            "merge",
+            "merge_faces",
+            "mirror",
+            "move_faces",
+            "network",
+            "offset",
+            "offset_faces",
+            "remove_faces",
+            "remove_fillets",
+            "revolve",
+            "ruled",
+            "scale",
+            "section",
+            "shell",
+            "split",
+            "stitch",
+            "surface_fillet",
+            "sweep",
+            "swing",
+            "taper",
+            "thicken",
+            "twist",
+            "unfold",
+            "unroll",
+            "xor",
+            "Hull",
+        },
+    ),
+    (
+        MEASURE,
+        {
+            "bend_allowance",
+            "bend_deduction",
+            "developed_length",
+            "fillet_preview",
+            "flat_pattern",
+            "intersection_curves",
+            "outline",
+            "parting_line",
+            "project",
+            "silhouette",
+            "slices",
+        },
+    ),
+    (
+        SERVICE,
+        {
+            "diff_images",
+            "drawing_views",
+            "export",
+            "export_brep",
+            "export_dxf",
+            "export_glb",
+            "export_gltf",
+            "export_obj",
+            "export_step",
+            "export_stl",
+            "export_svg",
+            "export_usd",
+            "from_brep",
+            "from_dxf",
+            "from_dxf_wires",
+            "from_file",
+            "from_iges",
+            "from_smb",
+            "from_smp",
+            "from_step",
+            "from_step_model",
+            "from_stl",
+            "from_usd",
+            "import_brep",
+            "import_dxf",
+            "import_dxf_wires",
+            "import_iges",
+            "import_step",
+            "import_stl",
+            "import_usd",
+            "load",
+            "read_step",
+            "render",
+            "save",
+            "show",
+            "tessellate",
+            "to_brep",
+            "to_dxf",
+            "to_file",
+            "to_glb",
+            "to_gltf",
+            "to_obj",
+            "to_smb",
+            "to_smp",
+            "to_step",
+            "to_stl",
+            "to_svg",
+            "to_usd",
+        },
+    ),
+    (
+        DEFER,
+        {
+            "deform",
+            "flatten",
+            "make_compatible",
+            "nurbs_surface",
+            "push",
+            "surface",
+            "trim",
+            "warp",
+        },
+    ),
+    (
+        NA,
+        {
+            "GridLocations",
+            "HexLocations",
+            "PolarLocations",
+            "Pos",
+            "Rot",
+        },
+    ),
 )
 
 _TOP_LEVEL_NOTES: dict[str, str] = {
@@ -155,24 +296,81 @@ _TOP_LEVEL_NOTES: dict[str, str] = {
 }
 
 _PART: dict[str, str] = _table(
-    (GEN, {
-        "bend", "chamfer", "cut", "draft", "fillet", "flange", "fold", "fuse",
-        "heal", "imprint", "intersect", "merge", "mirror", "move_faces",
-        "offset", "offset_faces", "remove_faces", "remove_fillets", "rotate",
-        "scale", "section", "shell", "split", "taper", "translate", "twist",
-        "unfold", "unroll",
-    }),
-    (REF, {
-        "cell_at", "cells", "edges", "faces", "shells", "solids", "vertices",
-        "voids", "wires",
-    }),
-    (MEASURE, {
-        "bbox", "bends", "center", "check", "classify", "closest_point",
-        "closest_points", "contains", "distance_to", "draft_analysis",
-        "fillet_preview", "flat_pattern", "info", "intersection_curves",
-        "is_valid", "mass_properties", "outline", "parting_line", "project",
-        "raycast", "raycast_many", "silhouette", "slices",
-    }),
+    (
+        GEN,
+        {
+            "bend",
+            "chamfer",
+            "cut",
+            "draft",
+            "fillet",
+            "flange",
+            "fold",
+            "fuse",
+            "heal",
+            "imprint",
+            "intersect",
+            "merge",
+            "mirror",
+            "move_faces",
+            "offset",
+            "offset_faces",
+            "remove_faces",
+            "remove_fillets",
+            "rotate",
+            "scale",
+            "section",
+            "shell",
+            "split",
+            "taper",
+            "translate",
+            "twist",
+            "unfold",
+            "unroll",
+        },
+    ),
+    (
+        REF,
+        {
+            "cell_at",
+            "cells",
+            "edges",
+            "faces",
+            "shells",
+            "solids",
+            "vertices",
+            "voids",
+            "wires",
+        },
+    ),
+    (
+        MEASURE,
+        {
+            "bbox",
+            "bends",
+            "center",
+            "check",
+            "classify",
+            "closest_point",
+            "closest_points",
+            "contains",
+            "distance_to",
+            "draft_analysis",
+            "fillet_preview",
+            "flat_pattern",
+            "info",
+            "intersection_curves",
+            "is_valid",
+            "mass_properties",
+            "outline",
+            "parting_line",
+            "project",
+            "raycast",
+            "raycast_many",
+            "silhouette",
+            "slices",
+        },
+    ),
     (SERVICE, {"export", "from_mesh", "mesh", "show", "to_nurbs"}),
     (NA, {"colored", "compact", "named"}),
     (DEFER, {"deform", "flatten", "moved", "push", "warp"}),
@@ -180,18 +378,52 @@ _PART: dict[str, str] = _table(
 )
 
 _SKETCH: dict[str, str] = _table(
-    (GEN, {
-        "chamfer", "cut", "extend", "extrude", "fillet", "flipped", "fuse",
-        "heal", "intersect", "match_edge", "merge_faces", "mirror", "offset",
-        "revolve", "rotate", "scale", "sweep", "swing", "thicken",
-        "translate", "xor",
-    }),
+    (
+        GEN,
+        {
+            "chamfer",
+            "cut",
+            "extend",
+            "extrude",
+            "fillet",
+            "flipped",
+            "fuse",
+            "heal",
+            "intersect",
+            "match_edge",
+            "merge_faces",
+            "mirror",
+            "offset",
+            "revolve",
+            "rotate",
+            "scale",
+            "sweep",
+            "swing",
+            "thicken",
+            "translate",
+            "xor",
+        },
+    ),
     (REF, {"edges", "faces", "vertices", "wires"}),
-    (MEASURE, {
-        "bbox", "center", "check", "closest_point", "closest_points",
-        "distance_to", "info", "intersection_curves", "outline", "project",
-        "raycast", "raycast_many", "section_properties", "silhouette",
-    }),
+    (
+        MEASURE,
+        {
+            "bbox",
+            "center",
+            "check",
+            "closest_point",
+            "closest_points",
+            "distance_to",
+            "info",
+            "intersection_curves",
+            "outline",
+            "project",
+            "raycast",
+            "raycast_many",
+            "section_properties",
+            "silhouette",
+        },
+    ),
     (SERVICE, {"export", "mesh", "show", "to_nurbs"}),
     (NA, {"colored", "compact", "named"}),
     (DEFER, {"flatten", "from_nurbs", "moved", "push", "trim", "warp"}),
@@ -199,47 +431,147 @@ _SKETCH: dict[str, str] = _table(
 )
 
 _PROFILE: dict[str, str] = _table(
-    (NA, {
-        "arc", "arc_to", "chamfer", "close", "fillet", "forward", "line_by",
-        "line_to", "mirror", "turn", "turn_to", "wire",
-    }),
+    (
+        NA,
+        {
+            "arc",
+            "arc_to",
+            "chamfer",
+            "close",
+            "fillet",
+            "forward",
+            "line_by",
+            "line_to",
+            "mirror",
+            "turn",
+            "turn_to",
+            "wire",
+        },
+    ),
 )
 
 # ``first``/``last`` are properties on ShapeList (not callable), so they are
 # not enumerated; refs.py reads them as REF selection properties.
 _SHAPE_LIST: dict[str, str] = _table(
-    (REF, {
-        "at", "back", "bottom", "circles", "concave", "convex", "count",
-        "cylinders", "derived_from", "edges", "facing", "faces", "fillets",
-        "front", "g1", "g2", "group_by", "hit_by", "joining", "largest",
-        "left", "lines", "max_by", "min_by", "nearest", "new", "of_type",
-        "one", "parallel_to", "perpendicular_to", "planar", "right", "shared",
-        "smallest", "smooth", "sort_by", "sort_by_distance", "tangent_chain",
-        "top", "vertices", "wires",
-    }),
+    (
+        REF,
+        {
+            "at",
+            "back",
+            "bottom",
+            "circles",
+            "concave",
+            "convex",
+            "count",
+            "cylinders",
+            "derived_from",
+            "edges",
+            "facing",
+            "faces",
+            "fillets",
+            "front",
+            "g1",
+            "g2",
+            "group_by",
+            "hit_by",
+            "joining",
+            "largest",
+            "left",
+            "lines",
+            "max_by",
+            "min_by",
+            "nearest",
+            "new",
+            "of_type",
+            "one",
+            "parallel_to",
+            "perpendicular_to",
+            "planar",
+            "right",
+            "shared",
+            "smallest",
+            "smooth",
+            "sort_by",
+            "sort_by_distance",
+            "tangent_chain",
+            "top",
+            "vertices",
+            "wires",
+        },
+    ),
     (DEFER, {"filter", "filter_by", "within"}),
-    (NA, {
-        "append", "bbox", "center", "clear", "copy", "extend", "index",
-        "insert", "moved", "on", "pop", "remove", "reverse", "rotate", "sort",
-        "translate",
-    }),
+    (
+        NA,
+        {
+            "append",
+            "bbox",
+            "center",
+            "clear",
+            "copy",
+            "extend",
+            "index",
+            "insert",
+            "moved",
+            "on",
+            "pop",
+            "remove",
+            "reverse",
+            "rotate",
+            "sort",
+            "translate",
+        },
+    ),
 )
 
 _FACE: dict[str, str] = _table(
-    (GEN, {
-        "extend", "extrude", "flipped", "iso", "mirror", "offset", "project",
-        "rotate", "scale", "split", "to_shell", "to_sketch", "translate",
-        "untrimmed", "wrap",
-    }),
-    (REF, {
-        "edges", "faces", "inner_wires", "neighbors", "outer_wire", "vertices",
-        "wires",
-    }),
-    (MEASURE, {
-        "bbox", "center", "closest_point", "curvature_at", "distance_to",
-        "interior_point", "min_radius", "normal_at", "position_at", "raycast",
-        "uv_at",
-    }),
+    (
+        GEN,
+        {
+            "extend",
+            "extrude",
+            "flipped",
+            "iso",
+            "mirror",
+            "offset",
+            "project",
+            "rotate",
+            "scale",
+            "split",
+            "to_shell",
+            "to_sketch",
+            "translate",
+            "untrimmed",
+            "wrap",
+        },
+    ),
+    (
+        REF,
+        {
+            "edges",
+            "faces",
+            "inner_wires",
+            "neighbors",
+            "outer_wire",
+            "vertices",
+            "wires",
+        },
+    ),
+    (
+        MEASURE,
+        {
+            "bbox",
+            "center",
+            "closest_point",
+            "curvature_at",
+            "distance_to",
+            "interior_point",
+            "min_radius",
+            "normal_at",
+            "position_at",
+            "raycast",
+            "uv_at",
+        },
+    ),
     (SERVICE, {"export", "mesh", "show"}),
     (NA, {"nurbs"}),
     (ADAPTER, {"on"}),
@@ -312,23 +644,44 @@ _METHOD_NOTES: dict[tuple[str, str], str] = {
     ("Part", "compact"): "cache/memory management",
     ("Part", "draft_analysis"): "draft analysis report",
     ("Part", "from_mesh"): "mesh -> part conversion (import path)",
-    ("Part", "moved"): "takes a Location builder; placement goes through the place_on adapter",
+    (
+        "Part",
+        "moved",
+    ): "takes a Location builder; placement goes through the place_on adapter",
     ("Part", "named"): "display/export metadata",
     ("Part", "on"): "placement adapter place_on",
     ("Part", "to_nurbs"): "NURBS representation conversion",
     ("Sketch", "from_nurbs"): "NURBS surface data; deferred with nurbs_surface",
-    ("Sketch", "moved"): "takes a Location builder; placement goes through the place_on adapter",
+    (
+        "Sketch",
+        "moved",
+    ): "takes a Location builder; placement goes through the place_on adapter",
     ("Sketch", "on"): "placement adapter place_on",
-    ("Face", "moved"): "takes a Location builder; placement goes through the place_on adapter",
-    ("Face", "nurbs"): "NURBS data export; consumed by the service/export path, not a document action",
+    (
+        "Face",
+        "moved",
+    ): "takes a Location builder; placement goes through the place_on adapter",
+    (
+        "Face",
+        "nurbs",
+    ): "NURBS data export; consumed by the service/export path, not a document action",
     ("Face", "on"): "placement adapter place_on",
-    ("Shape", "moved"): "takes a Location builder; placement goes through the place_on adapter",
+    (
+        "Shape",
+        "moved",
+    ): "takes a Location builder; placement goes through the place_on adapter",
     ("Shape", "on"): "placement adapter place_on",
     ("ShapeList", "bbox"): "measurement-only; the ShapeList split is 40 REF / 20 N/A",
     ("ShapeList", "center"): "measurement-only; the ShapeList split is 40 REF / 20 N/A",
     ("ShapeList", "derived_from"): "Ref.extra provenance helper",
-    ("ShapeList", "filter"): "callable/ambiguous criterion; refs.py rejects callables, so deferred",
-    ("ShapeList", "filter_by"): "callable/ambiguous criterion; refs.py rejects callables, so deferred",
+    (
+        "ShapeList",
+        "filter",
+    ): "callable/ambiguous criterion; refs.py rejects callables, so deferred",
+    (
+        "ShapeList",
+        "filter_by",
+    ): "callable/ambiguous criterion; refs.py rejects callables, so deferred",
     ("ShapeList", "g1"): "continuity selector",
     ("ShapeList", "g2"): "continuity selector",
     ("ShapeList", "group_by"): "selector grouping helper",
@@ -342,7 +695,10 @@ _METHOD_NOTES: dict[tuple[str, str], str] = {
     ("ShapeList", "sort_by"): "selector ordering helper",
     ("ShapeList", "sort_by_distance"): "selector ordering helper",
     ("ShapeList", "tangent_chain"): "topology continuity selector",
-    ("ShapeList", "within"): "BoundBox argument is not a scalar/vector filter, so deferred",
+    (
+        "ShapeList",
+        "within",
+    ): "BoundBox argument is not a scalar/vector filter, so deferred",
 }
 
 
@@ -351,28 +707,34 @@ def _is_public(name: str) -> bool:
 
 
 def _public_classes() -> tuple[str, ...]:
-    return tuple(sorted(
-        name
-        for name in dir(smlibpy)
-        if _is_public(name) and inspect.isclass(getattr(smlibpy, name))
-    ))
+    return tuple(
+        sorted(
+            name
+            for name in dir(smlibpy)
+            if _is_public(name) and inspect.isclass(getattr(smlibpy, name))
+        )
+    )
 
 
 def _top_level_functions() -> tuple[str, ...]:
-    return tuple(sorted(
-        name
-        for name in dir(smlibpy)
-        if _is_public(name) and inspect.isfunction(getattr(smlibpy, name))
-    ))
+    return tuple(
+        sorted(
+            name
+            for name in dir(smlibpy)
+            if _is_public(name) and inspect.isfunction(getattr(smlibpy, name))
+        )
+    )
 
 
 def _public_methods(owner: str) -> tuple[str, ...]:
     cls = getattr(smlibpy, owner)
-    return tuple(sorted(
-        name
-        for name in dir(cls)
-        if _is_public(name) and callable(getattr(cls, name))
-    ))
+    return tuple(
+        sorted(
+            name
+            for name in dir(cls)
+            if _is_public(name) and callable(getattr(cls, name))
+        )
+    )
 
 
 def public_classes() -> list[str]:
@@ -473,18 +835,30 @@ def stale_entries() -> list[dict[str, str]]:
     stale: list[dict[str, str]] = []
     for name in sorted(_TOP_LEVEL):
         if ("smlibpy", name) not in actual:
-            stale.append({"owner": "smlibpy", "name": name, "why": "not a top-level function"})
+            stale.append(
+                {"owner": "smlibpy", "name": name, "why": "not a top-level function"}
+            )
     for owner, table in _METHOD_TABLES.items():
         for name in sorted(table):
             if (owner, name) not in actual:
-                stale.append({"owner": owner, "name": name, "why": "not a method of this class"})
+                stale.append(
+                    {"owner": owner, "name": name, "why": "not a method of this class"}
+                )
     for owner in sorted(_CLASS_DEFAULTS):
         if owner not in owners:
-            stale.append({"owner": owner, "name": "<class>", "why": "class default for a missing class"})
+            stale.append(
+                {
+                    "owner": owner,
+                    "name": "<class>",
+                    "why": "class default for a missing class",
+                }
+            )
     return stale
 
 
-def destination_counts(records: Iterable[dict[str, Any]] | None = None) -> dict[str, int]:
+def destination_counts(
+    records: Iterable[dict[str, Any]] | None = None,
+) -> dict[str, int]:
     """Counts per destination (including ``None`` for unclassified)."""
 
     counts = {destination: 0 for destination in DESTINATIONS}
@@ -517,7 +891,9 @@ def check() -> int:
             print(f"  {record['owner']}.{record['name']}")
         return 1
 
-    print(f"0 unclassified ({len(records)} callables, {len(_public_classes())} classes)")
+    print(
+        f"0 unclassified ({len(records)} callables, {len(_public_classes())} classes)"
+    )
     return 0
 
 
@@ -545,13 +921,15 @@ def render_markdown(records: Iterable[dict[str, Any]] | None = None) -> str:
     for destination in DESTINATIONS:
         lines.append(f"| {destination} | {counts[destination]} |")
     lines.append(f"| unclassified | {counts['unclassified']} |")
-    lines.extend([
-        "",
-        "## Callables",
-        "",
-        "| Owner | Name | Destination | Reason |",
-        "|---|---|---|---|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Callables",
+            "",
+            "| Owner | Name | Destination | Reason |",
+            "|---|---|---|---|",
+        ]
+    )
     for record in rows:
         destination = record["destination"] or "unclassified"
         lines.append(
@@ -573,12 +951,15 @@ def baseline_document() -> dict[str, Any]:
 def baseline_json() -> str:
     """Canonical, byte-stable baseline JSON."""
 
-    return json.dumps(
-        baseline_document(),
-        indent=2,
-        sort_keys=True,
-        ensure_ascii=False,
-    ) + "\n"
+    return (
+        json.dumps(
+            baseline_document(),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

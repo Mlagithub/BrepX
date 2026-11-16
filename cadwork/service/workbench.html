@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BrepX Workbench</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #101318; }
+    #workbench { position: fixed; inset: 0; }
+  </style>
+</head>
+<body>
+  <div id="workbench"></div>
+  <script type="module">
+    import { mountWorkbench } from '/api/plugin/workbench.mjs'
+    const params = new URLSearchParams(location.search)
+    mountWorkbench(document.getElementById('workbench'), {
+      base: location.origin,
+      chromeOnly: true,
+      documentId: params.get('document') || undefined,
+    })
+  </script>
+</body>
+</html>

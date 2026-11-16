@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +19,10 @@ from cadwork.service.store import Store
 
 def _impeller_ops() -> list[dict]:
     document = impeller_document()
-    return [{"op": "add", "feature": feature_to_json(feature)} for feature in document.features]
+    return [
+        {"op": "add", "feature": feature_to_json(feature)}
+        for feature in document.features
+    ]
 
 
 class ServiceTests(unittest.TestCase):
@@ -50,11 +52,19 @@ class ServiceTests(unittest.TestCase):
         document = self._create(client)
         response = client.put(
             f"/api/docs/{document['id']}",
-            json={"base_version": 0, "ops": [{
-                "op": "add",
-                "feature": {"id": "b1", "type": "k_box",
-                            "params": {"length": length, "width": 20.0, "height": 20.0}},
-            }]},
+            json={
+                "base_version": 0,
+                "ops": [
+                    {
+                        "op": "add",
+                        "feature": {
+                            "id": "b1",
+                            "type": "k_box",
+                            "params": {"length": length, "width": 20.0, "height": 20.0},
+                        },
+                    }
+                ],
+            },
         )
         self.assertEqual(response.status_code, 200, response.text)
         return document["id"], response.json()
@@ -82,42 +92,66 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(dimensions["params"][0]["minimum"], 0.01)
             side = client.post(
                 f"/api/docs/{document_id}/handles",
-                json={"feature_id": "b1", "point": [15.0, 0.0, 10.0],
-                      "normal": [1.0, 0.0, 0.0], "scope": "face"},
+                json={
+                    "feature_id": "b1",
+                    "point": [15.0, 0.0, 10.0],
+                    "normal": [1.0, 0.0, 0.0],
+                    "scope": "face",
+                },
             ).json()["handle"]
             self.assertEqual(side["param"], "length")
             self.assertEqual(side["axis"], [1.0, 0.0, 0.0])
             top = client.post(
                 f"/api/docs/{document_id}/handles",
-                json={"feature_id": "b1", "point": [0.0, 0.0, 10.0],
-                      "normal": [0.0, 0.0, 1.0], "scope": "face"},
+                json={
+                    "feature_id": "b1",
+                    "point": [0.0, 0.0, 10.0],
+                    "normal": [0.0, 0.0, 1.0],
+                    "scope": "face",
+                },
             ).json()["handle"]
             self.assertEqual(top["param"], "height")
             self.assertEqual(top["axis"], [0.0, 0.0, 1.0])
 
-    def test_cylinder_handle_uses_radius_on_the_side_and_height_on_the_cap(self) -> None:
+    def test_cylinder_handle_uses_radius_on_the_side_and_height_on_the_cap(
+        self,
+    ) -> None:
         with self._client() as client:
             document = self._create(client)
             response = client.put(
                 f"/api/docs/{document['id']}",
-                json={"base_version": 0, "ops": [{
-                    "op": "add",
-                    "feature": {"id": "c1", "type": "k_cylinder",
-                                "params": {"radius": 6.0, "height": 24.0}},
-                }]},
+                json={
+                    "base_version": 0,
+                    "ops": [
+                        {
+                            "op": "add",
+                            "feature": {
+                                "id": "c1",
+                                "type": "k_cylinder",
+                                "params": {"radius": 6.0, "height": 24.0},
+                            },
+                        }
+                    ],
+                },
             )
             self.assertEqual(response.status_code, 200, response.text)
             document_id = document["id"]
             side = client.post(
                 f"/api/docs/{document_id}/handles",
-                json={"feature_id": "c1", "point": [6.0, 0.0, 12.0],
-                      "normal": [1.0, 0.0, 0.0]},
+                json={
+                    "feature_id": "c1",
+                    "point": [6.0, 0.0, 12.0],
+                    "normal": [1.0, 0.0, 0.0],
+                },
             ).json()["handle"]
             self.assertEqual(side["param"], "radius")
             cap = client.post(
                 f"/api/docs/{document_id}/handles",
-                json={"feature_id": "c1", "point": [0.0, 0.0, 24.0],
-                      "normal": [0.0, 0.0, 1.0]},
+                json={
+                    "feature_id": "c1",
+                    "point": [0.0, 0.0, 24.0],
+                    "normal": [0.0, 0.0, 1.0],
+                },
             ).json()["handle"]
             self.assertEqual(cap["param"], "height")
 
@@ -125,7 +159,9 @@ class ServiceTests(unittest.TestCase):
         with self._client() as client:
             document_id, _ = self._build_box(client)
         fresh = CADService(Store(self.folder.name))
-        fresh._build = lambda document: (_ for _ in ()).throw(AssertionError("cold build attempted"))
+        fresh._build = lambda document: (_ for _ in ()).throw(
+            AssertionError("cold build attempted")
+        )
         state = fresh.state(document_id)
         self.assertEqual(state["document"]["version"], 1)
         self.assertAlmostEqual(state["metrics"]["volume"], 8000.0, delta=1.0)
@@ -146,6 +182,27 @@ class ServiceTests(unittest.TestCase):
             cached = client.get(f"/api/docs/{document_id}/scene?version=1&cached=1")
             self.assertEqual(cached.status_code, 200, cached.text)
             self.assertEqual(len(cached.json()["faces"]), len(payload["faces"]))
+
+    def test_cached_scene_serves_the_requested_version_bytes(self) -> None:
+        with self._client() as client:
+            document_id, _ = self._build_box(client)
+            first = client.get(f"/api/docs/{document_id}/scene?version=1")
+            self.assertEqual(first.status_code, 200, first.text)
+            self.assertEqual(first.json()["version"], 1)
+            renamed = client.put(
+                f"/api/docs/{document_id}",
+                json={"base_version": 1, "ops": [], "title": "rename"},
+            )
+            self.assertEqual(renamed.status_code, 200, renamed.text)
+            self.assertEqual(renamed.json()["document"]["version"], 2)
+            cached = client.get(f"/api/docs/{document_id}/scene?version=1&cached=1")
+            self.assertEqual(cached.status_code, 200, cached.text)
+            payload = cached.json()
+            self.assertEqual(payload["version"], 1)
+            self.assertEqual(len(payload["faces"]), len(first.json()["faces"]))
+            current = client.get(f"/api/docs/{document_id}/scene?version=2&cached=1")
+            self.assertEqual(current.status_code, 200, current.text)
+            self.assertEqual(current.json()["version"], 2)
 
     def test_health_and_catalog(self) -> None:
         with self._client() as client:
@@ -170,8 +227,9 @@ class ServiceTests(unittest.TestCase):
             self.assertGreater(len(payload["faces"]), 0)
             self.assertGreater(len(payload["edges"]), 0)
             etag = response.headers["etag"]
-            again = client.get(f"/api/docs/{document_id}/scene",
-                               headers={"If-None-Match": etag})
+            again = client.get(
+                f"/api/docs/{document_id}/scene", headers={"If-None-Match": etag}
+            )
             self.assertEqual(again.status_code, 304)
 
     def test_preview_does_not_persist(self) -> None:
@@ -179,14 +237,20 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
             response = client.post(
                 f"/api/docs/{document_id}/preview",
-                json={"ops": [{"op": "update", "id": "b_pattern", "params": {"count": 11}}]},
+                json={
+                    "ops": [
+                        {"op": "update", "id": "b_pattern", "params": {"count": 11}}
+                    ]
+                },
             )
             self.assertEqual(response.status_code, 200, response.text)
             preview = response.json()
             self.assertIn("b_pattern", preview["diff"]["changed"])
             current = client.get(f"/api/docs/{document_id}").json()
             self.assertEqual(current["version"], 1)
-            pattern = next(item for item in current["features"] if item["id"] == "b_pattern")
+            pattern = next(
+                item for item in current["features"] if item["id"] == "b_pattern"
+            )
             self.assertEqual(pattern["params"]["count"], 9)
 
     def test_stale_version_is_rejected(self) -> None:
@@ -204,15 +268,19 @@ class ServiceTests(unittest.TestCase):
             document_id = self._build_impeller(client)["document"]["id"]
             response = client.put(
                 f"/api/docs/{document_id}",
-                json={"base_version": 1,
-                      "ops": [{"op": "update", "id": "b_fillet",
-                               "params": {"radius": 3.0}}]},
+                json={
+                    "base_version": 1,
+                    "ops": [
+                        {"op": "update", "id": "b_fillet", "params": {"radius": 3.0}}
+                    ],
+                },
             )
             self.assertEqual(response.status_code, 422, response.text)
             error = response.json()["error"]
             self.assertEqual(error["feature_id"], "b_fillet")
-            self.assertEqual(error["blocked_downstream"],
-                             ["t_in", "t_out", "t_wall", "fluid_cavity"])
+            self.assertEqual(
+                error["blocked_downstream"], ["t_in", "t_out", "t_wall", "fluid_cavity"]
+            )
             current = client.get(f"/api/docs/{document_id}").json()
             self.assertEqual(current["version"], 1)
 
@@ -253,10 +321,16 @@ class ServiceTests(unittest.TestCase):
     def test_delete_document(self) -> None:
         with self._client() as client:
             document = self._create(client)
-            self.assertEqual(client.delete(f"/api/docs/{document['id']}").status_code, 200)
+            self.assertEqual(
+                client.delete(f"/api/docs/{document['id']}").status_code, 200
+            )
             self.assertEqual(client.get(f"/api/docs/{document['id']}").status_code, 404)
-            self.assertNotIn(document["id"], [item["id"] for item in client.get("/api/docs").json()])
-            self.assertEqual(client.delete(f"/api/docs/{document['id']}").status_code, 404)
+            self.assertNotIn(
+                document["id"], [item["id"] for item in client.get("/api/docs").json()]
+            )
+            self.assertEqual(
+                client.delete(f"/api/docs/{document['id']}").status_code, 404
+            )
 
     def test_no_standalone_frontend(self) -> None:
         # The workbench is the dsh client plugin; the service is API-only.
@@ -275,17 +349,28 @@ class ServiceTests(unittest.TestCase):
         self.assertIn(first.id, [item["id"] for item in listed])
 
     def test_two_clients_conflict_then_retry(self) -> None:
-        with self._client() as first, TestClient(create_app(self.folder.name)) as second:
+        with (
+            self._client() as first,
+            TestClient(create_app(self.folder.name)) as second,
+        ):
             document = self._create(first)
             document_id = document["id"]
-            box = {"op": "add", "feature": {
-                "id": "f1", "type": "k_box",
-                "params": {"length": 20.0, "width": 20.0, "height": 20.0},
-            }}
-            cylinder = {"op": "add", "feature": {
-                "id": "f2", "type": "k_cylinder",
-                "params": {"radius": 5.0, "height": 10.0},
-            }}
+            box = {
+                "op": "add",
+                "feature": {
+                    "id": "f1",
+                    "type": "k_box",
+                    "params": {"length": 20.0, "width": 20.0, "height": 20.0},
+                },
+            }
+            cylinder = {
+                "op": "add",
+                "feature": {
+                    "id": "f2",
+                    "type": "k_cylinder",
+                    "params": {"radius": 5.0, "height": 10.0},
+                },
+            }
             applied = first.put(
                 f"/api/docs/{document_id}",
                 json={"base_version": 0, "ops": [box]},
@@ -316,19 +401,31 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(empty_undo.json()["error"]["code"], "NO_HISTORY")
 
             sequence = [
-                {"op": "add", "feature": {
-                    "id": "f1", "type": "k_box",
-                    "params": {"length": 20.0, "width": 20.0, "height": 20.0},
-                }},
-                {"op": "add", "feature": {
-                    "id": "f2", "type": "k_cylinder",
-                    "params": {"radius": 5.0, "height": 10.0},
-                }},
-                {"op": "add", "feature": {
-                    "id": "f3", "type": "pattern",
-                    "params": {"kind": "linear", "count": 3, "dx": 30.0},
-                    "refs": {"target": {"source": "f2", "select": "self"}},
-                }},
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f1",
+                        "type": "k_box",
+                        "params": {"length": 20.0, "width": 20.0, "height": 20.0},
+                    },
+                },
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f2",
+                        "type": "k_cylinder",
+                        "params": {"radius": 5.0, "height": 10.0},
+                    },
+                },
+                {
+                    "op": "add",
+                    "feature": {
+                        "id": "f3",
+                        "type": "pattern",
+                        "params": {"kind": "linear", "count": 3, "dx": 30.0},
+                        "refs": {"target": {"source": "f2", "select": "self"}},
+                    },
+                },
             ]
             version = document["version"]
             for op in sequence:
@@ -345,7 +442,9 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(undone.status_code, 200)
             self.assertEqual(undone.json()["document"]["version"], 4)
             self.assertEqual(len(undone.json()["document"]["features"]), 2)
-            self.assertEqual(undone.json()["document"]["milestones"][-1]["parent_version"], 2)
+            self.assertEqual(
+                undone.json()["document"]["milestones"][-1]["parent_version"], 2
+            )
 
             reverted = client.post(
                 f"/api/docs/{document_id}/revert",
@@ -354,20 +453,26 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(reverted.status_code, 200, reverted.text)
             self.assertEqual(reverted.json()["document"]["version"], 5)
             self.assertEqual(len(reverted.json()["document"]["features"]), 1)
-            self.assertEqual(reverted.json()["document"]["milestones"][-1]["title"], "回到单特征")
+            self.assertEqual(
+                reverted.json()["document"]["milestones"][-1]["title"], "回到单特征"
+            )
 
     def test_tweak_writes_focus_metrics(self) -> None:
         with self._client() as client:
             document_id, _ = self._build_box(client)
             response = client.post(
                 f"/api/docs/{document_id}/tweak",
-                json={"base_version": 1,
-                      "changes": [{"feature_id": "b1", "params": {"length": 40.0}}]},
+                json={
+                    "base_version": 1,
+                    "changes": [{"feature_id": "b1", "params": {"length": 40.0}}],
+                },
             )
             self.assertEqual(response.status_code, 200, response.text)
             payload = response.json()
             self.assertEqual(payload["document"]["version"], 2)
-            self.assertAlmostEqual(payload["milestone"]["metrics"]["volume"], 16000.0, places=2)
+            self.assertAlmostEqual(
+                payload["milestone"]["metrics"]["volume"], 16000.0, places=2
+            )
             scene = client.get(f"/api/docs/{document_id}/scene").json()
             self.assertAlmostEqual(float(scene["metrics"]["volume"]), 16000.0, places=1)
 
@@ -398,16 +503,30 @@ class PlanServiceTests(unittest.TestCase):
     @staticmethod
     def _plan_ops() -> list[dict]:
         return [
-            {"op": "add_node", "node": {"id": "g", "kind": "goal",
-                                         "title": "make a box"}},
-            {"op": "add_node", "node": {
-                "id": "n1", "kind": "feature", "title": "box", "action": "k_box",
-                "params": {"length": 20.0, "width": 20.0, "height": 20.0},
-            }},
-            {"op": "add_node", "node": {
-                "id": "c1", "kind": "check", "title": "has volume", "deps": ["n1"],
-                "expect": [{"metric": "volume", "op": "ge", "value": 1.0}],
-            }},
+            {
+                "op": "add_node",
+                "node": {"id": "g", "kind": "goal", "title": "make a box"},
+            },
+            {
+                "op": "add_node",
+                "node": {
+                    "id": "n1",
+                    "kind": "feature",
+                    "title": "box",
+                    "action": "k_box",
+                    "params": {"length": 20.0, "width": 20.0, "height": 20.0},
+                },
+            },
+            {
+                "op": "add_node",
+                "node": {
+                    "id": "c1",
+                    "kind": "check",
+                    "title": "has volume",
+                    "deps": ["n1"],
+                    "expect": [{"metric": "volume", "op": "ge", "value": 1.0}],
+                },
+            },
         ]
 
     def test_plan_crud_and_compile(self) -> None:
@@ -446,11 +565,13 @@ class PlanServiceTests(unittest.TestCase):
         with self._client() as client:
             document = self._create(client)
             document_id = document["id"]
-            client.post(f"/api/docs/{document_id}/plan/edit",
-                        json={"ops": self._plan_ops()})
+            client.post(
+                f"/api/docs/{document_id}/plan/edit", json={"ops": self._plan_ops()}
+            )
 
-            ran = client.post(f"/api/docs/{document_id}/plan/run",
-                              json={"node_id": "n1"})
+            ran = client.post(
+                f"/api/docs/{document_id}/plan/run", json={"node_id": "n1"}
+            )
             self.assertEqual(ran.status_code, 200, ran.text)
             plan = ran.json()["plan"]
             statuses = {node["id"]: node["status"] for node in plan["nodes"]}
@@ -460,27 +581,34 @@ class PlanServiceTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in current["features"]], ["n1"])
             self.assertEqual(current["version"], 1)
 
-            checked = client.post(f"/api/docs/{document_id}/plan/run",
-                                  json={"node_id": "c1", "base_version": 1})
+            checked = client.post(
+                f"/api/docs/{document_id}/plan/run",
+                json={"node_id": "c1", "base_version": 1},
+            )
             self.assertEqual(checked.status_code, 200, checked.text)
             nodes = {node["id"]: node for node in checked.json()["plan"]["nodes"]}
             self.assertEqual(nodes["c1"]["status"], "done")
             self.assertIn("volume", nodes["c1"]["observed"])
             # A check node evaluates without writing another milestone.
-            self.assertEqual(client.get(f"/api/docs/{document_id}").json()["version"], 1)
+            self.assertEqual(
+                client.get(f"/api/docs/{document_id}").json()["version"], 1
+            )
 
     def test_plan_run_refuses_unknown_or_blocked_nodes(self) -> None:
         with self._client() as client:
             document = self._create(client)
             document_id = document["id"]
-            client.post(f"/api/docs/{document_id}/plan/edit",
-                        json={"ops": self._plan_ops()})
-            missing = client.post(f"/api/docs/{document_id}/plan/run",
-                                  json={"node_id": "nope"})
+            client.post(
+                f"/api/docs/{document_id}/plan/edit", json={"ops": self._plan_ops()}
+            )
+            missing = client.post(
+                f"/api/docs/{document_id}/plan/run", json={"node_id": "nope"}
+            )
             self.assertEqual(missing.status_code, 404)
             self.assertEqual(missing.json()["error"]["code"], "NODE_NOT_FOUND")
-            blocked = client.post(f"/api/docs/{document_id}/plan/run",
-                                  json={"node_id": "c1"})
+            blocked = client.post(
+                f"/api/docs/{document_id}/plan/run", json={"node_id": "c1"}
+            )
             self.assertEqual(blocked.status_code, 409)
             self.assertEqual(blocked.json()["error"]["code"], "NODE_NOT_READY")
 
@@ -488,8 +616,9 @@ class PlanServiceTests(unittest.TestCase):
         with self._client() as client:
             document = self._create(client)
             document_id = document["id"]
-            client.post(f"/api/docs/{document_id}/plan/edit",
-                        json={"ops": self._plan_ops()})
+            client.post(
+                f"/api/docs/{document_id}/plan/edit", json={"ops": self._plan_ops()}
+            )
             client.post(f"/api/docs/{document_id}/plan/run", json={"node_id": "n1"})
 
             response = client.get(f"/api/docs/{document_id}/timeline")
@@ -500,22 +629,35 @@ class PlanServiceTests(unittest.TestCase):
             self.assertIn("n1", node_ids)
             self.assertIn("c1", node_ids)
             feature_milestone = next(
-                entry for entry in entries
-                if entry.get("version") == 1 and entry.get("node_id") == "n1"
+                entry
+                for entry in entries
+                if entry.get("version") == 1
+                and entry.get("node_id") == "n1"
                 and entry.get("changed")
             )
             self.assertEqual(feature_milestone["changed"], ["n1"])
-            self.assertEqual(feature_milestone["features"], [{"id": "n1", "type": "k_box"}])
+            self.assertEqual(
+                feature_milestone["features"], [{"id": "n1", "type": "k_box"}]
+            )
 
     def test_import_file_freezes_a_real_step(self) -> None:
         from cadwork.design import build as build_document
         from cadwork.design.document import Document, Feature
         from cadwork.service.export import export_bytes
 
-        part = build_document(Document(id="t", name="t", features=(
-            Feature("b1", "k_box",
-                    params={"length": 20.0, "width": 20.0, "height": 20.0}),
-        ))).final
+        part = build_document(
+            Document(
+                id="t",
+                name="t",
+                features=(
+                    Feature(
+                        "b1",
+                        "k_box",
+                        params={"length": 20.0, "width": 20.0, "height": 20.0},
+                    ),
+                ),
+            )
+        ).final
         step_bytes, _ = export_bytes(part, "step")
         self.assertIn(b"ISO-10303", step_bytes[:200])
         step_path = Path(self.folder.name) / "box.step"
@@ -563,18 +705,29 @@ class PlanServiceTests(unittest.TestCase):
         from cadwork.design.document import Document, Feature
         from cadwork.service.export import export_bytes
 
-        part = build_document(Document(id="t", name="t", features=(
-            Feature("b1", "k_box",
-                    params={"length": 20.0, "width": 20.0, "height": 20.0}),
-        ))).final
+        part = build_document(
+            Document(
+                id="t",
+                name="t",
+                features=(
+                    Feature(
+                        "b1",
+                        "k_box",
+                        params={"length": 20.0, "width": 20.0, "height": 20.0},
+                    ),
+                ),
+            )
+        ).final
         step_bytes, _ = export_bytes(part, "step")
         with self._client() as client:
             document = self._create(client)
             document_id = document["id"]
             uploaded = client.post(
                 f"/api/docs/{document_id}/import/file",
-                json={"filename": "reference.step",
-                      "data": base64.b64encode(step_bytes).decode("ascii")},
+                json={
+                    "filename": "reference.step",
+                    "data": base64.b64encode(step_bytes).decode("ascii"),
+                },
             )
             self.assertEqual(uploaded.status_code, 200, uploaded.text)
             payload = uploaded.json()

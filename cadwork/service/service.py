@@ -3,15 +3,35 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import queue
 import threading
 import time
 import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from cadwork.design.assembly import AssemblyDocument, assembly_document_to_json
+from cadwork.design.assembly_build import (
+    AssemblyBuildResult,
+    build_assembly,
+    count_assembly_instances,
+)
+from cadwork.design.assembly_edit import apply_ops as apply_assembly_ops
+from cadwork.design.assembly_plan import (
+    assembly_plan_from_json,
+    compile_assembly_plan,
+)
+from cadwork.design.assembly_refs import (
+    bom_rows,
+    bom_summary,
+    reference_diff,
+    reference_status,
+    update_references,
+)
 from cadwork.design.build import CACHE_EPOCH, BuildCache, BuildError, build
 from cadwork.design.diff import compare_parts
 from cadwork.design.document import (
@@ -36,43 +56,112 @@ from cadwork.design.plan import (
     plan_to_json,
     validate_plan,
     with_node,
-    with_revision,
 )
 from cadwork.design.plan_compile import (
     CompileError,
     compile_node,
-    compile_plan as compile_plan_report,
     compile_program,
+)
+from cadwork.design.plan_compile import (
+    compile_plan as compile_plan_report,
 )
 from cadwork.design.probe import pick_to_ref, probe_geometry, probe_ref
 from cadwork.design.verify import evaluate as evaluate_expects
 
-from .events import DomainEvent, EventLog, new_request_id, timeline as build_timeline
-
-from .export import export_bytes
+from .events import DomainEvent, EventLog, new_request_id
+from .events import timeline as build_timeline
+from .export import export_assembly_bytes, export_bytes
+from .preview import (
+    PreviewBuildCancelled,
+    PreviewJobRegistry,
+    ensure_preview,
+    gc_previews,
+    load_preview,
+    preview_key,
+)
+from .preview_format import bundle_key as _bundle_key
 from .resolve import resolve_gate
 from .resolve import summarize as summarize_document
-from .scene import build_scene, display_feature
+from .scene import build_assembly_scene, build_scene, display_feature
+from .step_documents import import_step_documents
 from .store import Store, StoreError
 from .variants import VariantBook
 
 MAX_FOCUS = 4
 FOCUS_PREFERENCE = (
-    "r_out", "radius", "length", "width", "height", "thickness", "depth",
-    "count", "angle", "amount", "diameter", "wrap", "factor", "distance",
-    "fillet_r", "r_in", "turns", "pitch", "height_mm",
+    "r_out",
+    "radius",
+    "length",
+    "width",
+    "height",
+    "thickness",
+    "depth",
+    "count",
+    "angle",
+    "amount",
+    "diameter",
+    "wrap",
+    "factor",
+    "distance",
+    "fillet_r",
+    "r_in",
+    "turns",
+    "pitch",
+    "height_mm",
 )
 LINEAR_DIMENSIONS = {
-    "radius", "r_out", "r_in", "diameter", "hole_radius", "height", "depth",
-    "length", "width", "thickness", "size", "distance", "spacing", "pitch",
-    "fillet_r", "x", "y", "z",
+    "radius",
+    "r_out",
+    "r_in",
+    "diameter",
+    "hole_radius",
+    "height",
+    "depth",
+    "length",
+    "width",
+    "thickness",
+    "size",
+    "distance",
+    "spacing",
+    "pitch",
+    "fillet_r",
+    "x",
+    "y",
+    "z",
 }
 ANGLE_DIMENSIONS = {"angle", "start_angle", "wrap"}
 POSITIVE_DIMENSIONS = {
-    "radius", "r_out", "r_in", "diameter", "hole_radius", "height", "depth",
-    "length", "width", "thickness", "size", "distance", "spacing", "pitch",
-    "fillet_r", "turns",
+    "radius",
+    "r_out",
+    "r_in",
+    "diameter",
+    "hole_radius",
+    "height",
+    "depth",
+    "length",
+    "width",
+    "thickness",
+    "size",
+    "distance",
+    "spacing",
+    "pitch",
+    "fillet_r",
+    "turns",
 }
+_ANALYSIS_KEYS = {"metrics", "checks", "features", "tags", "bodies"}
+_PREVIEW_DISABLED_VALUES = frozenset({"0", "false", "off"})
+PREVIEW_DISABLED_ENV = "CADWORK_ASSEMBLY_PREVIEW"
+
+
+def assembly_preview_enabled() -> bool:
+    """Whether the assembly preview path is deployed.
+
+    The default is enabled; only an explicit 0, false, or off disables it. The
+    variable is read per request so an operator can roll the path back without
+    restarting the process.
+    """
+    raw = os.environ.get(PREVIEW_DISABLED_ENV, "")
+    return raw.strip().lower() not in _PREVIEW_DISABLED_VALUES
 
 
 def _unit(vector: list[float] | tuple[float, ...] | None) -> list[float]:
@@ -86,8 +175,14 @@ def _unit(vector: list[float] | tuple[float, ...] | None) -> list[float]:
 
 
 class ServiceError(Exception):
-    def __init__(self, code: str, message: str, status: int = 400, hint: str | None = None,
-                 detail: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status: int = 400,
+        hint: str | None = None,
+        detail: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -185,18 +280,15 @@ class IntentState:
         }
 
 
-@dataclass
-class SceneCacheEntry:
-    key: str
-    payload: dict[str, Any]
-
-
 class CADService:
     def __init__(self, store: Store) -> None:
         self.store = store
         self.cache = BuildCache()
-        self._scene_cache: dict[str, SceneCacheEntry] = {}
-        self.variants = VariantBook(self._build, self._variant_preview, self._variant_step)
+        self.preview_jobs = PreviewJobRegistry()
+        self._last_previews: dict[str, Any] = {}
+        self.variants = VariantBook(
+            self._build, self._variant_preview, self._variant_step
+        )
         self.bus = EventBus()
         self._lock = threading.RLock()
         self._intents: dict[str, IntentState] = {}
@@ -226,6 +318,353 @@ class CADService:
         except StoreError as exc:
             raise ServiceError(exc.code, exc.message, status=exc.status) from exc
 
+    def create_assembly(self, name: str = "Untitled") -> AssemblyDocument:
+        with self._lock:
+            return self.store.create_assembly(name)
+
+    def create_assembly_from_plan(
+        self, plan_payload: Mapping[str, Any], name: str | None = None
+    ) -> dict[str, Any]:
+        """Compile a declarative plan into a new version-1 assembly and return its state."""
+        try:
+            plan = assembly_plan_from_json(plan_payload)
+            if name is not None:
+                plan = replace(plan, name=name)
+            document = compile_assembly_plan(plan)
+        except DocumentError as exc:
+            status = 409 if exc.code in {"DUPLICATE_ID", "STALE_VERSION"} else 400
+            raise ServiceError(
+                exc.code, exc.message, status=status, hint=exc.hint
+            ) from exc
+        if self.store.exists_assembly(document.id):
+            raise ServiceError(
+                "DUPLICATE_ID",
+                f"assembly {document.id!r} already exists",
+                status=409,
+            )
+        try:
+            self.store.save_assembly(document)
+        except StoreError as exc:
+            raise ServiceError(exc.code, exc.message, status=exc.status) from exc
+        return self.assembly_state(document.id, version=document.version)
+
+    def read_assembly(
+        self, assembly_id: str, version: int | None = None
+    ) -> AssemblyDocument:
+        try:
+            if version is not None:
+                return self.store.get_assembly_version(assembly_id, version)
+            return self.store.get_assembly(assembly_id)
+        except StoreError as exc:
+            raise ServiceError(exc.code, exc.message, status=exc.status) from exc
+
+    def build_assembly(
+        self, assembly_id: str, version: int | None = None
+    ) -> AssemblyBuildResult:
+        """Resolve an assembly's pins into placed parts; a bad pin is recorded, not raised."""
+        document = self.read_assembly(assembly_id, version)
+        return build_assembly(document, self.store, self.cache)
+
+    def assembly_scene(
+        self, assembly_id: str, version: int | None = None
+    ) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id, version)
+        cache_key = f"assembly-scene:{document.id}:{document.version}"
+        cached = self.store.get_scene(cache_key)
+        if cached is not None:
+            return cached
+        result = build_assembly(document, self.store, self.cache, place=False)
+        payload = build_assembly_scene(result, self.store, self.cache)
+        try:
+            self.store.put_scene(cache_key, payload)
+        except (OSError, TypeError, ValueError):
+            pass
+        return payload
+
+    @staticmethod
+    def _preview_identity(document: AssemblyDocument) -> dict[str, Any]:
+        return {
+            "assembly_id": document.id,
+            "assembly_version": document.version,
+            "configuration": "default",
+            "overrides": {},
+        }
+
+    def _preview_metadata(self, document: AssemblyDocument) -> dict[str, Any]:
+        return {
+            **self._preview_identity(document),
+            "name": document.name,
+        }
+
+    def _remember_preview(self, cached: Any) -> None:
+        assembly_id = str(cached.manifest.get("assembly", {}).get("id") or "")
+        if assembly_id:
+            with self._lock:
+                self._last_previews[assembly_id] = cached
+
+    def _last_preview_for(self, assembly_id: str) -> Any | None:
+        with self._lock:
+            cached = self._last_previews.get(assembly_id)
+        if cached is not None:
+            return cached
+        manifests = self.store.root / "previews" / "manifests"
+        if not manifests.is_dir():
+            return None
+        try:
+            paths = sorted(
+                manifests.glob("*.json"),
+                key=lambda item: item.stat().st_mtime_ns,
+                reverse=True,
+            )
+        except OSError:
+            return None
+        for path in paths:
+            cached = load_preview(self.store, path.stem)
+            if cached is None:
+                continue
+            if cached.manifest.get("assembly", {}).get("id") != assembly_id:
+                continue
+            self._remember_preview(cached)
+            return cached
+        return None
+
+    @staticmethod
+    def _preview_fallback(cached: Any) -> dict[str, Any] | None:
+        if cached is None:
+            return None
+        assembly = cached.manifest.get("assembly") or {}
+        return {
+            "previewKey": cached.preview_key,
+            "bundleKey": cached.bundle_key,
+            "bundleUrl": f"/api/preview/{cached.bundle_key}.bpx",
+            "assemblyVersion": assembly.get("version"),
+        }
+
+    def _build_preview(
+        self,
+        document: AssemblyDocument,
+        expected_key: str,
+        progress: Callable[[float], None],
+        cancel: Any,
+    ) -> None:
+        if cancel.is_set():
+            raise PreviewBuildCancelled()
+        progress(0.05)
+        scene = self.assembly_scene(document.id, document.version)
+        if cancel.is_set():
+            raise PreviewBuildCancelled()
+        progress(0.5)
+        stored = ensure_preview(
+            self.store,
+            scene,
+            **self._preview_metadata(document),
+            cancelled=cancel.is_set,
+        )
+        if stored.preview_key != expected_key:
+            raise ServiceError(
+                "PREVIEW_KEY_MISMATCH",
+                "preview identity changed while the build was running",
+                status=500,
+                detail={"previewKey": expected_key},
+            )
+        self._remember_preview(stored)
+        progress(1.0)
+
+    def cancel_preview_build(self, build_id: str) -> dict[str, Any]:
+        job = self.preview_jobs.cancel(build_id)
+        if job is None:
+            raise ServiceError(
+                "JOB_NOT_FOUND", f"no preview build {build_id!r}", status=404
+            )
+        return job.to_json()
+
+    def assembly_preview_enabled(self) -> bool:
+        return assembly_preview_enabled()
+
+    def assembly_preview(
+        self, assembly_id: str, version: int | None = None
+    ) -> dict[str, Any]:
+        """A complete preview, a build handle, or a stable build failure.
+
+        The preview key is derived from the pinned assembly identity before any
+        geometry is built, so a warm cache returns the exact stored bundle and a
+        cold request starts one background build regardless of how many readers
+        ask for the same version. When the deployment flag disables the path,
+        the endpoint fails with a stable code before reading the assembly.
+        """
+        if not assembly_preview_enabled():
+            raise ServiceError(
+                "PREVIEW_DISABLED",
+                "assembly preview is disabled for this deployment",
+                status=503,
+            )
+        document = self.read_assembly(assembly_id, version)
+        identity = self._preview_identity(document)
+        key = preview_key(**identity)
+        cached = load_preview(self.store, key)
+        if cached is not None:
+            self._remember_preview(cached)
+            return {
+                "state": "ready",
+                "previewKey": key,
+                "bundleKey": cached.bundle_key,
+                "bundle": cached.bundle,
+                "manifest": cached.manifest,
+            }
+        job = self.preview_jobs.for_key(key)
+        if job is not None and job.status in {
+            "queued",
+            "running",
+            "cancelling",
+        }:
+            return {
+                "state": "building",
+                "previewKey": key,
+                "buildId": job.build_id,
+                "progress": job.progress,
+                "cancelling": job.status == "cancelling",
+            }
+        if job is not None and job.status == "failed":
+            if not self.preview_jobs.mark_failure_reported(job):
+                fallback = self._last_preview_for(document.id)
+                raise ServiceError(
+                    job.error_code or "PREVIEW_FAILED",
+                    job.error_message or "preview build failed",
+                    status=500,
+                    detail={
+                        "previewKey": key,
+                        "buildId": job.build_id,
+                        "fallback": self._preview_fallback(fallback),
+                    },
+                )
+            # The failure reached one caller; the cache is still absent, so this
+            # request starts a fresh attempt instead of pinning the key to the
+            # error until restart.
+        job = self.preview_jobs.start(
+            key,
+            lambda progress, cancel: self._build_preview(
+                document, key, progress, cancel
+            ),
+        )
+        return {
+            "state": "building",
+            "previewKey": key,
+            "buildId": job.build_id,
+            "progress": job.progress,
+        }
+
+    def preview_asset(self, bundle_key: str) -> bytes | None:
+        """Exact bytes named by a content-addressed bundle key, or a miss.
+
+        The key is re-derived from the file before the bytes are served, so a
+        truncated or replaced file cannot be returned under an old URL. A
+        disabled deployment rejects the endpoint with the rollback code.
+        """
+        if not assembly_preview_enabled():
+            raise ServiceError(
+                "PREVIEW_DISABLED",
+                "assembly preview is disabled for this deployment",
+                status=503,
+            )
+        payload = self.store.get_preview_bundle(bundle_key)
+        if payload is None:
+            return None
+        if _bundle_key(payload) != bundle_key:
+            return None
+        return payload
+
+    def gc_previews(
+        self,
+        *,
+        max_bytes: int | None = None,
+        max_age_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        diagnostics = gc_previews(
+            self.store,
+            max_bytes=max_bytes,
+            max_age_seconds=max_age_seconds,
+        )
+        with self._lock:
+            for assembly_id, cached in list(self._last_previews.items()):
+                if load_preview(self.store, cached.preview_key) is None:
+                    self._last_previews.pop(assembly_id, None)
+        return diagnostics
+
+    def assembly_state(
+        self, assembly_id: str, version: int | None = None
+    ) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id, version)
+        lazy = count_assembly_instances(document, self.store) > 600
+        result = build_assembly(
+            document, self.store, self.cache, place=False, parts=not lazy
+        )
+        return {
+            "assembly": assembly_document_to_json(document),
+            "build": result.summary(),
+            "references": reference_status(document, self.store),
+        }
+
+    def edit_assembly(
+        self, assembly_id: str, base_version: int, ops: list[Mapping[str, Any]]
+    ) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id)
+        try:
+            updated = apply_assembly_ops(document, ops, expected_version=base_version)
+        except DocumentError as exc:
+            status = 409 if exc.code == "STALE_VERSION" else 400
+            raise ServiceError(
+                exc.code, exc.message, status=status, hint=exc.hint
+            ) from exc
+        self.store.save_assembly(updated)
+        self.bus.publish(assembly_id, "assembly", {"version": updated.version})
+        return self.assembly_state(assembly_id)
+
+    def update_assembly_references(
+        self, assembly_id: str, base_version: int, instance_ids: list[str] | None = None
+    ) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id)
+        try:
+            updated = update_references(
+                document,
+                self.store,
+                set(instance_ids) if instance_ids is not None else None,
+                expected_version=base_version,
+            )
+        except DocumentError as exc:
+            status = 409 if exc.code == "STALE_VERSION" else 400
+            raise ServiceError(
+                exc.code, exc.message, status=status, hint=exc.hint
+            ) from exc
+        if updated is not document:
+            self.store.save_assembly(updated)
+        return self.assembly_state(assembly_id)
+
+    def assembly_references(self, assembly_id: str) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id)
+        return {
+            "references": reference_status(document, self.store),
+            "outdated": reference_diff(document, self.store),
+        }
+
+    def assembly_bom(
+        self, assembly_id: str, version: int | None = None
+    ) -> dict[str, Any]:
+        document = self.read_assembly(assembly_id, version)
+        rows = bom_rows(document, self.store)
+        return {"rows": rows, "summary": bom_summary(rows)}
+
+    def assembly_export(
+        self, assembly_id: str, fmt: str = "step"
+    ) -> tuple[bytes, str, dict[str, Any]]:
+        document = self.read_assembly(assembly_id)
+        result = self.build_assembly(assembly_id)
+        return export_assembly_bytes(result, fmt, document.name or "assembly")
+
+    def import_step_documents(
+        self, path: str, name_prefix: str = "step"
+    ) -> dict[str, Any]:
+        return import_step_documents(self, path, name_prefix)
+
     def document_meta(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         payload = document_to_json(document)
@@ -244,19 +683,23 @@ class CADService:
     def state(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         vacant = document.version == 0 or not document.features
-        result = None
         metrics: dict[str, Any] | None = None
         checks = {"passed": 0, "total": 0, "ok": True, "items": []}
+        bodies: list[dict[str, Any]] = []
         if not vacant:
             analysis = self._analysis_for(document)
             metrics = analysis.get("metrics")
             checks = analysis.get("checks") or checks
+            bodies = analysis.get("bodies") or []
         latest = document.milestones[-1] if document.milestones else None
         plan = self.store.get_plan(document_id)
         plan_summary = None
         if plan is not None:
-            ready = [node.id for node in plan.nodes
-                     if node.kind == "feature" and node.status == "pending"]
+            ready = [
+                node.id
+                for node in plan.nodes
+                if node.kind == "feature" and node.status == "pending"
+            ]
             plan_summary = {
                 "id": plan.id,
                 "goal": plan.goal,
@@ -268,21 +711,29 @@ class CADService:
                 "failed": [node.id for node in plan.nodes if node.status == "failed"],
             }
         return {
-            "document": {"id": document.id, "name": document.name, "version": document.version},
+            "document": {
+                "id": document.id,
+                "name": document.name,
+                "version": document.version,
+            },
             "vacant": vacant,
             "metrics": metrics,
             "checks": checks,
             "milestones": [
-                self._milestone_projection(document, item) for item in document.milestones
+                self._milestone_projection(document, item)
+                for item in document.milestones
             ],
             "focus_params": self._focus_projection(document, latest),
             "features": self._feature_projection(document),
+            "bodies": bodies,
             "active_intent": self._intent_json(document.id),
             "plan": plan_summary,
             "pending_intents": self.store.list_intents(document_id),
         }
 
-    def _milestone_projection(self, document: Document, item: Milestone) -> dict[str, Any]:
+    def _milestone_projection(
+        self, document: Document, item: Milestone
+    ) -> dict[str, Any]:
         payload = milestone_to_json(item)
         feature_map = {feature.id: feature for feature in document.features}
         values = []
@@ -295,8 +746,9 @@ class CADService:
         payload["focus_params"] = values
         return payload
 
-    def _focus_projection(self, document: Document,
-                          latest: Milestone | None) -> list[dict[str, Any]]:
+    def _focus_projection(
+        self, document: Document, latest: Milestone | None
+    ) -> list[dict[str, Any]]:
         if latest is None or document.version == 0:
             return []
         feature_map = {feature.id: feature for feature in document.features}
@@ -312,11 +764,14 @@ class CADService:
             return entries[:MAX_FOCUS]
         return self._derive_focus(document, list(latest.changed_features))
 
-    def _derive_focus(self, document: Document,
-                      changed_ids: list[str]) -> list[dict[str, Any]]:
+    def _derive_focus(
+        self, document: Document, changed_ids: list[str]
+    ) -> list[dict[str, Any]]:
         feature_map = {feature.id: feature for feature in document.features}
         ordered: list[str] = [item for item in changed_ids if item in feature_map]
-        ordered += [item.id for item in reversed(document.features) if item.id not in ordered]
+        ordered += [
+            item.id for item in reversed(document.features) if item.id not in ordered
+        ]
         entries: list[dict[str, Any]] = []
         for feature_id in ordered:
             feature = feature_map.get(feature_id)
@@ -324,27 +779,34 @@ class CADService:
                 continue
             spec = spec_for(feature.type)
             numeric = [
-                key for key, value in feature.params.items()
+                key
+                for key, value in feature.params.items()
                 if isinstance(value, (int, float)) and not isinstance(value, bool)
             ]
-            numeric.sort(key=lambda key: (
-                FOCUS_PREFERENCE.index(key) if key in FOCUS_PREFERENCE else len(FOCUS_PREFERENCE),
-                key,
-            ))
+            numeric.sort(
+                key=lambda key: (
+                    FOCUS_PREFERENCE.index(key)
+                    if key in FOCUS_PREFERENCE
+                    else len(FOCUS_PREFERENCE),
+                    key,
+                )
+            )
             for key in numeric:
                 if len(entries) >= MAX_FOCUS:
                     return entries
                 param = spec.params.get(key) if spec else None
-                entries.append({
-                    "feature_id": feature_id,
-                    "param": key,
-                    "label": f"{feature_id}.{key}",
-                    "unit": (param.unit or "") if param else "",
-                    "minimum": param.minimum if param else None,
-                    "maximum": param.maximum if param else None,
-                    "origin": "derived",
-                    "value": feature.params[key],
-                })
+                entries.append(
+                    {
+                        "feature_id": feature_id,
+                        "param": key,
+                        "label": f"{feature_id}.{key}",
+                        "unit": (param.unit or "") if param else "",
+                        "minimum": param.minimum if param else None,
+                        "maximum": param.maximum if param else None,
+                        "origin": "derived",
+                        "value": feature.params[key],
+                    }
+                )
         return entries
 
     def _feature_projection(self, document: Document) -> list[dict[str, Any]]:
@@ -371,12 +833,20 @@ class CADService:
     def _metrics(self, result: Any) -> dict[str, Any]:
         final = getattr(result, "final", None)
         if final is None:
-            return {"faces": 0, "volume": 0.0, "area": 0.0, "edges": 0, "watertight": False}
+            return {
+                "faces": 0,
+                "volume": 0.0,
+                "area": 0.0,
+                "edges": 0,
+                "watertight": False,
+            }
         faces = list(final.faces()) if hasattr(final, "faces") else []
         edges = list(final.edges()) if hasattr(final, "edges") else []
         area = sum(float(getattr(face, "area", 0.0)) for face in faces)
         watertight = all(
-            check.ok for item in result.features for check in item.checks
+            check.ok
+            for item in result.features
+            for check in item.checks
             if check.name == "watertight"
         )
         return {
@@ -391,13 +861,15 @@ class CADService:
         items: list[dict[str, Any]] = []
         for item in result.features:
             for check in item.checks:
-                items.append({
-                    "feature_id": item.feature_id,
-                    "name": check.name,
-                    "ok": check.ok,
-                    "expected": check.expected,
-                    "hint": check.hint,
-                })
+                items.append(
+                    {
+                        "feature_id": item.feature_id,
+                        "name": check.name,
+                        "ok": check.ok,
+                        "expected": check.expected,
+                        "hint": check.hint,
+                    }
+                )
         passed = sum(1 for item in items if item["ok"])
         return {
             "passed": passed,
@@ -408,8 +880,13 @@ class CADService:
 
     def _build_summary(self, document: Document) -> dict[str, Any]:
         if not document.features:
-            return {"version": document.version, "features": [], "tags": {},
-                    "seconds": 0.0, "cache_hits": 0}
+            return {
+                "version": document.version,
+                "features": [],
+                "tags": {},
+                "seconds": 0.0,
+                "cache_hits": 0,
+            }
         result = self._build(document)
         return result.summary()
 
@@ -481,14 +958,24 @@ class CADService:
                 result = self._build(updated)
                 self._prime_step(updated, result)
                 metrics = self._metrics(result)
-                delta = self._changed_faces(document, updated)
+                delta = self._changed_faces(document, updated, result)
             else:
                 result = None
-                metrics = {"faces": 0, "volume": 0.0, "area": 0.0, "edges": 0, "watertight": False}
+                metrics = {
+                    "faces": 0,
+                    "volume": 0.0,
+                    "area": 0.0,
+                    "edges": 0,
+                    "watertight": False,
+                }
                 delta = {"indices": [], "centers": []}
             changed_faces = delta["indices"]
-            updated = self._replace_latest(updated, updated.milestones[-1],
-                                           metrics=metrics, changed_faces=changed_faces)
+            updated = self._replace_latest(
+                updated,
+                updated.milestones[-1],
+                metrics=metrics,
+                changed_faces=changed_faces,
+            )
             self.store.save(updated)
             if intent_id:
                 self._advance_intent(intent_id, step_index, "done", updated.version)
@@ -497,9 +984,14 @@ class CADService:
             self.bus.publish(document_id, "milestone", payload)
             return {
                 "document": document_to_json(updated),
-                "build": result.summary() if result is not None else {
-                    "version": updated.version, "features": [], "tags": {},
-                    "seconds": 0.0, "cache_hits": 0,
+                "build": result.summary()
+                if result is not None
+                else {
+                    "version": updated.version,
+                    "features": [],
+                    "tags": {},
+                    "seconds": 0.0,
+                    "cache_hits": 0,
                 },
                 "tags": result.tags if result is not None else {},
                 "milestone": payload,
@@ -523,30 +1015,40 @@ class CADService:
             if status == "done" and (
                 node.milestone_version is None
                 or node.milestone_version > document.version
-                or (node.kind == "feature"
-                    and (node.feature_id or node.id) not in enabled_ids)
+                or (
+                    node.kind == "feature"
+                    and (node.feature_id or node.id) not in enabled_ids
+                )
             ):
                 status = "pending"
-            nodes.append({
-                "id": node.id,
-                "kind": node.kind,
-                "title": node.title,
-                "action": node.action,
-                "status": status,
-                "deps": list(node.deps),
-                "feature_id": node.feature_id,
-                "milestone_version": node.milestone_version,
-                "params": dict(node.params),
-                "refs": {role: self._ref_json(value) for role, value in node.refs.items()},
-                "expect": [
-                    {"metric": item.metric, "op": item.op, "value": item.value,
-                     "tolerance": item.tolerance}
-                    for item in node.expect
-                ],
-                "observed": dict(node.observed),
-                "error": node.error,
-                "note": node.note,
-            })
+            nodes.append(
+                {
+                    "id": node.id,
+                    "kind": node.kind,
+                    "title": node.title,
+                    "action": node.action,
+                    "status": status,
+                    "deps": list(node.deps),
+                    "feature_id": node.feature_id,
+                    "milestone_version": node.milestone_version,
+                    "params": dict(node.params),
+                    "refs": {
+                        role: self._ref_json(value) for role, value in node.refs.items()
+                    },
+                    "expect": [
+                        {
+                            "metric": item.metric,
+                            "op": item.op,
+                            "value": item.value,
+                            "tolerance": item.tolerance,
+                        }
+                        for item in node.expect
+                    ],
+                    "observed": dict(node.observed),
+                    "error": node.error,
+                    "note": node.note,
+                }
+            )
         payload = plan_to_json(plan)
         payload["nodes"] = nodes
         payload["base_version"] = plan.base_version
@@ -566,10 +1068,18 @@ class CADService:
         plan = self.store.get_plan(document_id)
         intents = self.store.list_intents(document_id)
         if plan is None:
-            return {"document_id": document_id, "document_version": document.version,
-                    "plan": None, "pending_intents": intents}
-        return {"document_id": document_id, "document_version": document.version,
-                "plan": self._plan_json(plan, document), "pending_intents": intents}
+            return {
+                "document_id": document_id,
+                "document_version": document.version,
+                "plan": None,
+                "pending_intents": intents,
+            }
+        return {
+            "document_id": document_id,
+            "document_version": document.version,
+            "plan": self._plan_json(plan, document),
+            "pending_intents": intents,
+        }
 
     def plan_edit(
         self,
@@ -587,8 +1097,11 @@ class CADService:
                 if goal:
                     plan = replace(plan, goal=goal)
             if base_revision is not None and plan.revision != base_revision:
-                raise ServiceError("PLAN_STALE", f"plan is at revision {plan.revision}, edit expected {base_revision}",
-                                   status=409)
+                raise ServiceError(
+                    "PLAN_STALE",
+                    f"plan is at revision {plan.revision}, edit expected {base_revision}",
+                    status=409,
+                )
             nodes = {node.id: node for node in plan.nodes}
             touched: list[str] = []
             for op in ops or []:
@@ -596,14 +1109,20 @@ class CADService:
                 if kind == "add_node":
                     node = plan_node_from_json(op.get("node") or op)
                     if node.id in nodes:
-                        raise ServiceError("NODE_ID_CONFLICT", f"node {node.id!r} already exists", status=409)
+                        raise ServiceError(
+                            "NODE_ID_CONFLICT",
+                            f"node {node.id!r} already exists",
+                            status=409,
+                        )
                     nodes[node.id] = node
                 elif kind == "update_node":
                     payload = dict(op.get("node") or op)
                     node_id = str(payload.get("id") or op.get("id") or "")
                     current = nodes.get(node_id)
                     if current is None:
-                        raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
+                        raise ServiceError(
+                            "NODE_NOT_FOUND", f"no node {node_id!r}", status=404
+                        )
                     merged = dict(plan_node_to_json(current))
                     merged.update(payload)
                     merged["id"] = node_id
@@ -614,22 +1133,31 @@ class CADService:
                     nodes[node_id] = plan_node_from_json(merged)
                     touched.append(node_id)
                 elif kind == "remove_node":
-                    node_id = str(op.get("id") or (op.get("node") or {}).get("id") or "")
+                    node_id = str(
+                        op.get("id") or (op.get("node") or {}).get("id") or ""
+                    )
                     if node_id not in nodes:
-                        raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
+                        raise ServiceError(
+                            "NODE_NOT_FOUND", f"no node {node_id!r}", status=404
+                        )
                     nodes.pop(node_id)
                     touched.append(node_id)
                 elif kind == "set_goal":
                     goal = str(op.get("goal") or op.get("text") or "")
                 else:
-                    raise ServiceError("PLAN_INVALID", f"unknown plan op {kind!r}", status=400)
+                    raise ServiceError(
+                        "PLAN_INVALID", f"unknown plan op {kind!r}", status=400
+                    )
             if touched:
                 stale = _stale_descendants(nodes, set(touched))
                 for node_id in stale:
                     if node_id in nodes:
                         nodes[node_id] = replace(
-                            nodes[node_id], status="pending", milestone_version=None,
-                            observed={}, error=None,
+                            nodes[node_id],
+                            status="pending",
+                            milestone_version=None,
+                            observed={},
+                            error=None,
                         )
             updated = replace(
                 plan,
@@ -641,31 +1169,50 @@ class CADService:
             try:
                 validate_plan(updated, document)
             except PlanError as exc:
-                raise ServiceError(exc.code, exc.message, status=400, hint=exc.hint) from exc
+                raise ServiceError(
+                    exc.code, exc.message, status=400, hint=exc.hint
+                ) from exc
             self.store.save_plan(updated)
-            self._emit("plan.edit", document_id=document_id, plan_id=updated.id,
-                       actor=actor, detail={"revision": updated.revision, "ops": len(ops or ())})
+            self._emit(
+                "plan.edit",
+                document_id=document_id,
+                plan_id=updated.id,
+                actor=actor,
+                detail={"revision": updated.revision, "ops": len(ops or ())},
+            )
             return self.plan(document_id)
 
     def plan_compile(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         plan = self.store.get_plan(document_id)
         if plan is None:
-            raise ServiceError("PLAN_NOT_FOUND", "this document has no plan", status=404)
+            raise ServiceError(
+                "PLAN_NOT_FOUND", "this document has no plan", status=404
+            )
         report = compile_plan_report(plan, document)
         return report.to_json()
 
-    def plan_run(self, document_id: str, node_id: str, base_version: int | None = None,
-                 request_id: str | None = None, executor: str | None = None,
-                 cancel_event: threading.Event | None = None) -> dict[str, Any]:
+    def plan_run(
+        self,
+        document_id: str,
+        node_id: str,
+        base_version: int | None = None,
+        request_id: str | None = None,
+        executor: str | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> dict[str, Any]:
         request_id = request_id or new_request_id()
         with self._lock:
             document = self.read(document_id)
             plan = self.store.get_plan(document_id)
             if plan is None:
-                raise ServiceError("PLAN_NOT_FOUND", "this document has no plan", status=404)
+                raise ServiceError(
+                    "PLAN_NOT_FOUND", "this document has no plan", status=404
+                )
             if base_version is not None and base_version != document.version:
-                raise ServiceError("STALE_VERSION", "document changed before the node ran", status=409)
+                raise ServiceError(
+                    "STALE_VERSION", "document changed before the node ran", status=409
+                )
             if plan.base_version != document.version:
                 raise ServiceError(
                     "PLAN_STALE",
@@ -677,39 +1224,72 @@ class CADService:
             if node is None:
                 raise ServiceError("NODE_NOT_FOUND", f"no node {node_id!r}", status=404)
             if node.kind == "goal":
-                raise ServiceError("PLAN_INVALID", "a goal node is not executable", status=400)
+                raise ServiceError(
+                    "PLAN_INVALID", "a goal node is not executable", status=400
+                )
             done = {item.id for item in plan.nodes if item.status == "done"}
             blocked = [dep for dep in node.deps if dep not in done]
             if blocked:
-                raise ServiceError("NODE_NOT_READY", f"node {node_id!r} is blocked",
-                                   status=409, detail={"blocked_by": blocked})
+                raise ServiceError(
+                    "NODE_NOT_READY",
+                    f"node {node_id!r} is blocked",
+                    status=409,
+                    detail={"blocked_by": blocked},
+                )
             if cancel_event is not None and cancel_event.is_set():
-                raise ServiceError("CANCELLED", "plan run cancelled before it started", status=409)
+                raise ServiceError(
+                    "CANCELLED", "plan run cancelled before it started", status=409
+                )
             started = time.perf_counter()
-            self._emit("plan.run.start", document_id=document_id, plan_id=plan.id,
-                       node_id=node_id, request_id=request_id, tool="plan_run")
+            self._emit(
+                "plan.run.start",
+                document_id=document_id,
+                plan_id=plan.id,
+                node_id=node_id,
+                request_id=request_id,
+                tool="plan_run",
+            )
             try:
                 if node.kind == "check":
                     result = self._build(document)
                     dep_id = node.deps[0] if node.deps else ""
-                    dep_node = next((item for item in plan.nodes if item.id == dep_id), None)
-                    target_id = (dep_node.feature_id or dep_node.id) if dep_node else dep_id
+                    dep_node = next(
+                        (item for item in plan.nodes if item.id == dep_id), None
+                    )
+                    target_id = (
+                        (dep_node.feature_id or dep_node.id) if dep_node else dep_id
+                    )
                     target = result.outputs.get(target_id, result.final)
                     checks = evaluate_expects(
-                        node.expect, target,
+                        node.expect,
+                        target,
                         {"outputs": result.outputs, "plan": plan, "document": document},
                     )
                     failed = [item for item in checks if not item.ok]
                     observed = {item.name: item.observed for item in checks}
                     if failed:
                         error = f"{failed[0].name}: {failed[0].hint or 'failed'}"
-                        self._finish_node(plan, node, "failed", document.version,
-                                          observed=observed, error=error)
-                        raise ServiceError("EXPECT_FAILED", error, status=422,
-                                           detail={"checks": [item.to_json() for item in checks]})
+                        self._finish_node(
+                            plan,
+                            node,
+                            "failed",
+                            document.version,
+                            observed=observed,
+                            error=error,
+                        )
+                        raise ServiceError(
+                            "EXPECT_FAILED",
+                            error,
+                            status=422,
+                            detail={"checks": [item.to_json() for item in checks]},
+                        )
                     if cancel_event is not None and cancel_event.is_set():
-                        raise ServiceError("CANCELLED", "plan run cancelled before commit", status=409)
-                    self._finish_node(plan, node, "done", document.version, observed=observed)
+                        raise ServiceError(
+                            "CANCELLED", "plan run cancelled before commit", status=409
+                        )
+                    self._finish_node(
+                        plan, node, "done", document.version, observed=observed
+                    )
                     return self.plan(document_id)
                 ops = compile_node(plan, node, document)
                 candidate = apply_ops(document, list(ops), document.version)
@@ -718,23 +1298,41 @@ class CADService:
                     feature_id = node.feature_id or node.id
                     target = result.outputs.get(feature_id, result.final)
                     checks = evaluate_expects(
-                        node.expect, target,
-                        {"outputs": result.outputs, "plan": plan, "document": candidate},
+                        node.expect,
+                        target,
+                        {
+                            "outputs": result.outputs,
+                            "plan": plan,
+                            "document": candidate,
+                        },
                     )
                     failed = [item for item in checks if not item.ok]
                     if failed:
                         error = f"{failed[0].name}: {failed[0].hint or 'failed'}"
-                        self._finish_node(plan, node, "failed", document.version,
-                                          error=error, observed={item.name: item.observed for item in checks})
-                        raise ServiceError("EXPECT_FAILED", error, status=422,
-                                           detail={"checks": [item.to_json() for item in checks]})
+                        self._finish_node(
+                            plan,
+                            node,
+                            "failed",
+                            document.version,
+                            error=error,
+                            observed={item.name: item.observed for item in checks},
+                        )
+                        raise ServiceError(
+                            "EXPECT_FAILED",
+                            error,
+                            status=422,
+                            detail={"checks": [item.to_json() for item in checks]},
+                        )
                 chosen = executor or os.environ.get("CADWORK_EXECUTOR", "local")
                 backend_used = "local"
                 if chosen == "script":
                     try:
                         program = compile_program(plan, document)
-                        index = next(i for i, item in enumerate(program.steps)
-                                     if item.node_id == node.id)
+                        index = next(
+                            i
+                            for i, item in enumerate(program.steps)
+                            if item.node_id == node.id
+                        )
                         backend = self._script()
                         backend.replay(document_id, program.steps[:index])
                         backend.build_node(document_id, program.steps[index], {})
@@ -742,66 +1340,147 @@ class CADService:
                     except ServiceError:
                         raise
                     except Exception as exc:
-                        self._finish_node(plan, node, "failed", document.version,
-                                          error=f"SCRIPT_FAILED: {exc}")
-                        self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
-                                   node_id=node_id, request_id=request_id, tool="plan_run",
-                                   backend="script", code="SCRIPT_FAILED", hint=str(exc),
-                                   duration_ms=int((time.perf_counter() - started) * 1000))
+                        self._finish_node(
+                            plan,
+                            node,
+                            "failed",
+                            document.version,
+                            error=f"SCRIPT_FAILED: {exc}",
+                        )
+                        self._emit(
+                            "plan.run.end",
+                            document_id=document_id,
+                            plan_id=plan.id,
+                            node_id=node_id,
+                            request_id=request_id,
+                            tool="plan_run",
+                            backend="script",
+                            code="SCRIPT_FAILED",
+                            hint=str(exc),
+                            duration_ms=int((time.perf_counter() - started) * 1000),
+                        )
                         raise ServiceError(
-                            "SCRIPT_FAILED", f"script backend could not run {node.id}: {exc}",
+                            "SCRIPT_FAILED",
+                            f"script backend could not run {node.id}: {exc}",
                             status=422,
                             hint="use executor=local for actions the script emitter does not cover",
                         ) from exc
                 if cancel_event is not None and cancel_event.is_set():
-                    raise ServiceError("CANCELLED", "plan run cancelled before commit", status=409)
+                    raise ServiceError(
+                        "CANCELLED", "plan run cancelled before commit", status=409
+                    )
                 payload = self.commit(
-                    document_id, document.version, list(ops),
-                    title=node.title, actor="agent",
-                    plan_id=plan.id, node_id=node.id,
+                    document_id,
+                    document.version,
+                    list(ops),
+                    title=node.title,
+                    actor="agent",
+                    plan_id=plan.id,
+                    node_id=node.id,
                 )
                 version = int(payload["document"]["version"])
                 metrics = dict((payload.get("milestone") or {}).get("metrics") or {})
                 self._finish_node(plan, node, "done", version, observed=metrics)
-                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
-                           node_id=node_id, request_id=request_id, tool="plan_run",
-                           backend=backend_used, duration_ms=int((time.perf_counter() - started) * 1000),
-                           detail={"version": version})
+                self._emit(
+                    "plan.run.end",
+                    document_id=document_id,
+                    plan_id=plan.id,
+                    node_id=node_id,
+                    request_id=request_id,
+                    tool="plan_run",
+                    backend=backend_used,
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                    detail={"version": version},
+                )
                 return self.plan(document_id)
             except ServiceError as exc:
-                if exc.code not in {"PLAN_STALE", "STALE_VERSION", "NODE_NOT_READY", "CANCELLED"}:
-                    self._finish_node(plan, node, "failed", document.version,
-                                      error=f"{exc.code}: {exc.message}")
-                    self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
-                               node_id=node_id, request_id=request_id, tool="plan_run",
-                               code=exc.code, hint=exc.hint or "",
-                               duration_ms=int((time.perf_counter() - started) * 1000))
+                if exc.code not in {
+                    "PLAN_STALE",
+                    "STALE_VERSION",
+                    "NODE_NOT_READY",
+                    "CANCELLED",
+                }:
+                    self._finish_node(
+                        plan,
+                        node,
+                        "failed",
+                        document.version,
+                        error=f"{exc.code}: {exc.message}",
+                    )
+                    self._emit(
+                        "plan.run.end",
+                        document_id=document_id,
+                        plan_id=plan.id,
+                        node_id=node_id,
+                        request_id=request_id,
+                        tool="plan_run",
+                        code=exc.code,
+                        hint=exc.hint or "",
+                        duration_ms=int((time.perf_counter() - started) * 1000),
+                    )
                 raise
             except (PlanError, CompileError, DocumentError) as exc:
                 code = getattr(exc, "code", "PLAN_INVALID")
-                self._finish_node(plan, node, "failed", document.version,
-                                  error=f"{code}: {exc}")
-                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
-                           node_id=node_id, request_id=request_id, tool="plan_run",
-                           code=code, hint=getattr(exc, "hint", "") or "",
-                           duration_ms=int((time.perf_counter() - started) * 1000))
-                raise ServiceError(code, str(exc), status=400,
-                                   hint=getattr(exc, "hint", None)) from exc
+                self._finish_node(
+                    plan, node, "failed", document.version, error=f"{code}: {exc}"
+                )
+                self._emit(
+                    "plan.run.end",
+                    document_id=document_id,
+                    plan_id=plan.id,
+                    node_id=node_id,
+                    request_id=request_id,
+                    tool="plan_run",
+                    code=code,
+                    hint=getattr(exc, "hint", "") or "",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                )
+                raise ServiceError(
+                    code, str(exc), status=400, hint=getattr(exc, "hint", None)
+                ) from exc
             except BuildError as exc:
-                self._finish_node(plan, node, "failed", document.version,
-                                  error=f"{exc.code}: {exc.message}")
-                self._emit("plan.run.end", document_id=document_id, plan_id=plan.id,
-                           node_id=node_id, request_id=request_id, tool="plan_run",
-                           code=exc.code, hint=exc.hint or "",
-                           duration_ms=int((time.perf_counter() - started) * 1000))
-                raise ServiceError(exc.code, exc.message, status=422, hint=exc.hint,
-                                   detail={"blocked_by": list(exc.blocked)}) from exc
+                self._finish_node(
+                    plan,
+                    node,
+                    "failed",
+                    document.version,
+                    error=f"{exc.code}: {exc.message}",
+                )
+                self._emit(
+                    "plan.run.end",
+                    document_id=document_id,
+                    plan_id=plan.id,
+                    node_id=node_id,
+                    request_id=request_id,
+                    tool="plan_run",
+                    code=exc.code,
+                    hint=exc.hint or "",
+                    duration_ms=int((time.perf_counter() - started) * 1000),
+                )
+                raise ServiceError(
+                    exc.code,
+                    exc.message,
+                    status=422,
+                    hint=exc.hint,
+                    detail={"blocked_by": list(exc.blocked)},
+                ) from exc
 
-    def _finish_node(self, plan: ModelingPlan, node: PlanNode, status: str, version: int,
-                     observed: Mapping[str, Any] | None = None,
-                     error: str | None = None) -> None:
-        updated_node = replace(node, status=status, milestone_version=version,
-                               observed=dict(observed or {}), error=error)
+    def _finish_node(
+        self,
+        plan: ModelingPlan,
+        node: PlanNode,
+        status: str,
+        version: int,
+        observed: Mapping[str, Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        updated_node = replace(
+            node,
+            status=status,
+            milestone_version=version,
+            observed=dict(observed or {}),
+            error=error,
+        )
         updated = with_node(plan, updated_node)
         statuses = [item.status for item in updated.nodes]
         if statuses and all(item == "done" for item in statuses):
@@ -812,8 +1491,12 @@ class CADService:
             plan_status = "running"
         else:
             plan_status = plan.status
-        updated = replace(updated, revision=plan.revision + 1, base_version=version,
-                          status=plan_status)
+        updated = replace(
+            updated,
+            revision=plan.revision + 1,
+            base_version=version,
+            status=plan_status,
+        )
         self.store.save_plan(updated)
 
     def timeline(self, document_id: str) -> list[dict[str, Any]]:
@@ -821,8 +1504,13 @@ class CADService:
         plan = self.store.get_plan(document_id)
         return build_timeline(document, plan)
 
-    def import_file(self, document_id: str, path: str, format: str = "step",
-                    request_id: str | None = None) -> dict[str, Any]:
+    def import_file(
+        self,
+        document_id: str,
+        path: str,
+        format: str = "step",
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
         from pathlib import Path as _Path
 
         source = _Path(path)
@@ -831,16 +1519,26 @@ class CADService:
         try:
             payload = source.read_bytes()
         except OSError as exc:
-            raise ServiceError("IMPORT_NOT_FOUND", f"cannot read {path!r}: {exc}", status=404) from exc
-        return self.import_bytes(document_id, source.name, payload, format=format,
-                                 request_id=request_id)
+            raise ServiceError(
+                "IMPORT_NOT_FOUND", f"cannot read {path!r}: {exc}", status=404
+            ) from exc
+        return self.import_bytes(
+            document_id, source.name, payload, format=format, request_id=request_id
+        )
 
-    def import_bytes(self, document_id: str, filename: str, payload: bytes,
-                     format: str = "step", request_id: str | None = None) -> dict[str, Any]:
+    def import_bytes(
+        self,
+        document_id: str,
+        filename: str,
+        payload: bytes,
+        format: str = "step",
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
         format = format.lower().strip()
         if format not in {"step", "iges", "brep", "stl"}:
-            raise ServiceError("IMPORT_FORMAT", f"unsupported import format {format!r}",
-                               status=400)
+            raise ServiceError(
+                "IMPORT_FORMAT", f"unsupported import format {format!r}", status=400
+            )
         if not payload:
             raise ServiceError("IMPORT_EMPTY", "the imported file is empty", status=400)
         stored, digest = self.store.put_import(payload, format)
@@ -848,24 +1546,45 @@ class CADService:
         document = self.read(document_id)
         if any(feature.id == feature_id for feature in document.features):
             feature_id = f"import_{digest[:10]}"
-        ops = [{
-            "op": "add",
-            "feature": {
-                "id": feature_id,
-                "type": "import_base",
-                "params": {"ref": str(stored), "format": format, "sha256": digest, "heal": False},
-                "refs": {},
-                "note": f"参考 {filename}",
-            },
-        }]
-        payload_out = self.commit(document_id, document.version, ops,
-                                  title=f"导入基准体 {filename}", actor="human")
-        self._emit("import.stored", document_id=document_id,
-                   request_id=request_id or new_request_id(), tool="import",
-                   detail={"sha256": digest, "format": format, "feature_id": feature_id})
-        return {"feature_id": feature_id, "sha256": digest, "path": str(stored),
-                "format": format, "filename": filename,
-                "version": payload_out["document"]["version"]}
+        ops = [
+            {
+                "op": "add",
+                "feature": {
+                    "id": feature_id,
+                    "type": "import_base",
+                    "params": {
+                        "ref": str(stored),
+                        "format": format,
+                        "sha256": digest,
+                        "heal": False,
+                    },
+                    "refs": {},
+                    "note": f"参考 {filename}",
+                },
+            }
+        ]
+        payload_out = self.commit(
+            document_id,
+            document.version,
+            ops,
+            title=f"导入基准体 {filename}",
+            actor="human",
+        )
+        self._emit(
+            "import.stored",
+            document_id=document_id,
+            request_id=request_id or new_request_id(),
+            tool="import",
+            detail={"sha256": digest, "format": format, "feature_id": feature_id},
+        )
+        return {
+            "feature_id": feature_id,
+            "sha256": digest,
+            "path": str(stored),
+            "format": format,
+            "filename": filename,
+            "version": payload_out["document"]["version"],
+        }
 
     def _resolve_focus(
         self,
@@ -878,7 +1597,9 @@ class CADService:
             return ()
         entries: list[FocusParam] = []
         for item in provided or ():
-            focus = item if isinstance(item, FocusParam) else focus_param_from_json(item)
+            focus = (
+                item if isinstance(item, FocusParam) else focus_param_from_json(item)
+            )
             bounded = self._with_bounds(updated, focus)
             if bounded is not None:
                 entries.append(bounded)
@@ -887,21 +1608,25 @@ class CADService:
             for derived in self._derive_focus(updated, list(latest.changed_features)):
                 if derived["feature_id"] in keep:
                     continue
-                entries.append(FocusParam(
-                    feature_id=derived["feature_id"],
-                    param=derived["param"],
-                    label=derived["label"],
-                    unit=derived["unit"],
-                    minimum=derived["minimum"],
-                    maximum=derived["maximum"],
-                    origin="derived",
-                ))
+                entries.append(
+                    FocusParam(
+                        feature_id=derived["feature_id"],
+                        param=derived["param"],
+                        label=derived["label"],
+                        unit=derived["unit"],
+                        minimum=derived["minimum"],
+                        maximum=derived["maximum"],
+                        origin="derived",
+                    )
+                )
                 if len(entries) >= MAX_FOCUS:
                     break
         return tuple(entries[:MAX_FOCUS])
 
     def _with_bounds(self, document: Document, focus: FocusParam) -> FocusParam | None:
-        feature = next((item for item in document.features if item.id == focus.feature_id), None)
+        feature = next(
+            (item for item in document.features if item.id == focus.feature_id), None
+        )
         if feature is None or focus.param not in feature.params:
             return None
         spec = spec_for(feature.type)
@@ -911,8 +1636,12 @@ class CADService:
             param=focus.param,
             label=focus.label or f"{focus.feature_id}.{focus.param}",
             unit=focus.unit or ((param.unit or "") if param else ""),
-            minimum=focus.minimum if focus.minimum is not None else (param.minimum if param else None),
-            maximum=focus.maximum if focus.maximum is not None else (param.maximum if param else None),
+            minimum=focus.minimum
+            if focus.minimum is not None
+            else (param.minimum if param else None),
+            maximum=focus.maximum
+            if focus.maximum is not None
+            else (param.maximum if param else None),
             origin=focus.origin or "agent",
         )
 
@@ -935,35 +1664,58 @@ class CADService:
         if changed_faces is not None:
             updated = replace(updated, changed_face_indices=tuple(changed_faces))
         milestones[-1] = updated
-        return Document(id=document.id, name=document.name, version=document.version,
-                        features=document.features, milestones=tuple(milestones),
-                        history=document.history, seq=document.seq)
+        return Document(
+            id=document.id,
+            name=document.name,
+            version=document.version,
+            features=document.features,
+            milestones=tuple(milestones),
+            history=document.history,
+            seq=document.seq,
+        )
 
-    def _changed_faces(self, before: Document, after: Document) -> dict[str, list]:
+    def _changed_faces(
+        self, before: Document, after: Document, after_result: Any | None = None
+    ) -> dict[str, list]:
         if not before.features:
             return {"indices": [], "centers": []}
         try:
             before_result = self._build(before)
         except ServiceError:
             return {"indices": [], "centers": []}
-        after_result = self._build(after)
+        # The commit already built the edited document; rebuilding it only replays the
+        # per-feature cache and then compares a part with itself.
+        if after_result is None:
+            after_result = self._build(after)
         before_feature = display_feature(before)
         after_feature = display_feature(after)
         if before_feature is None or after_feature is None:
             return {"indices": [], "centers": []}
-        report = compare_parts(before_result.outputs.get(before_feature),
-                               after_result.outputs.get(after_feature))
+        report = compare_parts(
+            before_result.outputs.get(before_feature),
+            after_result.outputs.get(after_feature),
+        )
         return {
             "indices": report["changed_face_indices"],
             "centers": report["changed_face_centers"],
         }
 
-    def _milestone_event(self, document: Document, result: Any,
-                         metrics: Mapping[str, Any], changed_faces: list[int]) -> dict[str, Any]:
+    def _milestone_event(
+        self,
+        document: Document,
+        result: Any,
+        metrics: Mapping[str, Any],
+        changed_faces: list[int],
+    ) -> dict[str, Any]:
         latest = document.milestones[-1]
-        checks = self._checks_projection(result) if result is not None else {
-            "passed": 0, "total": 0,
-        }
+        checks = (
+            self._checks_projection(result)
+            if result is not None
+            else {
+                "passed": 0,
+                "total": 0,
+            }
+        )
         return {
             "version": document.version,
             "parent_version": latest.parent_version,
@@ -978,16 +1730,23 @@ class CADService:
             "checks_total": checks["total"],
         }
 
-    def begin_intent(self, document_id: str, prompt: str, steps: list[str],
-                     base_version: int | None = None) -> dict[str, Any]:
+    def begin_intent(
+        self,
+        document_id: str,
+        prompt: str,
+        steps: list[str],
+        base_version: int | None = None,
+    ) -> dict[str, Any]:
         document = self.read(document_id)
         intent = IntentState(
             intent_id=f"in_{uuid.uuid4().hex[:8]}",
             document_id=document_id,
             base_version=document.version if base_version is None else base_version,
             prompt=prompt,
-            steps=[IntentStep(index=index + 1, title=str(title))
-                   for index, title in enumerate(steps)],
+            steps=[
+                IntentStep(index=index + 1, title=str(title))
+                for index, title in enumerate(steps)
+            ],
         )
         with self._lock:
             self._intents[intent.intent_id] = intent
@@ -1007,8 +1766,13 @@ class CADService:
             return None
         return intent.to_json()
 
-    def _advance_intent(self, intent_id: str, step_index: int | None,
-                        status: str, milestone_version: int) -> None:
+    def _advance_intent(
+        self,
+        intent_id: str,
+        step_index: int | None,
+        status: str,
+        milestone_version: int,
+    ) -> None:
         intent = self._intents.get(intent_id)
         if intent is None:
             return
@@ -1028,7 +1792,9 @@ class CADService:
         if intent is None:
             raise ServiceError("UNKNOWN_INTENT", f"no intent {intent_id!r}", status=404)
         if intent.status == "cancelled":
-            raise ServiceError("INTENT_CANCELLED", "this intent was cancelled", status=409)
+            raise ServiceError(
+                "INTENT_CANCELLED", "this intent was cancelled", status=409
+            )
 
     def cancel_intent(self, document_id: str, intent_id: str) -> dict[str, Any]:
         intent = self._intents.get(intent_id)
@@ -1041,14 +1807,17 @@ class CADService:
         self.bus.publish(document_id, "intent", intent.to_json())
         return intent.to_json()
 
-    def add_intent_note(self, document_id: str, text: str,
-                        base_version: int | None = None) -> dict[str, Any]:
+    def add_intent_note(
+        self, document_id: str, text: str, base_version: int | None = None
+    ) -> dict[str, Any]:
         """Queue a typed request for the agent, kept in the document store."""
         phrase = text.strip()
         if not phrase:
             raise ServiceError("INVALID_INTENT", "intent text is empty", status=400)
         try:
-            entry = self.store.add_intent(document_id, phrase, base_version=base_version)
+            entry = self.store.add_intent(
+                document_id, phrase, base_version=base_version
+            )
         except StoreError as exc:
             raise ServiceError(exc.code, exc.message, status=exc.status) from exc
         return {"intent": entry, "pending": len(self.store.list_intents(document_id))}
@@ -1069,8 +1838,11 @@ class CADService:
         title: str | None = None,
     ) -> dict[str, Any]:
         ops = [
-            {"op": "update", "id": str(change.get("feature_id")),
-             "params": dict(change.get("params") or {})}
+            {
+                "op": "update",
+                "id": str(change.get("feature_id")),
+                "params": dict(change.get("params") or {}),
+            }
             for change in changes
         ]
         if not ops:
@@ -1115,21 +1887,32 @@ class CADService:
             actor="human",
         )
 
-    def revert(self, document_id: str, target_version: int,
-               title: str | None = None) -> dict[str, Any]:
+    def revert(
+        self, document_id: str, target_version: int, title: str | None = None
+    ) -> dict[str, Any]:
         document = self.read(document_id)
         if target_version == document.version:
-            return {"document": document_to_json(document), "build": self._build_summary(document)}
+            return {
+                "document": document_to_json(document),
+                "build": self._build_summary(document),
+            }
         target = self.read(document_id, version=target_version)
         ops: list[dict[str, Any]] = [
             {"op": "remove", "id": feature.id}
             for feature in reversed(document.features)
         ]
-        ops += [{"op": "add", "feature": feature_to_json(feature)} for feature in target.features]
-        focus = [
-            {"feature_id": item.feature_id, "param": item.param}
-            for item in target.milestones[-1].focus_params
-        ] if target.milestones else None
+        ops += [
+            {"op": "add", "feature": feature_to_json(feature)}
+            for feature in target.features
+        ]
+        focus = (
+            [
+                {"feature_id": item.feature_id, "param": item.param}
+                for item in target.milestones[-1].focus_params
+            ]
+            if target.milestones
+            else None
+        )
         return self.commit(
             document_id,
             document.version,
@@ -1148,8 +1931,12 @@ class CADService:
             raise ServiceError("NO_HISTORY", "已是初始版本，无法撤销", status=409)
         return self.revert(document_id, target)
 
-    def preview(self, document_id: str, ops: list[Mapping[str, Any]],
-                base_version: int | None = None) -> dict[str, Any]:
+    def preview(
+        self,
+        document_id: str,
+        ops: list[Mapping[str, Any]],
+        base_version: int | None = None,
+    ) -> dict[str, Any]:
         document = self.read(document_id)
         try:
             candidate = apply_ops(document, list(ops), base_version)
@@ -1158,12 +1945,15 @@ class CADService:
         try:
             result = build(candidate, self.cache)
         except BuildError as exc:
-            detail = {"feature_id": exc.feature_id,
-                      "blocked_downstream": list(exc.blocked),
-                      "checks": [check.__dict__ for check in exc.checks]}
+            detail = {
+                "feature_id": exc.feature_id,
+                "blocked_downstream": list(exc.blocked),
+                "checks": [check.__dict__ for check in exc.checks],
+            }
             self.bus.publish(document_id, "error", {**exc.to_json(), **detail})
-            raise ServiceError(exc.code, exc.message, status=422, hint=exc.hint,
-                               detail=detail) from exc
+            raise ServiceError(
+                exc.code, exc.message, status=422, hint=exc.hint, detail=detail
+            ) from exc
         metrics = self._metrics(result)
         changed = []
         if document.features:
@@ -1171,8 +1961,10 @@ class CADService:
             before_feature = display_feature(document)
             after_feature = display_feature(candidate)
             if before_feature and after_feature:
-                changed = compare_parts(before_result.outputs.get(before_feature),
-                                        result.outputs.get(after_feature))["changed_face_indices"]
+                changed = compare_parts(
+                    before_result.outputs.get(before_feature),
+                    result.outputs.get(after_feature),
+                )["changed_face_indices"]
         return {
             "document": document_to_json(candidate),
             "build": result.summary(),
@@ -1185,12 +1977,16 @@ class CADService:
     def pick(self, document_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         document = self.read(
             document_id,
-            version=int(payload["version"]) if payload.get("version") is not None else None,
+            version=int(payload["version"])
+            if payload.get("version") is not None
+            else None,
         )
         result = self._build(document)
         point = payload.get("point") or []
         if len(point) != 3:
-            raise ServiceError("INVALID_PICK", "point must hold three numbers", status=400)
+            raise ServiceError(
+                "INVALID_PICK", "point must hold three numbers", status=400
+            )
         found = pick_to_ref(
             document,
             result,
@@ -1200,7 +1996,9 @@ class CADService:
             feature_id=payload.get("feature_id"),
         )
         if not found.get("ok"):
-            raise ServiceError("PICK_FAILED", found.get("message", "no face matched"), status=422)
+            raise ServiceError(
+                "PICK_FAILED", found.get("message", "no face matched"), status=422
+            )
         label = self._anchor_label(found)
         return {
             "label": label,
@@ -1228,11 +2026,16 @@ class CADService:
             f"({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f})"
         )
 
-    def probe(self, document_id: str, *, feature_id: str | None = None,
-              ref: Mapping[str, Any] | None = None,
-              picked_point: list[float] | None = None,
-              picked_normal: list[float] | None = None,
-              picked_area: float | None = None) -> dict[str, Any]:
+    def probe(
+        self,
+        document_id: str,
+        *,
+        feature_id: str | None = None,
+        ref: Mapping[str, Any] | None = None,
+        picked_point: list[float] | None = None,
+        picked_normal: list[float] | None = None,
+        picked_area: float | None = None,
+    ) -> dict[str, Any]:
         document = self.read(document_id)
         result = self._build(document)
         payload: dict[str, Any] = {
@@ -1244,13 +2047,18 @@ class CADService:
             payload["ref_probe"] = probe_ref(result, ref)
         if picked_point is not None and len(picked_point) == 3:
             payload["pick_probe"] = pick_to_ref(
-                document, result, point=picked_point, normal=picked_normal,
-                area=picked_area, feature_id=feature_id,
+                document,
+                result,
+                point=picked_point,
+                normal=picked_normal,
+                area=picked_area,
+                feature_id=feature_id,
             )
         return payload
 
-    def compare_versions(self, document_id: str, base_version: int,
-                         target_version: int | None = None) -> dict[str, Any]:
+    def compare_versions(
+        self, document_id: str, base_version: int, target_version: int | None = None
+    ) -> dict[str, Any]:
         doc_after = self.read(document_id, version=target_version)
         doc_before = self.read(document_id, version=base_version)
         res_before = self._build(doc_before)
@@ -1274,10 +2082,13 @@ class CADService:
 
     def dimensions(self, document_id: str, feature_id: str) -> dict[str, Any]:
         document = self.read(document_id)
-        feature = next((item for item in document.features if item.id == feature_id), None)
+        feature = next(
+            (item for item in document.features if item.id == feature_id), None
+        )
         if feature is None:
-            raise ServiceError("FEATURE_NOT_FOUND", f"no feature {feature_id!r}",
-                               status=404)
+            raise ServiceError(
+                "FEATURE_NOT_FOUND", f"no feature {feature_id!r}", status=404
+            )
         spec = spec_for(feature.type)
         params: list[dict[str, Any]] = []
         if spec is not None:
@@ -1300,20 +2111,31 @@ class CADService:
                 maximum = param.maximum
                 if maximum is None and name == "start_angle":
                     maximum = 360.0
-                params.append({
-                    "name": name,
-                    "label": param.description or name,
-                    "unit": unit,
-                    "value": value,
-                    "minimum": minimum,
-                    "maximum": maximum,
-                    "integer": param.kind == "int",
-                })
-        return {"feature_id": feature.id, "feature_type": feature.type,
-                "params": params}
+                params.append(
+                    {
+                        "name": name,
+                        "label": param.description or name,
+                        "unit": unit,
+                        "value": value,
+                        "minimum": minimum,
+                        "maximum": maximum,
+                        "integer": param.kind == "int",
+                    }
+                )
+        return {
+            "feature_id": feature.id,
+            "feature_type": feature.type,
+            "params": params,
+        }
 
-    def handles(self, document_id: str, feature_id: str, point: list[float],
-                normal: list[float], scope: str = "face") -> dict[str, Any]:
+    def handles(
+        self,
+        document_id: str,
+        feature_id: str,
+        point: list[float],
+        normal: list[float],
+        scope: str = "face",
+    ) -> dict[str, Any]:
         dimensions = self.dimensions(document_id, feature_id)
         params = dimensions["params"]
         if not params:
@@ -1322,16 +2144,27 @@ class CADService:
         normal = _unit(normal)
         basis = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}
         axis_by_name = {
-            "x": basis["x"], "y": basis["y"], "z": basis["z"],
-            "length": basis["x"], "width": basis["y"], "height": basis["z"],
-            "depth": basis["z"], "thickness": normal,
-            "radius": normal, "diameter": normal, "hole_radius": normal,
-            "size": normal, "offset": normal,
+            "x": basis["x"],
+            "y": basis["y"],
+            "z": basis["z"],
+            "length": basis["x"],
+            "width": basis["y"],
+            "height": basis["z"],
+            "depth": basis["z"],
+            "thickness": normal,
+            "radius": normal,
+            "diameter": normal,
+            "hole_radius": normal,
+            "size": normal,
+            "offset": normal,
         }
         best = None
         for param in params:
             name = param["name"]
-            if name in {"count", "start_angle", "turns", "segments", "sides"} and len(params) > 1:
+            if (
+                name in {"count", "start_angle", "turns", "segments", "sides"}
+                and len(params) > 1
+            ):
                 continue
             axis = axis_by_name.get(name)
             if feature_type == "k_cylinder":
@@ -1343,9 +2176,12 @@ class CADService:
             preference = 0.0
             if feature_type == "k_cylinder":
                 axial = abs(normal[2]) > 0.72
-                if axial and name in {"height", "depth"}:
-                    preference = 3.0
-                elif not axial and name in {"radius", "diameter"}:
+                if (
+                    axial
+                    and name in {"height", "depth"}
+                    or not axial
+                    and name in {"radius", "diameter"}
+                ):
                     preference = 3.0
             if feature_type in {"k_translate", "k_move_faces"}:
                 preference = 1.0 if name in {"x", "y", "z"} else 0.0
@@ -1353,8 +2189,12 @@ class CADService:
                 preference = 2.0 if name in {"size", "radius"} else 0.0
             score = abs(alignment) * 10.0 + preference
             if best is None or score > best["score"]:
-                best = {"param": param, "axis": axis, "score": score,
-                        "alignment": alignment}
+                best = {
+                    "param": param,
+                    "axis": axis,
+                    "score": score,
+                    "alignment": alignment,
+                }
         if best is None:
             return {"handle": None, "reason": "没有找到可拖动的方向"}
         axis = best["axis"]
@@ -1379,17 +2219,22 @@ class CADService:
             "reason": None,
         }
 
-    def resolve_reference(self, document_id: str, phrase: str,
-                          anchor: str | None = None) -> dict[str, Any]:
+    def resolve_reference(
+        self, document_id: str, phrase: str, anchor: str | None = None
+    ) -> dict[str, Any]:
         return resolve_gate(self.read(document_id), phrase, anchor)
 
-    def create_variants(self, document_id: str, *,
-                        variants: list[dict[str, Any]] | None = None,
-                        feature: str | None = None,
-                        params: dict[str, list[Any]] | None = None,
-                        include_base: bool = False,
-                        base_version: int | None = None,
-                        thumbs: bool = True) -> dict[str, Any]:
+    def create_variants(
+        self,
+        document_id: str,
+        *,
+        variants: list[dict[str, Any]] | None = None,
+        feature: str | None = None,
+        params: dict[str, list[Any]] | None = None,
+        include_base: bool = False,
+        base_version: int | None = None,
+        thumbs: bool = True,
+    ) -> dict[str, Any]:
         document = self.read(document_id)
         if base_version is not None and base_version != document.version:
             raise ServiceError(
@@ -1399,11 +2244,13 @@ class CADService:
             )
         try:
             if variants:
-                entry = self.variants.create(document, variants, include_base=include_base,
-                                             thumbs=thumbs)
+                entry = self.variants.create(
+                    document, variants, include_base=include_base, thumbs=thumbs
+                )
             elif feature and params:
-                entry = self.variants.create_sweep(document, feature, params,
-                                                   include_base=include_base, thumbs=thumbs)
+                entry = self.variants.create_sweep(
+                    document, feature, params, include_base=include_base, thumbs=thumbs
+                )
             else:
                 raise ValueError("give either `variants` or `feature` with `params`")
         except ValueError as exc:
@@ -1417,23 +2264,31 @@ class CADService:
         try:
             return self.variants.get(set_id).to_json()
         except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no variant set {set_id!r}", status=404) from exc
+            raise ServiceError(
+                "NOT_FOUND", f"no variant set {set_id!r}", status=404
+            ) from exc
 
     def variant_thumbnail(self, set_id: str, index: int) -> Path:
         try:
             entry = self.variants.get(set_id)
         except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no variant set {set_id!r}", status=404) from exc
+            raise ServiceError(
+                "NOT_FOUND", f"no variant set {set_id!r}", status=404
+            ) from exc
         variant = next((item for item in entry.variants if item.index == index), None)
         if variant is None or variant.thumb is None:
-            raise ServiceError("NOT_FOUND", f"variant {index} has no picture", status=404)
+            raise ServiceError(
+                "NOT_FOUND", f"variant {index} has no picture", status=404
+            )
         return variant.thumb
 
     def variant_sheet(self, set_id: str) -> bytes:
         try:
             return self.variants.sheet(set_id)
         except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no variant set {set_id!r}", status=404) from exc
+            raise ServiceError(
+                "NOT_FOUND", f"no variant set {set_id!r}", status=404
+            ) from exc
         except LookupError as exc:
             raise ServiceError("NOT_FOUND", str(exc), status=404) from exc
 
@@ -1441,14 +2296,18 @@ class CADService:
         try:
             entry = self.variants.get(set_id)
         except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no variant set {set_id!r}", status=404) from exc
+            raise ServiceError(
+                "NOT_FOUND", f"no variant set {set_id!r}", status=404
+            ) from exc
         variant = next((item for item in entry.variants if item.index == index), None)
         if variant is None:
             raise ServiceError("NOT_FOUND", f"no variant {index}", status=404)
         if variant.step is not None and variant.step.exists():
             return variant.step
         if not variant.ok:
-            raise ServiceError("NOT_FOUND", f"variant {index} does not build", status=404)
+            raise ServiceError(
+                "NOT_FOUND", f"variant {index} does not build", status=404
+            )
         candidate = apply_ops(self.read(entry.document_id), variant.ops)
         result = self._build(candidate)
         path = entry.folder / f"{index}.step"
@@ -1460,7 +2319,9 @@ class CADService:
         try:
             entry = self.variants.get(set_id)
         except KeyError as exc:
-            raise ServiceError("NOT_FOUND", f"no variant set {set_id!r}", status=404) from exc
+            raise ServiceError(
+                "NOT_FOUND", f"no variant set {set_id!r}", status=404
+            ) from exc
         variant = next((item for item in entry.variants if item.index == index), None)
         if variant is None:
             raise ServiceError("NOT_FOUND", f"no variant {index}", status=404)
@@ -1480,44 +2341,220 @@ class CADService:
             actor="human",
         )
 
-    def cached_scene(self, document_id: str, version: int | None = None) -> dict[str, Any] | None:
+    def cached_scene(
+        self, document_id: str, version: int | None = None, edges: bool = True
+    ) -> dict[str, Any] | None:
         document = self.read(document_id, version=version)
         if not document.features:
-            return {"version": document.version, "feature": None, "faces": [], "edges": [],
-                    "metrics": {"faces": 0, "volume": 0.0, "edges": 0}}
+            return self._empty_scene(document, edges=edges, metrics=True)
         feature_id = display_feature(document)
         if feature_id is None:
-            return {"version": document.version, "feature": None, "faces": [], "edges": []}
-        key = f"{self._geometry_digest(document)}:{feature_id}"
-        payload = self.store.get_scene(key)
-        if payload is not None:
-            payload["version"] = document.version
+            return self._empty_scene(document, edges=edges, metrics=False)
+        digest = self._geometry_digest(document)
+        payload = self._cached_scene_dict(digest, feature_id, edges)
+        if payload is None:
+            return None
+        payload["version"] = document.version
         return payload
 
-    def scene(self, document_id: str, feature: str | None = None,
-              version: int | None = None) -> dict[str, Any]:
+    def cached_scene_bytes(
+        self, document_id: str, version: int | None = None, edges: bool = True
+    ) -> tuple[bytes, str] | None:
+        """Cached scene as the bytes on disk, plus its ETag.
+
+        The scene cache key covers geometry only, so a version bump keeps the file; the
+        version field is projected into the bytes at serve time instead of re-serializing
+        the whole payload. A faces-only request against a payload that still carries
+        edges derives that variant once and stores it under its own key.
+        """
         document = self.read(document_id, version=version)
         if not document.features:
-            return {"version": document.version, "feature": None, "faces": [], "edges": [],
-                    "metrics": {"faces": 0, "volume": 0.0, "edges": 0}}
+            payload = self._empty_scene(document, edges=edges, metrics=True)
+            return (
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                ),
+                self._scene_etag(document.version, None, edges),
+            )
+        feature_id = display_feature(document)
+        if feature_id is None:
+            payload = self._empty_scene(document, edges=edges, metrics=False)
+            return (
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                ),
+                self._scene_etag(document.version, None, edges),
+            )
+        digest = self._geometry_digest(document)
+        raw = self.store.get_scene_bytes(self._scene_key(digest, feature_id, edges))
+        if raw is None and edges:
+            raw = self.store.get_scene_bytes(self._scene_legacy_key(digest, feature_id))
+        if raw is None and not edges:
+            raw = self._faces_only_scene_bytes(digest, feature_id)
+        raw = self._checked_scene_bytes(raw)
+        if raw is None:
+            return None
+        return (
+            self._scene_bytes_with_version(raw, document.version),
+            self._scene_etag(document.version, feature_id, edges),
+        )
+
+    def scene(
+        self,
+        document_id: str,
+        feature: str | None = None,
+        version: int | None = None,
+        edges: bool = True,
+    ) -> dict[str, Any]:
+        document = self.read(document_id, version=version)
+        if not document.features:
+            return self._empty_scene(document, edges=edges, metrics=True)
         feature_id = feature or display_feature(document)
         if feature_id is None:
-            return {"version": document.version, "feature": None, "faces": [], "edges": []}
-        key = f"{self._geometry_digest(document)}:{feature_id}"
-        cached = self.store.get_scene(key)
+            return self._empty_scene(document, edges=edges, metrics=False)
+        digest = self._geometry_digest(document)
+        cached = self._cached_scene_dict(
+            digest, feature_id, edges, store_missing_variant=True
+        )
         if cached is not None:
             cached["version"] = document.version
             return cached
         result = self._build(document)
         if feature_id not in result.outputs:
-            raise ServiceError("UNKNOWN_FEATURE", f"no output {feature_id!r}", status=404)
-        payload = build_scene(result.outputs[feature_id], feature_id)
+            raise ServiceError(
+                "UNKNOWN_FEATURE", f"no output {feature_id!r}", status=404
+            )
+        payload = build_scene(
+            result.outputs[feature_id],
+            feature_id,
+            bodies=[result.bodies[key].summary() for key in sorted(result.bodies)],
+        )
         payload["version"] = document.version
-        self.store.put_scene(key, payload)
+        self.store.put_scene(self._scene_key(digest, feature_id, True), payload)
+        if not edges:
+            return self._store_faces_only_scene(digest, feature_id, payload)
         return payload
 
-    def render(self, document_id: str, feature: str | None = None,
-               view: str = "iso") -> bytes:
+    @staticmethod
+    def _empty_scene(
+        document: Document, *, edges: bool, metrics: bool
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "version": document.version,
+            "feature": None,
+            "faces": [],
+            "bodies": [],
+        }
+        if edges:
+            payload["edges"] = []
+        if metrics:
+            payload["metrics"] = {"faces": 0, "volume": 0.0, "edges": 0}
+        return payload
+
+    @staticmethod
+    def _scene_key(digest: str, feature_id: str, edges: bool) -> str:
+        return f"{digest}:{feature_id}:edges={1 if edges else 0}:bodies=1"
+
+    @staticmethod
+    def _scene_legacy_key(digest: str, feature_id: str) -> str:
+        return f"{digest}:{feature_id}"
+
+    @staticmethod
+    def _scene_etag(version: int, feature_id: str | None, edges: bool) -> str:
+        return f'"{version}:{feature_id}:{1 if edges else 0}"'
+
+    @staticmethod
+    def _checked_scene_bytes(raw: bytes | None) -> bytes | None:
+        """Reject a grossly malformed cache file so the client falls back instead of parsing garbage.
+
+        A full JSON parse would cost exactly what serving the cached bytes avoids; atomic
+        replace makes a truncated file the realistic corruption, and that fails the brace test.
+        """
+        if raw is None:
+            return None
+        stripped = raw.strip()
+        if not stripped.startswith(b"{") or not stripped.endswith(b"}"):
+            return None
+        return raw
+
+    @staticmethod
+    def _scene_bytes_with_version(raw: bytes, version: int) -> bytes:
+        """Project the cached version value; the rest of the payload stays byte-identical."""
+        marker = b'"version":'
+        index = raw.rfind(marker)
+        if index >= 0:
+            start = index + len(marker)
+            end = start
+            while end < len(raw) and 0x30 <= raw[end] <= 0x39:
+                end += 1
+            if end > start:
+                return raw[:start] + str(int(version)).encode("ascii") + raw[end:]
+        # Another serializer wrote this file (spacing, field order): re-serialize rather than
+        # answer with a version the payload does not carry.
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return raw
+        if not isinstance(payload, dict):
+            return raw
+        payload["version"] = int(version)
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
+
+    def _store_faces_only_scene(
+        self, digest: str, feature_id: str, payload: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        faces_only = dict(payload)
+        faces_only.pop("edges", None)
+        self.store.put_scene(self._scene_key(digest, feature_id, False), faces_only)
+        return faces_only
+
+    def _faces_only_scene_bytes(self, digest: str, feature_id: str) -> bytes | None:
+        raw = self.store.get_scene_bytes(self._scene_key(digest, feature_id, True))
+        if raw is None:
+            raw = self.store.get_scene_bytes(self._scene_legacy_key(digest, feature_id))
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        encoded = json.dumps(
+            self._store_faces_only_scene(digest, feature_id, payload),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return encoded
+
+    def _cached_scene_dict(
+        self,
+        digest: str,
+        feature_id: str,
+        edges: bool,
+        *,
+        store_missing_variant: bool = False,
+    ) -> dict[str, Any] | None:
+        payload = self.store.get_scene(self._scene_key(digest, feature_id, edges))
+        if payload is None and edges:
+            payload = self.store.get_scene(self._scene_legacy_key(digest, feature_id))
+        if payload is not None or edges:
+            return payload
+        full = self.store.get_scene(self._scene_key(digest, feature_id, True))
+        if full is None:
+            full = self.store.get_scene(self._scene_legacy_key(digest, feature_id))
+        if full is None:
+            return None
+        if store_missing_variant:
+            return self._store_faces_only_scene(digest, feature_id, full)
+        full.pop("edges", None)
+        return full
+
+    def render(
+        self, document_id: str, feature: str | None = None, view: str = "iso"
+    ) -> bytes:
         document = self.read(document_id)
         if not document.features:
             raise ServiceError("EMPTY_DOCUMENT", "空白文档没有可渲染的几何", status=409)
@@ -1532,8 +2569,13 @@ class CADService:
         except Exception as exc:
             raise ServiceError("RENDER_FAILED", str(exc), status=500) from exc
 
-    def export(self, document_id: str, fmt: str, feature: str | None = None,
-               version: int | None = None) -> tuple[bytes, str]:
+    def export(
+        self,
+        document_id: str,
+        fmt: str,
+        feature: str | None = None,
+        version: int | None = None,
+    ) -> tuple[bytes, str]:
         document = self.read(document_id, version=version)
         if not document.features:
             raise ServiceError("EMPTY_DOCUMENT", "空白文档没有可导出的几何", status=409)
@@ -1545,7 +2587,9 @@ class CADService:
                 {"feature": feature_id, **tag}
                 for feature_id, tag in sorted(result.tags.items())
             ]
-            return json.dumps({"boundaries": payload}, ensure_ascii=False).encode("utf-8"), "json"
+            return json.dumps({"boundaries": payload}, ensure_ascii=False).encode(
+                "utf-8"
+            ), "json"
         feature_id = feature or display_feature(document)
         if feature_id is None or feature_id not in result.outputs:
             raise ServiceError("UNKNOWN_FEATURE", "nothing to export", status=404)
@@ -1569,25 +2613,47 @@ class CADService:
             return
         self.store.put_step(digest, payload)
 
-    def step_bytes(self, document_id: str, version: int | None = None) -> bytes:
+    def step_identity(
+        self, document_id: str, version: int | None = None
+    ) -> tuple[Document, str]:
+        """The document and the geometry digest that names its STEP payload.
+
+        The digest is content-addressed, so it can serve as the ETag before the payload is
+        read or built: a conditional request is answered without touching the STEP file.
+        """
         document = self.read(document_id, version=version)
         if not document.features:
             raise ServiceError("EMPTY_DOCUMENT", "空白文档没有可导出的几何", status=409)
-        enabled = tuple(item for item in document.features if item.enabled)
-        if not enabled:
+        if not any(feature.enabled for feature in document.features):
             raise ServiceError("EMPTY_DOCUMENT", "没有启用的特征可导出", status=409)
-        digest_key = self._geometry_digest(document)
-        cached = self.store.get_step(digest_key)
+        return document, self._geometry_digest(document)
+
+    def step_bytes(
+        self,
+        document_id: str,
+        version: int | None = None,
+        *,
+        document: Document | None = None,
+        digest: str | None = None,
+    ) -> bytes:
+        if document is None or digest is None:
+            document, digest = self.step_identity(document_id, version=version)
+        cached = self.store.get_step(digest)
         if cached is not None:
             return cached
         payload = self.export(document_id, "step", version=version)[0]
-        self.store.put_step(digest_key, payload)
+        self.store.put_step(digest, payload)
         return payload
 
     def checks(self, document_id: str) -> dict[str, Any]:
         document = self.read(document_id)
         if not document.features:
-            return {"version": document.version, "features": [], "tags": {}, **self._checks_projection_empty()}
+            return {
+                "version": document.version,
+                "features": [],
+                "tags": {},
+                **self._checks_projection_empty(),
+            }
         analysis = self._analysis_for(document)
         payload = {
             "version": document.version,
@@ -1595,8 +2661,13 @@ class CADService:
             "tags": analysis.get("tags") or {},
         }
         projection = analysis.get("checks") or self._checks_projection_empty()
-        payload.update({"passed": projection["passed"], "total": projection["total"],
-                        "ok": projection["ok"]})
+        payload.update(
+            {
+                "passed": projection["passed"],
+                "total": projection["total"],
+                "ok": projection["ok"],
+            }
+        )
         return payload
 
     @staticmethod
@@ -1606,7 +2677,7 @@ class CADService:
     def _geometry_digest(self, document: Document) -> str:
         enabled = tuple(feature for feature in document.features if feature.enabled)
         return hashlib.sha256(
-            f"{CACHE_EPOCH}:{features_digest(enabled)}".encode("utf-8")
+            f"{CACHE_EPOCH}:{features_digest(enabled)}".encode()
         ).hexdigest()
 
     def _analysis_payload(self, result: Any) -> dict[str, Any]:
@@ -1614,46 +2685,59 @@ class CADService:
             "metrics": self._metrics(result),
             "checks": self._checks_projection(result),
             "features": [
-                {"id": item.feature_id, "checks": [check.__dict__ for check in item.checks]}
+                {
+                    "id": item.feature_id,
+                    "checks": [check.__dict__ for check in item.checks],
+                }
                 for item in result.features
             ],
+            "bodies": [result.bodies[key].summary() for key in sorted(result.bodies)],
             "tags": result.tags,
         }
 
     def _store_analysis(self, document: Document, result: Any) -> dict[str, Any]:
+        digest = self._geometry_digest(document)
+        cached = self.store.get_analysis(digest)
+        # A cache hit means an equal geometry was analyzed already; recomputing the payload
+        # here is what made every repeated _build in one request pay for metrics and checks.
+        if cached is not None and _ANALYSIS_KEYS <= set(cached):
+            return cached
         payload = self._analysis_payload(result)
-        self.store.put_analysis(self._geometry_digest(document), payload)
+        self.store.put_analysis(digest, payload)
         return payload
 
     def _analysis_for(self, document: Document) -> dict[str, Any]:
         digest = self._geometry_digest(document)
         cached = self.store.get_analysis(digest)
-        required = {"metrics", "checks", "features", "tags"}
-        if cached is not None and required <= set(cached):
+        if cached is not None and _ANALYSIS_KEYS <= set(cached):
             return cached
         result = self._build(document)
         cached = self.store.get_analysis(digest)
-        if cached is not None and required <= set(cached):
+        if cached is not None and _ANALYSIS_KEYS <= set(cached):
             return cached
         return self._analysis_payload(result)
 
     def _build(self, document: Document):
         if not document.features:
-            raise ServiceError("EMPTY_DOCUMENT", "empty document has no geometry", status=409)
+            raise ServiceError(
+                "EMPTY_DOCUMENT", "empty document has no geometry", status=409
+            )
         try:
             result = build(document, self.cache)
         except BuildError as exc:
-            detail = {"feature_id": exc.feature_id,
-                      "blocked_downstream": list(exc.blocked),
-                      "checks": [check.__dict__ for check in exc.checks]}
-            raise ServiceError(exc.code, exc.message, status=422, hint=exc.hint,
-                               detail=detail) from exc
+            detail = {
+                "feature_id": exc.feature_id,
+                "blocked_downstream": list(exc.blocked),
+                "checks": [check.__dict__ for check in exc.checks],
+            }
+            raise ServiceError(
+                exc.code, exc.message, status=422, hint=exc.hint, detail=detail
+            ) from exc
         try:
             self._store_analysis(document, result)
         except (OSError, TypeError, ValueError):
             pass
         return result
-
 
 
 def focus_param_json_with_bounds(focus: FocusParam, feature: Any) -> dict[str, Any]:
@@ -1699,7 +2783,9 @@ def diff_documents(before: Document, after: Document) -> dict[str, Any]:
     added = sorted(set(new) - set(old))
     removed = sorted(set(old) - set(new))
     changed = sorted(
-        feature_id for feature_id in set(old) & set(new) if old[feature_id] != new[feature_id]
+        feature_id
+        for feature_id in set(old) & set(new)
+        if old[feature_id] != new[feature_id]
     )
     return {
         "version_before": before.version,

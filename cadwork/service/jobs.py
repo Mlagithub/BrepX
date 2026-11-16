@@ -31,7 +31,9 @@ class PlanJob:
     def to_json(self) -> dict[str, Any]:
         elapsed = None
         if self.started is not None:
-            elapsed = (self.finished if self.finished is not None else time.time()) - self.started
+            elapsed = (
+                self.finished if self.finished is not None else time.time()
+            ) - self.started
         return {
             "job_id": self.job_id,
             "document_id": self.document_id,
@@ -50,15 +52,26 @@ class PlanJobRegistry:
         self._jobs: dict[str, PlanJob] = {}
         self._lock = threading.Lock()
 
-    def start(self, document_id: str, node_id: str,
-              base_version: int | None = None,
-              executor: str | None = None) -> PlanJob:
-        job = PlanJob(job_id=f"job_{uuid.uuid4().hex[:10]}", document_id=document_id,
-                      node_id=node_id)
+    def start(
+        self,
+        document_id: str,
+        node_id: str,
+        base_version: int | None = None,
+        executor: str | None = None,
+    ) -> PlanJob:
+        job = PlanJob(
+            job_id=f"job_{uuid.uuid4().hex[:10]}",
+            document_id=document_id,
+            node_id=node_id,
+        )
         with self._lock:
             self._jobs[job.job_id] = job
-        thread = threading.Thread(target=self._run, args=(job, base_version, executor),
-                                  name=f"plan-{job.job_id}", daemon=True)
+        thread = threading.Thread(
+            target=self._run,
+            args=(job, base_version, executor),
+            name=f"plan-{job.job_id}",
+            daemon=True,
+        )
         thread.start()
         return job
 
@@ -80,8 +93,9 @@ class PlanJobRegistry:
                 job.status = "cancelling"
             return job
 
-    def _run(self, job: PlanJob, base_version: int | None,
-             executor: str | None) -> None:
+    def _run(
+        self, job: PlanJob, base_version: int | None, executor: str | None
+    ) -> None:
         if job.cancel.is_set():
             job.status = "cancelled"
             job.finished = time.time()
@@ -90,8 +104,11 @@ class PlanJobRegistry:
         job.started = time.time()
         try:
             result = self._service.plan_run(
-                job.document_id, job.node_id, base_version=base_version,
-                executor=executor, cancel_event=job.cancel,
+                job.document_id,
+                job.node_id,
+                base_version=base_version,
+                executor=executor,
+                cancel_event=job.cancel,
             )
             job.result = result
             job.status = "done"

@@ -12,21 +12,30 @@ from cadwork.design.refs import RefError, count, resolve, single
 
 def _box_document() -> Document:
     return Document(
-        id="t", name="t",
-        features=(Feature("f1", "k_box",
-                          params={"length": 20.0, "width": 20.0, "height": 20.0}),),
+        id="t",
+        name="t",
+        features=(
+            Feature(
+                "f1", "k_box", params={"length": 20.0, "width": 20.0, "height": 20.0}
+            ),
+        ),
     )
 
 
 def _hole_document() -> Document:
     return Document(
-        id="t", name="t",
+        id="t",
+        name="t",
         features=(
-            Feature("b1", "k_box",
-                    params={"length": 20.0, "width": 20.0, "height": 20.0}),
+            Feature(
+                "b1", "k_box", params={"length": 20.0, "width": 20.0, "height": 20.0}
+            ),
             Feature("h1", "k_cylinder", params={"radius": 5.0, "height": 30.0}),
-            Feature("c1", "k_cut", refs={"target": Ref("b1", "self"),
-                                         "others": (Ref("h1", "self"),)}),
+            Feature(
+                "c1",
+                "k_cut",
+                refs={"target": Ref("b1", "self"), "others": (Ref("h1", "self"),)},
+            ),
         ),
     )
 
@@ -101,8 +110,11 @@ class RefCardinalityTests(unittest.TestCase):
         self.assertEqual(count(faces), 6)
 
     def test_hit_by_orders_by_distance(self) -> None:
-        ref = Ref("f1", "faces",
-                  (Filter("hit_by", args=([0.0, 0.0, 100.0], [0.0, 0.0, -1.0])),))
+        ref = Ref(
+            "f1",
+            "faces",
+            (Filter("hit_by", args=([0.0, 0.0, 100.0], [0.0, 0.0, -1.0])),),
+        )
         faces = list(resolve(ref, self.outputs))
         self.assertEqual(len(faces), 2)
         self.assertAlmostEqual(float(faces[0].center()[2]), 10.0, places=3)
@@ -114,17 +126,31 @@ class NewRefTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.fillet_result = build(Document(
-            id="t", name="t",
-            features=(
-                Feature("f1", "k_box",
-                        params={"length": 20.0, "width": 20.0, "height": 20.0}),
-                Feature("f2", "k_fillet", params={"radius": 2.0},
-                        refs={"target": Ref("f1", "self"),
-                              "edges": Ref("f1", "edges",
-                                           (Filter("parallel_to", args=("Z",)),))}),
+        cls.fillet_result = build(
+            Document(
+                id="t",
+                name="t",
+                features=(
+                    Feature(
+                        "f1",
+                        "k_box",
+                        params={"length": 20.0, "width": 20.0, "height": 20.0},
+                    ),
+                    Feature(
+                        "f2",
+                        "k_fillet",
+                        params={"radius": 2.0},
+                        refs={
+                            "target": Ref("f1", "self"),
+                            "edges": Ref(
+                                "f1", "edges", (Filter("parallel_to", args=("Z",)),)
+                            ),
+                        },
+                    ),
+                ),
             ),
-        ), BuildCache())
+            BuildCache(),
+        )
         cls.hole_result = build(_hole_document(), BuildCache())
 
     def test_new_returns_the_faces_made_by_the_operation(self) -> None:
@@ -144,7 +170,9 @@ class NewRefTests(unittest.TestCase):
         ref = Ref("c1", "faces", (Filter("derived_from"),), extra=("h1",))
         faces = resolve(ref, self.hole_result.outputs)
         self.assertEqual(count(faces), 1)
-        self.assertAlmostEqual(float(faces.first.area), 2 * 3.14159265 * 5 * 20, delta=2.0)
+        self.assertAlmostEqual(
+            float(faces.first.area), 2 * 3.14159265 * 5 * 20, delta=2.0
+        )
 
     def test_joining_returns_the_boolean_rims(self) -> None:
         ref = Ref("c1", "edges", (Filter("joining"),), extra=("b1", "h1"))
@@ -162,15 +190,30 @@ class NewRefTests(unittest.TestCase):
 class TupleRefTests(unittest.TestCase):
     def test_a_many_role_resolves_every_tuple_member(self) -> None:
         document = Document(
-            id="t", name="t",
+            id="t",
+            name="t",
             features=(
-                Feature("a1", "k_box", params={"length": 10.0, "width": 10.0, "height": 10.0}),
-                Feature("a2", "k_box", params={"length": 10.0, "width": 10.0, "height": 10.0}),
-                Feature("a3", "k_translate", params={"x": 10.0},
-                        refs={"target": Ref("a2", "self")}),
-                Feature("a4", "k_fuse",
-                        refs={"target": Ref("a1", "self"),
-                              "others": (Ref("a3", "self"),)}),
+                Feature(
+                    "a1",
+                    "k_box",
+                    params={"length": 10.0, "width": 10.0, "height": 10.0},
+                ),
+                Feature(
+                    "a2",
+                    "k_box",
+                    params={"length": 10.0, "width": 10.0, "height": 10.0},
+                ),
+                Feature(
+                    "a3",
+                    "k_translate",
+                    params={"x": 10.0},
+                    refs={"target": Ref("a2", "self")},
+                ),
+                Feature(
+                    "a4",
+                    "k_fuse",
+                    refs={"target": Ref("a1", "self"), "others": (Ref("a3", "self"),)},
+                ),
             ),
         )
         result = build(document, BuildCache())

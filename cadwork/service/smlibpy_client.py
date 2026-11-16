@@ -27,8 +27,9 @@ import os
 import re
 import sys
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -49,7 +50,12 @@ START_TIMEOUT_S = 120.0
 
 _SESSION_RE = re.compile(r'Session "(s-[a-z0-9]+)"')
 _FAILED_PREFIX = "Script failed"
-_TIMEOUT_MARKERS = ("did not finish within", "the script was stopped", "timed out", "timeout")
+_TIMEOUT_MARKERS = (
+    "did not finish within",
+    "the script was stopped",
+    "timed out",
+    "timeout",
+)
 
 
 @dataclass(frozen=True)
@@ -115,7 +121,10 @@ class SmlibpyClient:
     ) -> None:
         self.command = command or sys.executable
         self.args = list(args) if args is not None else ["-m", SERVER_MODULE]
-        self.env: dict[str, str] = {"SMLIBPY_VIEWER": "off", "SMLIBPY_SESSIONS_AWAKE": "1"}
+        self.env: dict[str, str] = {
+            "SMLIBPY_VIEWER": "off",
+            "SMLIBPY_SESSIONS_AWAKE": "1",
+        }
         if env:
             self.env.update({str(key): str(value) for key, value in env.items()})
         self.cwd = cwd
@@ -141,7 +150,7 @@ class SmlibpyClient:
             self._lock = asyncio.Lock()
         return self._lock
 
-    async def start(self) -> "SmlibpyClient":
+    async def start(self) -> SmlibpyClient:
         """Spawn the server and initialise the MCP session (idempotent)."""
         lock = self._get_lock()
         async with lock:
@@ -163,7 +172,9 @@ class SmlibpyClient:
         errlog = open(os.devnull, "w", encoding="utf-8", errors="replace")
         stdio_cm = stdio_client(params, errlog=errlog)
         try:
-            read, write = await asyncio.wait_for(stdio_cm.__aenter__(), timeout=self.start_timeout_s)
+            read, write = await asyncio.wait_for(
+                stdio_cm.__aenter__(), timeout=self.start_timeout_s
+            )
         except BaseException:
             try:
                 await stdio_cm.__aexit__(None, None, None)
@@ -174,8 +185,12 @@ class SmlibpyClient:
         session_cm: Any = None
         try:
             session_cm = ClientSession(read, write)
-            session = await asyncio.wait_for(session_cm.__aenter__(), timeout=self.start_timeout_s)
-            init = await asyncio.wait_for(session.initialize(), timeout=self.start_timeout_s)
+            session = await asyncio.wait_for(
+                session_cm.__aenter__(), timeout=self.start_timeout_s
+            )
+            init = await asyncio.wait_for(
+                session.initialize(), timeout=self.start_timeout_s
+            )
         except BaseException:
             if session_cm is not None:
                 try:
@@ -223,7 +238,7 @@ class SmlibpyClient:
                 except Exception:
                     pass
 
-    async def __aenter__(self) -> "SmlibpyClient":
+    async def __aenter__(self) -> SmlibpyClient:
         return await self.start()
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -237,10 +252,12 @@ class SmlibpyClient:
                 result = await asyncio.wait_for(
                     session.list_tools(), timeout=self.start_timeout_s
                 )
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 raise BackendTimeout("smlibpy list_tools timed out") from exc
             except Exception as exc:
-                raise BackendError(f"smlibpy list_tools failed: {exc}", raw=str(exc)) from exc
+                raise BackendError(
+                    f"smlibpy list_tools failed: {exc}", raw=str(exc)
+                ) from exc
         return list(result.tools)
 
     async def run(
@@ -261,7 +278,12 @@ class SmlibpyClient:
         async with self._get_lock():
             text = await self._request(
                 "run_script",
-                {"session": session, "script": script, "label": label, "timeout_s": timeout},
+                {
+                    "session": session,
+                    "script": script,
+                    "label": label,
+                    "timeout_s": timeout,
+                },
                 wire_timeout,
             )
         ok = not text.lstrip().startswith(_FAILED_PREFIX)
@@ -274,9 +296,7 @@ class SmlibpyClient:
         server names the new session in its answer.
         """
         async with self._get_lock():
-            text = await self._request(
-                "clear", {"session": "new"}, CONTROL_TIMEOUT_S
-            )
+            text = await self._request("clear", {"session": "new"}, CONTROL_TIMEOUT_S)
         session_id = parse_session_id(text)
         if not session_id:
             raise BackendError(
@@ -312,20 +332,24 @@ class SmlibpyClient:
             )
         return self._session
 
-    async def _request(self, tool: str, arguments: dict[str, Any], timeout_s: float) -> str:
+    async def _request(
+        self, tool: str, arguments: dict[str, Any], timeout_s: float
+    ) -> str:
         session = self._require_session(tool)
         try:
             result = await asyncio.wait_for(
                 session.call_tool(tool, arguments), timeout=timeout_s
             )
-        except asyncio.TimeoutError as exc:
+        except TimeoutError as exc:
             raise BackendTimeout(
                 f"smlibpy tool {tool!r} did not answer within {timeout_s:.0f} s"
             ) from exc
         except BackendError:
             raise
         except Exception as exc:  # transport or protocol failure
-            raise BackendError(f"smlibpy tool {tool!r} failed: {exc}", raw=str(exc)) from exc
+            raise BackendError(
+                f"smlibpy tool {tool!r} failed: {exc}", raw=str(exc)
+            ) from exc
         text = _text_of(result)
         if getattr(result, "is_error", False) or getattr(result, "isError", False):
             raise BackendError(text or f"smlibpy tool {tool!r} failed", raw=text)
@@ -366,7 +390,9 @@ class SyncSmlibpyClient:
         try:
             future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         except RuntimeError as exc:  # loop already stopped
-            raise BackendError(f"smlibpy client loop is not running: {exc}", raw=str(exc)) from exc
+            raise BackendError(
+                f"smlibpy client loop is not running: {exc}", raw=str(exc)
+            ) from exc
         try:
             return future.result(timeout)
         except concurrent.futures.TimeoutError as exc:
@@ -381,7 +407,7 @@ class SyncSmlibpyClient:
     def started(self) -> bool:
         return self._started
 
-    def start(self) -> "SyncSmlibpyClient":
+    def start(self) -> SyncSmlibpyClient:
         if self._closed:
             raise BackendError("smlibpy client is closed", code="SCRIPT_FAILED")
         if not self._started:
@@ -411,7 +437,7 @@ class SyncSmlibpyClient:
                 except Exception:
                     pass
 
-    def __enter__(self) -> "SyncSmlibpyClient":
+    def __enter__(self) -> SyncSmlibpyClient:
         return self.start()
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -445,7 +471,9 @@ class SyncSmlibpyClient:
 
     def checkpoint(self, session: str, label: str | None = None) -> str:
         self.start()
-        return self._submit(self._inner.checkpoint(session, label), CONTROL_TIMEOUT_S * 4)
+        return self._submit(
+            self._inner.checkpoint(session, label), CONTROL_TIMEOUT_S * 4
+        )
 
     def restore(self, session: str, label: str | None = None) -> str:
         self.start()

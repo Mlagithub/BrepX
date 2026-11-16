@@ -13,16 +13,20 @@ import os
 import shutil
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import smlibpy as K
 
 from cadwork.design.kernel_inventory import inventory
 
-GEN_KEYS = tuple(f"{record['owner']}.{record['name']}"
-                 for record in inventory() if record["destination"] == "GEN")
+GEN_KEYS = tuple(
+    f"{record['owner']}.{record['name']}"
+    for record in inventory()
+    if record["destination"] == "GEN"
+)
 
 
 def _box() -> Any:
@@ -97,8 +101,11 @@ def _profile_xz() -> Any:
 
 
 def _ring() -> Any:
-    return (K.Cylinder(52, 40) - K.Cylinder(50, 50)
-            - K.Box(60, 60, 50, align=(K.Align.MIN, K.Align.MIN, K.Align.CENTER)))
+    return (
+        K.Cylinder(52, 40)
+        - K.Cylinder(50, 50)
+        - K.Box(60, 60, 50, align=(K.Align.MIN, K.Align.MIN, K.Align.CENTER))
+    )
 
 
 def _floor_wall() -> tuple[Any, Any]:
@@ -118,8 +125,12 @@ class Case:
 def _cases() -> dict[str, Case]:
     cases: dict[str, Case] = {}
 
-    def add(key: str, run: Callable[[], Any], expect_error: str | None = None,
-            note: str = "") -> None:
+    def add(
+        key: str,
+        run: Callable[[], Any],
+        expect_error: str | None = None,
+        note: str = "",
+    ) -> None:
         cases[key] = Case(key, run, expect_error, note)
 
     for name, run in {
@@ -174,7 +185,10 @@ def _cases() -> dict[str, Case]:
     add("smlibpy.draft", lambda: K.draft(_box(), _side(), 2, K.Plane.XY))
     add("smlibpy.extrude", lambda: K.extrude(_rect(), 5))
     add("smlibpy.extend", lambda: K.extend(_shell(), 5))
-    add("smlibpy.fill", lambda: K.fill(K.Polyline((0, 0), (20, 0), (20, 20), (0, 20), close=True)))
+    add(
+        "smlibpy.fill",
+        lambda: K.fill(K.Polyline((0, 0), (20, 0), (20, 20), (0, 20), close=True)),
+    )
     add("smlibpy.fillet", lambda: K.fillet(_box_edge(), 1))
     add("smlibpy.fit_curve", lambda: K.fit_curve([(0, 0), (5, 5), (10, 0)]))
     add("smlibpy.flange", lambda: K.flange(_thin(), _top_edge(_thin()), 20, radius=2))
@@ -183,31 +197,53 @@ def _cases() -> dict[str, Case]:
     add("smlibpy.imprint", lambda: K.imprint(_box(), _cyl()))
     add("smlibpy.intersect", lambda: K.intersect(_box(), _box2()))
     add("smlibpy.loft", lambda: K.loft([K.Circle(5), K.Circle(8).translate(0, 0, 10)]))
-    add("smlibpy.make_face", lambda: K.make_face(_face().outer_wire(),
-                                                 K.Circle(3).faces().one().outer_wire()))
-    add("smlibpy.match_edge", lambda: K.match_edge(*_split_faces()[:1],
-                                                   list(_split_faces()[0].edges())[0],
-                                                   list(_split_faces()[0].edges())[1]))
+    add(
+        "smlibpy.make_face",
+        lambda: K.make_face(
+            _face().outer_wire(), K.Circle(3).faces().one().outer_wire()
+        ),
+    )
+    add(
+        "smlibpy.match_edge",
+        lambda: K.match_edge(
+            *_split_faces()[:1],
+            list(_split_faces()[0].edges())[0],
+            list(_split_faces()[0].edges())[1],
+        ),
+    )
     add("smlibpy.merge", lambda: K.merge(_box(), K.Box(40, 40, 20).translate(60, 0, 0)))
     add("smlibpy.merge_faces", lambda: K.merge_faces(*_split_faces()))
     add("smlibpy.mirror", lambda: K.mirror(_box(), K.Plane.XY))
     add("smlibpy.move_faces", lambda: K.move_faces(_box(), _face(), (0, 0, 5)))
-    add("smlibpy.network", lambda: K.network(
-        [K.Line((0, y, 0), (20, y, 0)) for y in (0, 10, 20)],
-        [K.Line((x, 0, 0), (x, 20, 0)) for x in (0, 10, 20)]))
+    add(
+        "smlibpy.network",
+        lambda: K.network(
+            [K.Line((0, y, 0), (20, y, 0)) for y in (0, 10, 20)],
+            [K.Line((x, 0, 0), (x, 20, 0)) for x in (0, 10, 20)],
+        ),
+    )
     add("smlibpy.offset", lambda: K.offset(_box(), 2))
     add("smlibpy.offset_faces", lambda: K.offset_faces(_box(), _face(), 2))
     add("smlibpy.remove_faces", lambda: K.remove_faces(_box(), _face(), partial=True))
     add("smlibpy.remove_fillets", lambda: K.remove_fillets(_box()))
     add("smlibpy.revolve", lambda: K.revolve(_profile_xz(), K.Z))
-    add("smlibpy.ruled", lambda: K.ruled(K.Line((0, 0, 0), (20, 0, 0)),
-                                         K.Line((0, 10, 10), (20, 10, 10))))
+    add(
+        "smlibpy.ruled",
+        lambda: K.ruled(
+            K.Line((0, 0, 0), (20, 0, 0)), K.Line((0, 10, 10), (20, 10, 10))
+        ),
+    )
     add("smlibpy.scale", lambda: K.scale(_box(), 2))
     add("smlibpy.section", lambda: K.section(_box(), K.Plane.XY))
     add("smlibpy.shell", lambda: K.shell(_box(), 2))
     add("smlibpy.split", lambda: K.split(_box(), K.Plane.XY))
-    add("smlibpy.stitch", lambda: K.stitch(K.Box(20, 20, 2).faces().top().one().to_shell(),
-                                          K.Box(20, 20, 2).faces().right().one().to_shell()))
+    add(
+        "smlibpy.stitch",
+        lambda: K.stitch(
+            K.Box(20, 20, 2).faces().top().one().to_shell(),
+            K.Box(20, 20, 2).faces().right().one().to_shell(),
+        ),
+    )
     add("smlibpy.surface_fillet", lambda: K.surface_fillet(*_floor_wall(), 2))
     add("smlibpy.sweep", lambda: K.sweep(_rect(), K.Line((-20, 0, 0), (20, 0, 0))))
     add("smlibpy.swing", lambda: K.swing(_profile_xz(), K.Ellipse(30, 20)))
@@ -261,8 +297,12 @@ def _cases() -> dict[str, Case]:
     add("Sketch.fuse", lambda: _rect().fuse(_rect2()))
     add("Sketch.heal", lambda: _rect().heal())
     add("Sketch.intersect", lambda: _rect().intersect(_rect2()))
-    add("Sketch.match_edge", lambda: _rect().match_edge(list(_rect().edges())[0],
-                                                        K.Line((-15, 0, 0), (15, 0, 0))))
+    add(
+        "Sketch.match_edge",
+        lambda: _rect().match_edge(
+            list(_rect().edges())[0], K.Line((-15, 0, 0), (15, 0, 0))
+        ),
+    )
     add("Sketch.merge_faces", lambda: K.Sketch.merge_faces(*_split_faces()))
     add("Sketch.mirror", lambda: _rect().mirror(K.Plane.XZ))
     add("Sketch.offset", lambda: _rect().offset(2))
@@ -309,8 +349,12 @@ def _metrics(value: Any) -> dict[str, Any]:
         if hasattr(value, name):
             metrics[name] = float(getattr(value, name))
             break
-    for name, method in (("faces", "faces"), ("edges", "edges"),
-                         ("solids", "solids"), ("vertices", "vertices")):
+    for name, method in (
+        ("faces", "faces"),
+        ("edges", "edges"),
+        ("solids", "solids"),
+        ("vertices", "vertices"),
+    ):
         accessor = getattr(value, method, None)
         if callable(accessor):
             try:
@@ -345,8 +389,9 @@ def _artifact(value: Any, path: Path) -> str | None:
     return str(path) if path.is_file() else None
 
 
-def run_case(key: str, evidence_dir: str | os.PathLike[str],
-             run_id: str = "") -> dict[str, Any]:
+def run_case(
+    key: str, evidence_dir: str | os.PathLike[str], run_id: str = ""
+) -> dict[str, Any]:
     case = CASES[key]
     folder = Path(evidence_dir) / (run_id or "manual")
     folder.mkdir(parents=True, exist_ok=True)
@@ -356,7 +401,10 @@ def run_case(key: str, evidence_dir: str | os.PathLike[str],
     try:
         value = case.run()
         if case.expect_error:
-            result.update(status="failed", error=f"expected error containing {case.expect_error!r}")
+            result.update(
+                status="failed",
+                error=f"expected error containing {case.expect_error!r}",
+            )
         else:
             result.update(status="passed", metrics=_metrics(value))
             artifact = _artifact(value, folder / f"{stem}.step")
@@ -369,13 +417,15 @@ def run_case(key: str, evidence_dir: str | os.PathLike[str],
         else:
             result.update(status="failed", error=message)
     result["seconds"] = round(time.perf_counter() - started, 4)
-    (folder / f"{stem}.json").write_text(json.dumps(result, indent=2, ensure_ascii=False),
-                                         encoding="utf-8")
+    (folder / f"{stem}.json").write_text(
+        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return result
 
 
-def run_all(evidence_dir: str | os.PathLike[str],
-            run_id: str | None = None) -> dict[str, Any]:
+def run_all(
+    evidence_dir: str | os.PathLike[str], run_id: str | None = None
+) -> dict[str, Any]:
     run_id = run_id or f"run-{uuid.uuid4().hex[:8]}"
     started = time.perf_counter()
     results = [run_case(key, evidence_dir, run_id) for key in GEN_KEYS]
@@ -388,8 +438,9 @@ def run_all(evidence_dir: str | os.PathLike[str],
         "evidence_dir": str(Path(evidence_dir) / run_id),
     }
     folder = Path(evidence_dir) / run_id
-    (folder / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
-                                         encoding="utf-8")
+    (folder / "summary.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return summary
 
 
@@ -427,8 +478,15 @@ def _render_best(shape: Any, png: Path) -> str:
     best = None
     for view in ("iso", "top", "front", "right"):
         candidate = png.with_name(f"{png.stem}.{view}.png")
-        K.render(shape, path=str(candidate), view=view, size=(640, 480),
-                 zoom=1.15, edges=True, background="white")
+        K.render(
+            shape,
+            path=str(candidate),
+            view=view,
+            size=(640, 480),
+            zoom=1.15,
+            edges=True,
+            background="white",
+        )
         bbox_w, bbox_h, total, width, height = _nonwhite_bbox(candidate)
         score = total
         if best is None or score > best[0]:
@@ -444,8 +502,9 @@ def _render_best(shape: Any, png: Path) -> str:
     return view
 
 
-def render_case(key: str, evidence_dir: str | os.PathLike[str],
-                run_id: str = "") -> dict[str, Any]:
+def render_case(
+    key: str, evidence_dir: str | os.PathLike[str], run_id: str = ""
+) -> dict[str, Any]:
     """Run one GEN case again and keep a rendered PNG of its result."""
     from PIL import Image
 
@@ -464,21 +523,30 @@ def render_case(key: str, evidence_dir: str | os.PathLike[str],
         view = _render_best(shape, png)
         image = Image.open(png).convert("RGB")
         pixels = list(image.getdata())
-        nonwhite = sum(1 for red, green, blue in pixels
-                       if red < 248 or green < 248 or blue < 248)
-        result.update(status="passed", view=view, width=image.width, height=image.height,
-                      nonwhite=nonwhite, ratio=round(nonwhite / max(1, len(pixels)), 5))
+        nonwhite = sum(
+            1 for red, green, blue in pixels if red < 248 or green < 248 or blue < 248
+        )
+        result.update(
+            status="passed",
+            view=view,
+            width=image.width,
+            height=image.height,
+            nonwhite=nonwhite,
+            ratio=round(nonwhite / max(1, len(pixels)), 5),
+        )
         if nonwhite < 64:
             result.update(status="failed", error="the render is blank")
     except Exception as exc:
         result.update(status="failed", error=f"{type(exc).__name__}: {exc}")
     (folder / f"{stem}.render.json").write_text(
-        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return result
 
 
-def render_all(evidence_dir: str | os.PathLike[str],
-               run_id: str | None = None) -> dict[str, Any]:
+def render_all(
+    evidence_dir: str | os.PathLike[str], run_id: str | None = None
+) -> dict[str, Any]:
     run_id = run_id or f"render-{uuid.uuid4().hex[:8]}"
     started = time.perf_counter()
     results = [render_case(key, evidence_dir, run_id) for key in GEN_KEYS]
@@ -491,7 +559,7 @@ def render_all(evidence_dir: str | os.PathLike[str],
         "render_dir": str(Path(evidence_dir) / run_id / "render"),
     }
     folder = Path(evidence_dir) / run_id
-    (folder / "renders.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False),
-                                         encoding="utf-8")
+    (folder / "renders.json").write_text(
+        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     return summary
-

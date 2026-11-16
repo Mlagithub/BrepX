@@ -38,7 +38,7 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     report: dict[str, Any] = {"folder": folder, "steps": steps, "ok": False}
 
     # A complete impeller must compile, pass every check and export STEP and CFD bytes.
-    applied = service.apply(document.id, document.version, _add_ops())
+    service.apply(document.id, document.version, _add_ops())
     document = service.read(document.id)
     step_bytes, _ = service.export(document.id, "step")
     cfd_bytes, _ = service.export(document.id, "cfd")
@@ -52,24 +52,33 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     assert len(step_bytes) > 1000 and b"boundaries" in cfd_bytes
 
     # Changing the pattern count must still resolve the cavity boundaries by name.
-    preview = service.preview(document.id, [
-        {"op": "update", "id": "b_pattern", "params": {"count": 11}},
-    ])
+    preview = service.preview(
+        document.id,
+        [
+            {"op": "update", "id": "b_pattern", "params": {"count": 11}},
+        ],
+    )
     assert "b_pattern" in preview["diff"]["changed"]
-    service.apply(document.id, document.version, [
-        {"op": "update", "id": "b_pattern", "params": {"count": 11}},
-    ])
+    service.apply(
+        document.id,
+        document.version,
+        [
+            {"op": "update", "id": "b_pattern", "params": {"count": 11}},
+        ],
+    )
     document = service.read(document.id)
     tags = service.checks(document.id)["tags"]
-    steps.append(
-        f"2 count=11 at v{document.version}, boundaries={sorted(tags)}"
-    )
+    steps.append(f"2 count=11 at v{document.version}, boundaries={sorted(tags)}")
     assert sorted(tags) == ["t_in", "t_out", "t_wall"]
 
     # Back to nine blades proves the fillet edge is found by geometric query, not by a remembered index.
-    service.apply(document.id, document.version, [
-        {"op": "update", "id": "b_pattern", "params": {"count": 9}},
-    ])
+    service.apply(
+        document.id,
+        document.version,
+        [
+            {"op": "update", "id": "b_pattern", "params": {"count": 9}},
+        ],
+    )
     document = service.read(document.id)
     steps.append(f"3 count back to 9 at v{document.version}")
 
@@ -77,16 +86,24 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     version = document.version
     failure: ServiceError | None = None
     try:
-        service.apply(document.id, version, [
-            {"op": "update", "id": "b_fillet", "params": {"radius": 3.0}},
-        ])
+        service.apply(
+            document.id,
+            version,
+            [
+                {"op": "update", "id": "b_fillet", "params": {"radius": 3.0}},
+            ],
+        )
     except ServiceError as exc:
         failure = exc
     assert failure is not None and failure.status == 422
     assert service.read(document.id).version == version
-    service.apply(document.id, version, [
-        {"op": "update", "id": "b_fillet", "params": {"radius": 0.3}},
-    ])
+    service.apply(
+        document.id,
+        version,
+        [
+            {"op": "update", "id": "b_fillet", "params": {"radius": 0.3}},
+        ],
+    )
     document = service.read(document.id)
     steps.append(
         f"4 fillet 3mm -> {failure.code} on {failure.detail.get('feature_id')}, "
@@ -98,9 +115,13 @@ def run_acceptance(folder: str | None = None) -> dict[str, Any]:
     restarted = CADService(Store(folder))
     scene = restarted.scene(document.id)
     assert scene["faces"] and scene["edges"]
-    restarted.apply(document.id, restarted.read(document.id).version, [
-        {"op": "update", "id": "b_pattern", "params": {"count": 10}},
-    ])
+    restarted.apply(
+        document.id,
+        restarted.read(document.id).version,
+        [
+            {"op": "update", "id": "b_pattern", "params": {"count": 10}},
+        ],
+    )
     exported, _ = restarted.export(document.id, "step")
     edited_version = restarted.read(document.id).version
     undone = restarted.undo(document.id)

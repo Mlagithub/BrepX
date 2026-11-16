@@ -14,14 +14,24 @@ session's live variables by name.
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from cadwork.design.script_emit import METRICS_PREFIX, emit_node
-from cadwork.service.smlibpy_client import DEFAULT_TIMEOUT_S, RunResult, SyncSmlibpyClient
+from cadwork.service.smlibpy_client import (
+    DEFAULT_TIMEOUT_S,
+    RunResult,
+    SyncSmlibpyClient,
+)
 
 from .base import BackendError, BackendTimeout, NodeResult
 
-_TIMEOUT_MARKERS = ("did not finish within", "the script was stopped", "timed out", "timeout")
+_TIMEOUT_MARKERS = (
+    "did not finish within",
+    "the script was stopped",
+    "timed out",
+    "timeout",
+)
 
 
 def _looks_like_timeout(text: str) -> bool:
@@ -36,7 +46,7 @@ def parse_metrics(text: str) -> dict[str, Any] | None:
     index = text.find(METRICS_PREFIX)
     if index < 0:
         return None
-    payload = text[index + len(METRICS_PREFIX):].lstrip()
+    payload = text[index + len(METRICS_PREFIX) :].lstrip()
     try:
         value, _end = json.JSONDecoder().raw_decode(payload)
     except ValueError:
@@ -61,7 +71,7 @@ class ScriptBackend:
         self._committed: dict[str, set[str]] = {}
         self._closed = False
 
-    def start(self) -> "ScriptBackend":
+    def start(self) -> ScriptBackend:
         self._start_client()
         return self
 
@@ -82,7 +92,7 @@ class ScriptBackend:
         if callable(closer):
             closer()
 
-    def __enter__(self) -> "ScriptBackend":
+    def __enter__(self) -> ScriptBackend:
         return self.start()
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -124,11 +134,11 @@ class ScriptBackend:
         except BackendTimeout:
             self._sessions.pop(document_id, None)
             raise
-        except BackendError as exc:
+        except BackendError:
             # The session may be gone (server restart); the next call recovers
             # by opening a fresh one.
             self._sessions.pop(document_id, None)
-            raise exc
+            raise
 
         if not isinstance(result, RunResult):
             raise BackendError(

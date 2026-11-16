@@ -14,8 +14,9 @@ from cadwork.service.store import Store
 
 
 class _SlowService:
-    def plan_run(self, document_id, node_id, base_version=None, executor=None,
-                 cancel_event=None):
+    def plan_run(
+        self, document_id, node_id, base_version=None, executor=None, cancel_event=None
+    ):
         time.sleep(0.15)
         if cancel_event is not None and cancel_event.is_set():
             raise ServiceError("CANCELLED", "cancelled", status=409)
@@ -52,21 +53,43 @@ class FailedNodeTests(unittest.TestCase):
             service = CADService(Store(folder))
             document = service.store.create("failed node")
             nodes = [
-                PlanNode("box", "feature", "box", "k_box",
-                         {"length": 40.0, "width": 40.0, "height": 20.0}),
-                PlanNode("fillet", "feature", "bad fillet", "k_fillet",
-                         {"radius": 100.0},
-                         {"target": Ref("box", "self"),
-                          "edges": Ref("box", "edges",
-                                       (Filter("nearest", args=([0.0, 0.0, 10.0],)),))},
-                         ("box",)),
-                PlanNode("check", "check", "final", "", deps=("fillet",),
-                         expect=(Expect("solids", "eq", 1),)),
+                PlanNode(
+                    "box",
+                    "feature",
+                    "box",
+                    "k_box",
+                    {"length": 40.0, "width": 40.0, "height": 20.0},
+                ),
+                PlanNode(
+                    "fillet",
+                    "feature",
+                    "bad fillet",
+                    "k_fillet",
+                    {"radius": 100.0},
+                    {
+                        "target": Ref("box", "self"),
+                        "edges": Ref(
+                            "box",
+                            "edges",
+                            (Filter("nearest", args=([0.0, 0.0, 10.0],)),),
+                        ),
+                    },
+                    ("box",),
+                ),
+                PlanNode(
+                    "check",
+                    "check",
+                    "final",
+                    "",
+                    deps=("fillet",),
+                    expect=(Expect("solids", "eq", 1),),
+                ),
             ]
-            service.plan_edit(document.id,
-                              [{"op": "add_node", "node": plan_node_to_json(node)}
-                               for node in nodes],
-                              goal="failure")
+            service.plan_edit(
+                document.id,
+                [{"op": "add_node", "node": plan_node_to_json(node)} for node in nodes],
+                goal="failure",
+            )
             service.plan_run(document.id, "box")
             with self.assertRaises(ServiceError):
                 service.plan_run(document.id, "fillet")

@@ -13,7 +13,12 @@ from dataclasses import replace
 
 from cadwork.design import BuildError, build
 from cadwork.design.document import Document, Feature, Filter, Ref
-from cadwork.design.features import FEATURES, INPUT_KINDS, InputRole, register_input_kind
+from cadwork.design.features import (
+    FEATURES,
+    INPUT_KINDS,
+    InputRole,
+    register_input_kind,
+)
 
 
 def _build(*features: Feature):
@@ -34,10 +39,12 @@ class PrimitiveTests(unittest.TestCase):
     def test_each_primitive_builds_a_closed_solid(self) -> None:
         cases = (
             ("k_box", {"length": 20.0, "width": 20.0, "height": 20.0}, 8000.0),
-            ("k_cylinder", {"radius": 5.0, "height": 20.0},
-             math.pi * 25 * 20),
-            ("k_cone", {"bottom_radius": 5.0, "top_radius": 0.0, "height": 20.0},
-             math.pi * 25 * 20 / 3.0),
+            ("k_cylinder", {"radius": 5.0, "height": 20.0}, math.pi * 25 * 20),
+            (
+                "k_cone",
+                {"bottom_radius": 5.0, "top_radius": 0.0, "height": 20.0},
+                math.pi * 25 * 20 / 3.0,
+            ),
             ("k_sphere", {"radius": 5.0}, 4.0 / 3.0 * math.pi * 125),
         )
         for type_name, params, expected in cases:
@@ -45,16 +52,21 @@ class PrimitiveTests(unittest.TestCase):
             final = result.final
             self.assertTrue(final.is_valid(), type_name)
             self.assertTrue(final.mesh().is_closed(), type_name)
-            self.assertAlmostEqual(float(final.volume), expected, delta=expected * 0.01,
-                                   msg=type_name)
+            self.assertAlmostEqual(
+                float(final.volume), expected, delta=expected * 0.01, msg=type_name
+            )
             self.assertGreaterEqual(len(final.faces()), 1, type_name)
 
     def test_placement_moves_the_body(self) -> None:
         near = _build(_box()).final.bbox()
         far = _build(
             _box(),
-            Feature("x2", "k_translate", params={"x": 100.0},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "k_translate",
+                params={"x": 100.0},
+                refs={"target": Ref("x1", "self")},
+            ),
         ).final.bbox()
         self.assertAlmostEqual(float(far.max[0] - near.max[0]), 100.0, places=3)
 
@@ -63,8 +75,12 @@ class ProfileAndFormTests(unittest.TestCase):
     def test_circle_extrudes_to_a_solid(self) -> None:
         result = _build(
             Feature("x1", "k_circle", params={"radius": 10.0}),
-            Feature("x2", "k_extrude", params={"amount": 12.0},
-                    refs={"profile": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "k_extrude",
+                params={"amount": 12.0},
+                refs={"profile": Ref("x1", "self")},
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
@@ -76,28 +92,50 @@ class ProfileAndFormTests(unittest.TestCase):
         # A 4×10 rectangle at y=20..30, revolved about X: a tube of radii
         # 20..30, 4 mm long. The profile must sit beside the axis, not across it.
         result = _build(
-            Feature("x1", "k_polygon",
-                    params={"points": [[0.0, 20.0], [4.0, 20.0],
-                                       [4.0, 30.0], [0.0, 30.0]]}),
-            Feature("x2", "k_revolve", params={"axis": "X", "angle": 360.0},
-                    refs={"profile": Ref("x1", "self")}),
+            Feature(
+                "x1",
+                "k_polygon",
+                params={"points": [[0.0, 20.0], [4.0, 20.0], [4.0, 30.0], [0.0, 30.0]]},
+            ),
+            Feature(
+                "x2",
+                "k_revolve",
+                params={"axis": "X", "angle": 360.0},
+                refs={"profile": Ref("x1", "self")},
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
-        expected = math.pi * (30 ** 2 - 20 ** 2) * 4
+        expected = math.pi * (30**2 - 20**2) * 4
         self.assertAlmostEqual(float(final.volume), expected, delta=expected * 0.01)
         self.assertEqual(len(final.faces()), 4)
 
     def test_spiral_sweep_with_scale_grows_the_section(self) -> None:
         result = _build(
-            Feature("spiral", "k_spiral",
-                    params={"start_radius": 20.0, "end_radius": 40.0, "turns": 0.5,
-                            "plane": "XY", "clockwise": False}),
+            Feature(
+                "spiral",
+                "k_spiral",
+                params={
+                    "start_radius": 20.0,
+                    "end_radius": 40.0,
+                    "turns": 0.5,
+                    "plane": "XY",
+                    "clockwise": False,
+                },
+            ),
             Feature("section", "k_rectangle", params={"width": 4.0, "height": 6.0}),
-            Feature("sweep", "k_sweep",
-                    params={"scale_start": 0.5, "scale_end": 1.0,
-                            "orient": True, "translational": False, "twist": 0.0},
-                    refs={"profile": Ref("section", "self"), "path": Ref("spiral", "self")}),
+            Feature(
+                "sweep",
+                "k_sweep",
+                params={
+                    "scale_start": 0.5,
+                    "scale_end": 1.0,
+                    "orient": True,
+                    "translational": False,
+                    "twist": 0.0,
+                },
+                refs={"profile": Ref("section", "self"), "path": Ref("spiral", "self")},
+            ),
         )
         final = result.final
         self.assertTrue(final.is_valid())
@@ -110,15 +148,27 @@ class ProfileAndFormTests(unittest.TestCase):
 
 class PlacementTests(unittest.TestCase):
     def test_rotate_then_translate(self) -> None:
-        base = _build(Feature("x1", "k_box",
-                              params={"length": 40.0, "width": 10.0, "height": 10.0})).final
+        base = _build(
+            Feature(
+                "x1", "k_box", params={"length": 40.0, "width": 10.0, "height": 10.0}
+            )
+        ).final
         moved = _build(
-            Feature("x1", "k_box",
-                    params={"length": 40.0, "width": 10.0, "height": 10.0}),
-            Feature("x2", "k_rotate", params={"axis": "Z", "angle": 90.0},
-                    refs={"target": Ref("x1", "self")}),
-            Feature("x3", "k_translate", params={"x": 100.0},
-                    refs={"target": Ref("x2", "self")}),
+            Feature(
+                "x1", "k_box", params={"length": 40.0, "width": 10.0, "height": 10.0}
+            ),
+            Feature(
+                "x2",
+                "k_rotate",
+                params={"axis": "Z", "angle": 90.0},
+                refs={"target": Ref("x1", "self")},
+            ),
+            Feature(
+                "x3",
+                "k_translate",
+                params={"x": 100.0},
+                refs={"target": Ref("x2", "self")},
+            ),
         ).final
         self.assertAlmostEqual(float(moved.volume), float(base.volume), delta=1.0)
         self.assertAlmostEqual(float(moved.bbox().max[0]), 105.0, delta=0.5)
@@ -126,8 +176,12 @@ class PlacementTests(unittest.TestCase):
     def test_linear_pattern_repeats_the_body(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "pattern", params={"kind": "linear", "count": 4, "dx": 30.0},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "pattern",
+                params={"kind": "linear", "count": 4, "dx": 30.0},
+                refs={"target": Ref("x1", "self")},
+            ),
         )
         final = result.final
         self.assertEqual(len(final.solids()), 4)
@@ -136,10 +190,18 @@ class PlacementTests(unittest.TestCase):
     def test_mirror_preserves_volume_and_flips_the_body(self) -> None:
         result = _build(
             _box(),
-            Feature("x1t", "k_translate", params={"x": 40.0},
-                    refs={"target": Ref("x1", "self")}),
-            Feature("x2", "k_mirror", params={"plane": "YZ"},
-                    refs={"target": Ref("x1t", "self")}),
+            Feature(
+                "x1t",
+                "k_translate",
+                params={"x": 40.0},
+                refs={"target": Ref("x1", "self")},
+            ),
+            Feature(
+                "x2",
+                "k_mirror",
+                params={"plane": "YZ"},
+                refs={"target": Ref("x1t", "self")},
+            ),
         )
         self.assertAlmostEqual(float(result.final.volume), 8000.0, delta=1.0)
         self.assertLess(float(result.final.bbox().min[0]), 0.0)
@@ -148,8 +210,9 @@ class PlacementTests(unittest.TestCase):
         result = _build(
             _box(),
             Feature("x2", "k_rectangle", params={"width": 4.0, "height": 4.0}),
-            Feature("x3", "place_on", refs={"shape": Ref("x2", "self"),
-                                            "face": _top_face()}),
+            Feature(
+                "x3", "place_on", refs={"shape": Ref("x2", "self"), "face": _top_face()}
+            ),
         )
         sketch = result.outputs["x3"]
         self.assertAlmostEqual(float(sketch.bbox().min[2]), 10.0, places=3)
@@ -160,8 +223,12 @@ class PlacementTests(unittest.TestCase):
     def test_place_on_a_plane_with_an_offset(self) -> None:
         result = _build(
             Feature("x1", "k_rectangle", params={"width": 4.0, "height": 4.0}),
-            Feature("x2", "place_on", params={"plane": "XY", "offset": 5.0},
-                    refs={"shape": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "place_on",
+                params={"plane": "XY", "offset": 5.0},
+                refs={"shape": Ref("x1", "self")},
+            ),
         )
         sketch = result.outputs["x2"]
         self.assertAlmostEqual(float(sketch.bbox().min[2]), 5.0, places=3)
@@ -172,47 +239,79 @@ class SolidEditTests(unittest.TestCase):
     def test_offset_grows_the_body(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_offset", params={"distance": 2.0},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "k_offset",
+                params={"distance": 2.0},
+                refs={"target": Ref("x1", "self")},
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
-        self.assertAlmostEqual(float(final.volume), 24 ** 3, delta=5.0)
+        self.assertAlmostEqual(float(final.volume), 24**3, delta=5.0)
 
     def test_split_keeps_one_side(self) -> None:
         result = _build(
-            Feature("x1", "k_box", params={"length": 40.0, "width": 20.0, "height": 10.0}),
-            Feature("x2", "k_split", params={"plane": "XY", "keep": "above"},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x1", "k_box", params={"length": 40.0, "width": 20.0, "height": 10.0}
+            ),
+            Feature(
+                "x2",
+                "k_split",
+                params={"plane": "XY", "keep": "above"},
+                refs={"target": Ref("x1", "self")},
+            ),
         )
         self.assertAlmostEqual(float(result.final.volume), 4000.0, delta=20.0)
 
     def test_scale_cubes_the_volume(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_scale", params={"factor": 1.5},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "k_scale",
+                params={"factor": 1.5},
+                refs={"target": Ref("x1", "self")},
+            ),
         )
         self.assertAlmostEqual(float(result.final.volume), 27000.0, delta=100.0)
 
     def test_grid_pattern_counts_solids(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "pattern",
-                    params={"kind": "grid", "x_count": 2, "y_count": 3,
-                            "x_spacing": 30.0, "y_spacing": 30.0},
-                    refs={"target": Ref("x1", "self")}),
+            Feature(
+                "x2",
+                "pattern",
+                params={
+                    "kind": "grid",
+                    "x_count": 2,
+                    "y_count": 3,
+                    "x_spacing": 30.0,
+                    "y_spacing": 30.0,
+                },
+                refs={"target": Ref("x1", "self")},
+            ),
         )
         self.assertEqual(len(result.final.solids()), 6)
 
     def test_thicken_turns_a_face_into_a_solid(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_face_to_shell",
-                    refs={"target": Ref("x1", "faces",
-                                        (Filter("nearest", args=([0.0, 0.0, 10.0],)),))}),
-            Feature("x3", "k_thicken", params={"thickness": 3.0},
-                    refs={"surface": Ref("x2", "self")}),
+            Feature(
+                "x2",
+                "k_face_to_shell",
+                refs={
+                    "target": Ref(
+                        "x1", "faces", (Filter("nearest", args=([0.0, 0.0, 10.0],)),)
+                    )
+                },
+            ),
+            Feature(
+                "x3",
+                "k_thicken",
+                params={"thickness": 3.0},
+                refs={"surface": Ref("x2", "self")},
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
@@ -223,8 +322,12 @@ class SolidEditTests(unittest.TestCase):
     def test_face_extrude_adds_material_from_the_face(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_face_extrude", params={"amount": 5.0},
-                    refs={"target": _top_face()}),
+            Feature(
+                "x2",
+                "k_face_extrude",
+                params={"amount": 5.0},
+                refs={"target": _top_face()},
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
@@ -236,11 +339,17 @@ class SolidEditTests(unittest.TestCase):
     def test_draft_tilts_a_named_side_face(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_draft",
-                    params={"angle": 10.0, "neutral_plane": "XY"},
-                    refs={"target": Ref("x1", "self"),
-                          "faces": Ref("x1", "faces",
-                                       (Filter("nearest", args=([10.0, 0.0, 0.0],)),))}),
+            Feature(
+                "x2",
+                "k_draft",
+                params={"angle": 10.0, "neutral_plane": "XY"},
+                refs={
+                    "target": Ref("x1", "self"),
+                    "faces": Ref(
+                        "x1", "faces", (Filter("nearest", args=([10.0, 0.0, 0.0],)),)
+                    ),
+                },
+            ),
         )
         final = result.final
         self.assertTrue(final.is_valid())
@@ -254,28 +363,56 @@ class SolidEditTests(unittest.TestCase):
 
 class OptionalInputTests(unittest.TestCase):
     def test_closed_shell_without_openings(self) -> None:
-        result = _build(_box(), Feature("x2", "k_shell", params={"thickness": 2.0},
-                                        refs={"target": Ref("x1", "self")}))
+        result = _build(
+            _box(),
+            Feature(
+                "x2",
+                "k_shell",
+                params={"thickness": 2.0},
+                refs={"target": Ref("x1", "self")},
+            ),
+        )
         self.assertTrue(result.final.mesh().is_closed())
         self.assertAlmostEqual(float(result.final.volume), 3904.0, delta=10.0)
 
     def test_openings_remove_the_named_face(self) -> None:
-        closed = _build(_box(), Feature("x2", "k_shell", params={"thickness": 2.0},
-                                        refs={"target": Ref("x1", "self")})).final
+        closed = _build(
+            _box(),
+            Feature(
+                "x2",
+                "k_shell",
+                params={"thickness": 2.0},
+                refs={"target": Ref("x1", "self")},
+            ),
+        ).final
         opened = _build(
             _box(),
-            Feature("x2", "k_shell", params={"thickness": 2.0},
-                    refs={"target": Ref("x1", "self"),
-                          "openings": Ref("x1", "faces",
-                                          (Filter("nearest", args=([0.0, 0.0, 10.0],)),))}),
+            Feature(
+                "x2",
+                "k_shell",
+                params={"thickness": 2.0},
+                refs={
+                    "target": Ref("x1", "self"),
+                    "openings": Ref(
+                        "x1", "faces", (Filter("nearest", args=([0.0, 0.0, 10.0],)),)
+                    ),
+                },
+            ),
         ).final
         self.assertLess(float(opened.volume), float(closed.volume))
         self.assertAlmostEqual(float(opened.volume), 3392.0, delta=10.0)
 
     def test_missing_required_role_still_fails(self) -> None:
         with self.assertRaises(BuildError) as caught:
-            _build(_box(), Feature("x2", "k_chamfer", params={"length": 1.0},
-                                   refs={"target": Ref("x1", "self")}))
+            _build(
+                _box(),
+                Feature(
+                    "x2",
+                    "k_chamfer",
+                    params={"length": 1.0},
+                    refs={"target": Ref("x1", "self")},
+                ),
+            )
         self.assertEqual(caught.exception.code, "INVALID_REFS")
 
 
@@ -291,34 +428,48 @@ class HoleTests(unittest.TestCase):
         result = _build(
             _box(),
             Feature("x2", "k_cylinder", params={"radius": 5.0, "height": 30.0}),
-            Feature("x3", "k_cut",
-                    refs={"target": Ref("x1", "self"),
-                          "others": (Ref("x2", "self"),)}),
+            Feature(
+                "x3",
+                "k_cut",
+                refs={"target": Ref("x1", "self"), "others": (Ref("x2", "self"),)},
+            ),
         )
         expected = 8000.0 - math.pi * 25 * 20
         self.assertTrue(result.final.mesh().is_closed())
-        self.assertAlmostEqual(float(result.final.volume), expected, delta=expected * 0.001)
+        self.assertAlmostEqual(
+            float(result.final.volume), expected, delta=expected * 0.001
+        )
         self.assertEqual(len(result.final.faces()), 7)
 
     def test_hole_primitive_can_be_cut_through(self) -> None:
         result = _build(
             _box(),
             Feature("x2", "k_hole", params={"radius": 5.0, "depth": 30.0}),
-            Feature("x3", "k_translate", params={"z": 10.0},
-                    refs={"target": Ref("x2", "self")}),
-            Feature("x4", "k_cut",
-                    refs={"target": Ref("x1", "self"),
-                          "others": (Ref("x3", "self"),)}),
+            Feature(
+                "x3",
+                "k_translate",
+                params={"z": 10.0},
+                refs={"target": Ref("x2", "self")},
+            ),
+            Feature(
+                "x4",
+                "k_cut",
+                refs={"target": Ref("x1", "self"), "others": (Ref("x3", "self"),)},
+            ),
         )
         expected = 8000.0 - math.pi * 25 * 20
-        self.assertAlmostEqual(float(result.final.volume), expected, delta=expected * 0.01)
+        self.assertAlmostEqual(
+            float(result.final.volume), expected, delta=expected * 0.01
+        )
 
 
 class InputKindTests(unittest.TestCase):
     def test_every_declared_kind_is_registered(self) -> None:
         for spec in FEATURES.values():
             for role in spec.inputs:
-                self.assertIn(role.kind, INPUT_KINDS, f"{spec.type}.{role.role} uses {role.kind}")
+                self.assertIn(
+                    role.kind, INPUT_KINDS, f"{spec.type}.{role.role} uses {role.kind}"
+                )
 
     def test_unknown_kind_fails_with_the_known_ones(self) -> None:
         original = FEATURES["k_chamfer"]
@@ -330,10 +481,17 @@ class InputKindTests(unittest.TestCase):
             with self.assertRaises(BuildError) as caught:
                 _build(
                     _box(),
-                    Feature("x2", "k_chamfer", params={"length": 1.0},
-                            refs={"target": Ref("x1", "self"),
-                                  "edges": Ref("x1", "edges",
-                                               (Filter("parallel_to", args=("Z",)),))}),
+                    Feature(
+                        "x2",
+                        "k_chamfer",
+                        params={"length": 1.0},
+                        refs={
+                            "target": Ref("x1", "self"),
+                            "edges": Ref(
+                                "x1", "edges", (Filter("parallel_to", args=("Z",)),)
+                            ),
+                        },
+                    ),
                 )
             self.assertEqual(caught.exception.code, "UNKNOWN_KIND")
             self.assertIn("known kinds", caught.exception.hint or "")
@@ -350,10 +508,17 @@ class InputKindTests(unittest.TestCase):
         try:
             result = _build(
                 _box(),
-                Feature("x2", "k_chamfer", params={"length": 2.0},
-                        refs={"target": Ref("x1", "self"),
-                              "edges": Ref("x1", "edges",
-                                           (Filter("parallel_to", args=("Z",)),))}),
+                Feature(
+                    "x2",
+                    "k_chamfer",
+                    params={"length": 2.0},
+                    refs={
+                        "target": Ref("x1", "self"),
+                        "edges": Ref(
+                            "x1", "edges", (Filter("parallel_to", args=("Z",)),)
+                        ),
+                    },
+                ),
             )
             self.assertLess(float(result.final.volume), 8000.0)
         finally:
@@ -364,11 +529,15 @@ class ModifyTests(unittest.TestCase):
     def test_chamfer_removes_material_from_named_edges(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_chamfer", params={"length": 2.0},
-                    refs={
-                        "target": Ref("x1", "self"),
-                        "edges": Ref("x1", "edges", (Filter("parallel_to", args=("Z",)),)),
-                    }),
+            Feature(
+                "x2",
+                "k_chamfer",
+                params={"length": 2.0},
+                refs={
+                    "target": Ref("x1", "self"),
+                    "edges": Ref("x1", "edges", (Filter("parallel_to", args=("Z",)),)),
+                },
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())
@@ -378,11 +547,15 @@ class ModifyTests(unittest.TestCase):
     def test_fillet_rounds_named_edges(self) -> None:
         result = _build(
             _box(),
-            Feature("x2", "k_fillet", params={"radius": 2.0},
-                    refs={
-                        "target": Ref("x1", "self"),
-                        "edges": Ref("x1", "edges", (Filter("parallel_to", args=("Z",)),)),
-                    }),
+            Feature(
+                "x2",
+                "k_fillet",
+                params={"radius": 2.0},
+                refs={
+                    "target": Ref("x1", "self"),
+                    "edges": Ref("x1", "edges", (Filter("parallel_to", args=("Z",)),)),
+                },
+            ),
         )
         final = result.final
         self.assertTrue(final.mesh().is_closed())

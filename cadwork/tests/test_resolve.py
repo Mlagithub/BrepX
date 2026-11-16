@@ -9,28 +9,57 @@ from cadwork.service.resolve import resolve, resolve_gate, summarize
 
 
 def plate() -> Document:
-    return Document(id="p", name="板", features=(
-        Feature("h1", "solid_box",
-                params={"length": 80, "width": 60, "height": 14}),
-        Feature("h2", "hole",
-                params={"x": -22, "y": 0, "diameter": 10, "depth": 0,
-                        "kind": "counterbore", "cb_diameter": 18, "cb_depth": 6},
-                refs={"target": Ref("h1", "self")}),
-        Feature("h3", "hole",
-                params={"x": 22, "y": 0, "diameter": 10, "depth": 0,
-                        "kind": "countersink", "cs_diameter": 20, "cs_depth": 5},
-                refs={"target": Ref("h2", "self")}),
-    ))
+    return Document(
+        id="p",
+        name="板",
+        features=(
+            Feature(
+                "h1", "solid_box", params={"length": 80, "width": 60, "height": 14}
+            ),
+            Feature(
+                "h2",
+                "hole",
+                params={
+                    "x": -22,
+                    "y": 0,
+                    "diameter": 10,
+                    "depth": 0,
+                    "kind": "counterbore",
+                    "cb_diameter": 18,
+                    "cb_depth": 6,
+                },
+                refs={"target": Ref("h1", "self")},
+            ),
+            Feature(
+                "h3",
+                "hole",
+                params={
+                    "x": 22,
+                    "y": 0,
+                    "diameter": 10,
+                    "depth": 0,
+                    "kind": "countersink",
+                    "cs_diameter": 20,
+                    "cs_depth": 5,
+                },
+                refs={"target": Ref("h2", "self")},
+            ),
+        ),
+    )
 
 
 def kernel_cover() -> Document:
-    return Document(id="k", name="盖", features=(
-        Feature("disc", "k_cylinder", params={"radius": 60, "height": 12}),
-        Feature("rib_pattern", "pattern", params={"count": 4}),
-        Feature("hole_pattern", "pattern", params={"count": 6}),
-        Feature("root", "blend_group", params={"radius": 2}),
-        Feature("outer_c2", "blend_group", params={"radius": 1}),
-    ))
+    return Document(
+        id="k",
+        name="盖",
+        features=(
+            Feature("disc", "k_cylinder", params={"radius": 60, "height": 12}),
+            Feature("rib_pattern", "pattern", params={"count": 4}),
+            Feature("hole_pattern", "pattern", params={"count": 6}),
+            Feature("root", "blend_group", params={"radius": 2}),
+            Feature("outer_c2", "blend_group", params={"radius": 1}),
+        ),
+    )
 
 
 class DescribeTests(unittest.TestCase):
@@ -125,8 +154,9 @@ class KernelResolveTests(unittest.TestCase):
     def test_blend_group_is_ambiguous(self) -> None:
         payload = resolve(kernel_cover(), "这个圆角小一点")
         self.assertFalse(payload["confident"])
-        self.assertEqual({item["id"] for item in payload["matches"]},
-                         {"root", "outer_c2"})
+        self.assertEqual(
+            {item["id"] for item in payload["matches"]}, {"root", "outer_c2"}
+        )
 
 
 class ReferenceGateTests(unittest.TestCase):

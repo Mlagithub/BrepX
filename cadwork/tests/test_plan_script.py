@@ -28,14 +28,28 @@ class PlanScriptBackendTests(unittest.TestCase):
         from cadwork.design.plan import plan_node_to_json
 
         nodes = [
-            PlanNode("plate", "feature", "plate", "k_box",
-                     params={"length": 20.0, "width": 20.0, "height": 20.0}),
-            PlanNode("bore", "feature", "bore", "k_cylinder",
-                     params={"radius": 4.0, "height": 40.0}),
-            PlanNode("cut", "feature", "cut the bore", "k_cut",
-                     refs={"target": Ref("plate", "self"),
-                           "others": (Ref("bore", "self"),)},
-                     deps=("plate", "bore")),
+            PlanNode(
+                "plate",
+                "feature",
+                "plate",
+                "k_box",
+                params={"length": 20.0, "width": 20.0, "height": 20.0},
+            ),
+            PlanNode(
+                "bore",
+                "feature",
+                "bore",
+                "k_cylinder",
+                params={"radius": 4.0, "height": 40.0},
+            ),
+            PlanNode(
+                "cut",
+                "feature",
+                "cut the bore",
+                "k_cut",
+                refs={"target": Ref("plate", "self"), "others": (Ref("bore", "self"),)},
+                deps=("plate", "bore"),
+            ),
         ]
         self.service.plan_edit(
             self.document.id,
@@ -43,7 +57,7 @@ class PlanScriptBackendTests(unittest.TestCase):
             goal="plate with a bore",
         )
         for node in nodes:
-            result = self.service.plan_run(self.document.id, node.id, executor="script")
+            self.service.plan_run(self.document.id, node.id, executor="script")
         current = self.store.get(self.document.id)
         self.assertEqual(current.version, 3)
         self.assertEqual(len(current.features), 3)
